@@ -31,31 +31,38 @@ export function creerWebhookHandler(
   webhookSecret: string
 ) {
   return async (req: Request, res: Response): Promise<void> => {
-    // 1. Vérifier le secret partagé
-    const secretRecu = req.headers['x-webhook-secret'] as string | undefined;
-    if (!secretRecu || secretRecu !== webhookSecret) {
-      logger.warn('Webhook ERP rejeté — secret invalide', { ip: req.ip });
-      res.status(401).json({ erreur: 'Non autorisé' });
-      return;
-    }
+    try {
+      // 1. Vérifier le secret partagé
+      const secretRecu = req.headers['x-webhook-secret'] as string | undefined;
+      if (!secretRecu || secretRecu !== webhookSecret) {
+        logger.warn('Webhook ERP rejeté — secret invalide', { ip: req.ip });
+        res.status(401).json({ erreur: 'Non autorisé' });
+        return;
+      }
 
-    const body = req.body as PayloadERP;
+      const body = req.body as PayloadERP;
 
-    // 2. Valider le payload
-    if (!body.referenceERP || !body.payload?.nomChantier) {
-      res.status(400).json({ erreur: 'Payload invalide. referenceERP et nomChantier requis.' });
-      return;
-    }
+      // 2. Valider le payload
+      if (!body.referenceERP || !body.payload?.nomChantier) {
+        res.status(400).json({ erreur: 'Payload invalide. referenceERP et nomChantier requis.' });
+        return;
+      }
 
-    logger.info(`Webhook ERP recu: ${body.evenement}`, { reference: body.referenceERP });
+      logger.info(`Webhook ERP recu: ${body.evenement}`, { reference: body.referenceERP });
 
-    // 3. Traiter selon l'événement
-    switch (body.evenement) {
-      case 'ORDRE_FABRICATION_TERMINE':
-        await traiterOrdreTermine(body, db, chantierRepo, missionRepo, equipeRepo, logger, res);
-        break;
-      default:
-        res.status(202).json({ message: `Événement "${body.evenement}" ignoré` });
+      // 3. Traiter selon l'événement
+      switch (body.evenement) {
+        case 'ORDRE_FABRICATION_TERMINE':
+          await traiterOrdreTermine(body, db, chantierRepo, missionRepo, equipeRepo, logger, res);
+          break;
+        default:
+          res.status(202).json({ message: `Événement "${body.evenement}" ignoré` });
+      }
+    } catch (err: any) {
+      logger.error('Erreur webhook ERP', { erreur: err?.message ?? String(err) });
+      if (!res.headersSent) {
+        res.status(500).json({ erreur: 'Erreur interne du serveur', detail: err?.message });
+      }
     }
   };
 }

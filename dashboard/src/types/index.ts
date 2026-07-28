@@ -1,5 +1,5 @@
 export type PhaseChantier = 'mecanique' | 'electrique' | 'verification';
-export type StatutChantier = 'planifie' | 'en_cours' | 'bloque' | 'termine' | 'reception_officielle';
+export type StatutChantier = 'planifie' | 'en_attente' | 'en_cours' | 'bloque' | 'termine' | 'reception_officielle';
 export type PrioriteBlocage = 'basse' | 'moyenne' | 'haute' | 'critique';
 
 export interface Chantier {
