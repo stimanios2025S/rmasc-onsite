@@ -15,6 +15,7 @@ import { PointageService } from './services/moduleA/pointage.service';
 import { RelaisPhaseService } from './services/moduleB/relais-phase.service';
 import { BlocageService } from './services/moduleC/blocage.service';
 import { creerWebhookHandler } from './api/webhook.controller';
+import { creerPages } from './views';
 
 const {
   DB_HOST = 'localhost', DB_PORT = '5432', DB_NAME = 'rmasc_onsite',
@@ -51,6 +52,9 @@ app.use(express.json());
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'rmasc-onsite', timestamp: new Date().toISOString() });
 });
+
+// Pages Web (chantiers, missions, détails)
+app.use('/', creerPages(pool));
 
 // Webhook ERP — appelé par l'ERP quand une commande est terminée
 app.post('/api/webhook/erp', creerWebhookHandler(
