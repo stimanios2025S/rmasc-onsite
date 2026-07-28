@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import type { IPointageRepository, EntreePointageGPS, CoordonneesGPS } from '../types/mission.types';
+import type { IPointageRepository } from './interfaces';
+import type { EntreePointageGPS, CoordonneesGPS } from '../types/mission.types';
 
 export class PointageRepository implements IPointageRepository {
   constructor(private readonly db: Pool) {}

@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import type { ITechnicienRepository, Technicien } from '../types/mission.types';
+import type { ITechnicienRepository } from './interfaces';
+import type { Technicien } from '../types/mission.types';
 
 export class TechnicienRepository implements ITechnicienRepository {
   constructor(private readonly db: Pool) {}

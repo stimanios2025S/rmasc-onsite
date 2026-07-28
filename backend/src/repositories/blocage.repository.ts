@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import type { IBlocageRepository, Blocage, StatutBlocage } from '../types/mission.types';
+import type { IBlocageRepository } from './interfaces';
+import type { Blocage, StatutBlocage } from '../types/mission.types';
 
 export class BlocageRepository implements IBlocageRepository {
   constructor(private readonly db: Pool) {}

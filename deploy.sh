@@ -5,7 +5,7 @@
 # Usage : bash deploy.sh
 # =============================================================================
 
-set -euo pipefail
+set -eo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,22 +18,28 @@ echo -e "${CYAN}  RMASC OnSite — Installation automatique${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# ─── Étape 1 : Cloner le projet ──────────────────────────────────────────
-echo -e "${YELLOW}[1/7] Clonage du depot GitHub...${NC}"
+# ─── Étape 1 : Cloner ou mettre à jour le projet ─────────────────────────
+echo -e "${YELLOW}[1/7] Recuperation du projet GitHub...${NC}"
 
 REPO="https://github.com/stimanios2025S/rmasc-onsite.git"
 DEST="/opt/rmasc-onsite"
 
-if [ -d "$DEST" ]; then
-  echo -e "  ${YELLOW}Le dossier $DEST existe deja. Sauvegarde et remplacement...${NC}"
-  sudo mv "$DEST" "${DEST}.bak.$(date +%s)"
+if [ -d "$DEST/.git" ]; then
+  echo -e "  ${YELLOW}Projet deja present. Mise a jour...${NC}"
+  cd "$DEST"
+  sudo git pull origin main
+else
+  if [ -d "$DEST" ]; then
+    echo -e "  ${YELLOW}Le dossier $DEST existe deja. Sauvegarde...${NC}"
+    sudo mv "$DEST" "${DEST}.bak.$(date +%s)"
+  fi
+  sudo git clone "$REPO" "$DEST"
 fi
 
-sudo git clone "$REPO" "$DEST"
 sudo chown -R $(whoami):$(whoami) "$DEST"
 cd "$DEST"
 
-echo -e "${GREEN}  ✓ Projet clone${NC}"
+echo -e "${GREEN}  ✓ Projet recupere${NC}"
 
 # ─── Étape 2 : Installation PostgreSQL / PostGIS ─────────────────────────
 echo ""
@@ -66,8 +72,16 @@ sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
 sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
 
-# Exécuter le schéma
-PGPASSWORD="$DB_PASS" psql -h localhost -U $DB_USER -d $DB_NAME -f "$DEST/database/schema-rmasc-onsite.sql"
+# Installer les extensions PostGIS et uuid en tant que superuser
+sudo -u postgres psql -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+sudo -u postgres psql -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+
+# Donner les droits sur les extensions à l'utilisateur rmasc
+sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+
+# Exécuter le schéma SQL (sans les CREATE EXTENSION) en tant que postgres
+# On exécute tout en tant que superuser pour éviter les erreurs de permissions
+sudo -u postgres psql -d "$DB_NAME" -f "$DEST/database/schema-rmasc-onsite.sql"
 
 echo -e "${GREEN}  ✓ Base de donnees creee${NC}"
 
