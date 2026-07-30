@@ -212,16 +212,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════
-          MOBILE ADJUSTMENTS
-          ═══════════════════════════════════════════════════════════════ */}
-      <style jsx>{`
-        @media (max-width: 480px) {
-          .max-w-\\\[420px\\\] {
-            max-width: 100% !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
