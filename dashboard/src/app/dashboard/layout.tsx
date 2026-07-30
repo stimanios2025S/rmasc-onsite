@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { estConnecte } from '@/lib/auth';
+import { estConnecte, getUtilisateur } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
 import { Loader2 } from 'lucide-react';
 
@@ -12,9 +12,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!estConnecte()) {
       router.push('/login');
-    } else {
-      setChecking(false);
+      return;
     }
+    const user = getUtilisateur();
+    // Redirect technicians to mobile portal
+    if (user?.role === 'technicien' || user?.role === 'ingenieur') {
+      router.push('/mission/active');
+      return;
+    }
+    setChecking(false);
   }, [router]);
 
   if (checking) {

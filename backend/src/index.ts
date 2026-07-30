@@ -17,6 +17,8 @@ import { BlocageService } from './services/moduleC/blocage.service';
 import { creerWebhookHandler } from './api/webhook.controller';
 import { creerAuthRouter } from './api/auth.controller';
 import { creerAdminRouter } from './api/admin.controller';
+import { creerMissionRouter } from './api/mission.controller';
+import { creerEquipeRouter } from './api/equipe.controller';
 import { creerPages } from './views';
 
 const {
@@ -61,6 +63,12 @@ app.use('/api/auth', creerAuthRouter(pool, logger));
 
 // Routes admin (El Ghani — protégées par JWT)
 app.use('/api/admin', creerAdminRouter(pool, logger));
+
+// Routes mission (technicien mobile)
+app.use('/api/mission', creerMissionRouter(pool, logger));
+
+// Routes équipe (statut, repos)
+app.use('/api/equipe', creerEquipeRouter(pool));
 
 // Route API chantiers (avec coordonnées pour la carte)
 app.get('/api/chantiers', async (_req, res) => {
