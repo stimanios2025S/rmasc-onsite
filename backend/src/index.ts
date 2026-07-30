@@ -62,6 +62,23 @@ app.use('/api/auth', creerAuthRouter(pool, logger));
 // Routes admin (El Ghani — protégées par JWT)
 app.use('/api/admin', creerAdminRouter(pool, logger));
 
+// Route API chantiers (avec coordonnées pour la carte)
+app.get('/api/chantiers', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
+              c.client_nom, ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat,
+              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
+              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_cours') AS en_cours,
+              TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
+       FROM chantiers c ORDER BY c.date_creation DESC`
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ erreur: 'Erreur serveur.', detail: err.message });
+  }
+});
+
 // Pages Web (chantiers, missions, détails)
 app.use('/', creerPages(pool));
 
