@@ -15,11 +15,13 @@ import { PointageService } from './services/moduleA/pointage.service';
 import { RelaisPhaseService } from './services/moduleB/relais-phase.service';
 import { BlocageService } from './services/moduleC/blocage.service';
 import { creerWebhookHandler } from './api/webhook.controller';
+import { creerAuthRouter } from './api/auth.controller';
 import { creerPages } from './views';
 
 const {
   DB_HOST = 'localhost', DB_PORT = '5432', DB_NAME = 'rmasc_onsite',
   DB_USER = 'rmasc', DB_PASSWORD = '', ERP_WEBHOOK_URL = '', ERP_WEBHOOK_SECRET = '',
+  JWT_SECRET = 'rmasc-onsite-jwt-secret',
   PORT = '4000',
 } = process.env;
 
@@ -52,6 +54,9 @@ app.use(express.json());
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'rmasc-onsite', timestamp: new Date().toISOString() });
 });
+
+// Routes d'authentification
+app.use('/api/auth', creerAuthRouter(pool, logger));
 
 // Pages Web (chantiers, missions, détails)
 app.use('/', creerPages(pool));

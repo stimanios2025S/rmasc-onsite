@@ -1,5 +1,7 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { estConnecte } from '@/lib/auth';
 import { Bell } from 'lucide-react';
 import KpiCards from '@/components/KpiCards';
 import MapView from '@/components/MapView';
@@ -10,8 +12,15 @@ import { KPI_MOCK, CHANTIERS_MOCK, ALERTES_MOCK } from '@/data/mock-data';
 import type { Chantier, Alerte } from '@/types';
 
 export default function Home() {
+  const router = useRouter();
   const [chantierSelectionne, setChantierSelectionne] = useState<Chantier | null>(null);
   const [panelOuvert, setPanelOuvert] = useState(false);
+
+  useEffect(() => {
+    if (!estConnecte()) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const handleSelectionnerChantier = (c: Chantier) => {
     setChantierSelectionne(c);
