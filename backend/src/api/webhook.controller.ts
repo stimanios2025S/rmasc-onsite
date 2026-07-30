@@ -2,9 +2,6 @@ import { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { LoggerService } from '../services/notifications/logger.service';
 import type { IChantierRepository, IMissionRepository, IEquipeRepository } from '../repositories/interfaces';
-import type { Phase } from '../types/mission.types';
-
-const TYPE_EQUIPE: Record<string, string> = { mecanique: 'mecanique', electrique: 'electrique', verification: 'mixte' };
 
 export interface PayloadERP {
   evenement: string;
@@ -32,102 +29,86 @@ export function creerWebhookHandler(
 ) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      // 1. Vérifier le secret partagé
       const secretRecu = req.headers['x-webhook-secret'] as string | undefined;
       if (!secretRecu || secretRecu !== webhookSecret) {
-        logger.warn('Webhook ERP rejeté — secret invalide', { ip: req.ip });
         res.status(401).json({ erreur: 'Non autorisé' });
         return;
       }
 
       const body = req.body as PayloadERP;
-
-      // 2. Valider le payload
       if (!body.referenceERP || !body.payload?.nomChantier) {
-        res.status(400).json({ erreur: 'Payload invalide. referenceERP et nomChantier requis.' });
+        res.status(400).json({ erreur: 'Payload invalide.' });
         return;
       }
 
-      logger.info(`Webhook ERP recu: ${body.evenement}`, { reference: body.referenceERP });
+      logger.info(`Webhook ERP: ${body.evenement}`, { ref: body.referenceERP });
 
-      // 3. Traiter selon l'événement
       switch (body.evenement) {
         case 'ORDRE_FABRICATION_TERMINE':
-          await traiterOrdreTermine(body, db, chantierRepo, missionRepo, equipeRepo, logger, res);
+          await insererDemandeIntegration(body, db, logger, res);
           break;
         default:
-          res.status(202).json({ message: `Événement "${body.evenement}" ignoré` });
+          res.status(202).json({ message: 'Ignoré' });
       }
     } catch (err: any) {
-      logger.error('Erreur webhook ERP', { erreur: err?.message ?? String(err) });
+      logger.error('Erreur webhook', { erreur: err?.message ?? String(err) });
       if (!res.headersSent) {
-        res.status(500).json({ erreur: 'Erreur interne du serveur', detail: err?.message });
+        res.status(500).json({ erreur: 'Erreur interne.', detail: err?.message });
       }
     }
   };
 }
 
-async function traiterOrdreTermine(
+/** Insère la commande ERP dans la file d'attente (approbation admin) */
+async function insererDemandeIntegration(
   body: PayloadERP,
   db: Pool,
-  chantierRepo: IChantierRepository,
-  missionRepo: IMissionRepository,
-  equipeRepo: IEquipeRepository,
   logger: LoggerService,
   res: Response
 ): Promise<void> {
-  const ref = body.referenceERP;
-  const p = body.payload;
+  const { referenceERP, payload } = body;
 
-  // Vérifier si le chantier existe déjà
-  const existant = await chantierRepo.trouverParReferenceERP(ref);
-  if (existant) {
-    logger.info('Chantier déjà existant', { reference: ref });
-    res.status(200).json({ message: 'Chantier déjà créé', chantierId: existant.id });
-    return;
-  }
-
-  const lat = p.latitude ?? 45.75;
-  const lng = p.longitude ?? 4.85;
-  const rayon = p.rayonGeofencing ?? 50;
-
-  // Insérer le chantier dans la base
-  const { rows } = await db.query(
-    `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees, rayon_geofencing, statut,
-                            client_nom, client_telephone, date_debut_prevue)
-     VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, 'planifie', $7, $8, NOW())
-     RETURNING id`,
-    [ref, p.nomChantier, p.adresse ?? null, lng, lat, rayon, p.clientNom ?? null, p.clientTelephone ?? null]
+  // Vérifier si déjà en attente
+  const exist = await db.query(
+    `SELECT id, statut FROM demandes_integration WHERE reference_commande_erp = $1`,
+    [referenceERP]
   );
-  const chantierId = rows[0].id;
-  logger.info('Chantier créé depuis ERP', { chantierId, reference: ref });
-
-  // Trouver une équipe mécanique disponible
-  const equipe = await equipeRepo.trouverDisponible('mecanique');
-  if (!equipe) {
-    logger.warn('Aucune équipe mécanique disponible', { chantierId });
-    res.status(201).json({
-      chantierId,
-      message: 'Chantier créé, mais aucune équipe mécanique disponible. Affectation manuelle requise.',
+  if (exist.rows.length > 0) {
+    logger.info('Demande déjà existante', { ref: referenceERP });
+    res.status(200).json({
+      demandeId: exist.rows[0].id,
+      statut: exist.rows[0].statut,
+      message: `Demande déjà enregistrée (${exist.rows[0].statut}).`,
     });
     return;
   }
 
-  // Créer la première mission (mécanique)
-  const mission = await missionRepo.creer({
-    chantierId,
-    equipeId: equipe.id,
-    phase: 'mecanique',
-    notes: `Créée depuis ERP — ordre ${ref}`,
-  });
+  const { rows } = await db.query(
+    `INSERT INTO demandes_integration
+       (reference_commande_erp, client_nom, client_telephone, adresse_chantier,
+        nom_chantier, latitude, longitude, details_ascenseur)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
+    [
+      referenceERP,
+      payload.clientNom ?? 'Inconnu',
+      payload.clientTelephone ?? null,
+      payload.adresse ?? null,
+      payload.nomChantier,
+      payload.latitude ?? 45.75,
+      payload.longitude ?? 4.85,
+      JSON.stringify({
+        typeMotorisation: (payload as any).typeMotorisation ?? null,
+        nombreEtages: (payload as any).nombreEtages ?? null,
+      }),
+    ]
+  );
 
-  logger.info('Mission mécanique créée', { missionId: mission.id, equipe: equipe.nom });
+  logger.info('Demande intégration créée', { demandeId: rows[0].id, ref: referenceERP });
 
   res.status(201).json({
-    chantierId,
-    missionId: mission.id,
-    equipeId: equipe.id,
-    equipeNom: equipe.nom,
-    message: `Chantier "${p.nomChantier}" créé. Équipe ${equipe.nom} assignée à la phase Mécanique.`,
+    demandeId: rows[0].id,
+    statut: 'EN_ATTENTE_VALIDATION',
+    message: `✅ Commande "${payload.nomChantier}" mise en attente d'approbation par El Ghani.`,
   });
 }

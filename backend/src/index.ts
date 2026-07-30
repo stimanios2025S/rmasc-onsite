@@ -16,6 +16,7 @@ import { RelaisPhaseService } from './services/moduleB/relais-phase.service';
 import { BlocageService } from './services/moduleC/blocage.service';
 import { creerWebhookHandler } from './api/webhook.controller';
 import { creerAuthRouter } from './api/auth.controller';
+import { creerAdminRouter } from './api/admin.controller';
 import { creerPages } from './views';
 
 const {
@@ -57,6 +58,9 @@ app.get('/api/health', (_req, res) => {
 
 // Routes d'authentification
 app.use('/api/auth', creerAuthRouter(pool, logger));
+
+// Routes admin (El Ghani — protégées par JWT)
+app.use('/api/admin', creerAdminRouter(pool, logger));
 
 // Pages Web (chantiers, missions, détails)
 app.use('/', creerPages(pool));
