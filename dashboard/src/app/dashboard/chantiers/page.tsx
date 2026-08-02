@@ -102,13 +102,6 @@ export default function ChantiersPage() {
     }
   }
 
-  // Empêcher la touche Entrée de soumettre le formulaire (causait la fermeture auto)
-  function bloquerEntree(e: React.KeyboardEvent<HTMLFormElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-    }
-  }
-
   function resetForm() {
     setForm({ nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
       latitude: '', longitude: '', rayon_geofencing: '50',
@@ -236,7 +229,7 @@ export default function ChantiersPage() {
               <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
             </div>
 
-            <div className="p-8" onKeyDown={bloquerEntree}>
+            <div className="p-8">
               {/* ═══ STEP 1: CLIENT ═══ */}
               {step === 1 && (
                 <div className="space-y-5">
