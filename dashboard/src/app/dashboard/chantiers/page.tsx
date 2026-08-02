@@ -60,8 +60,7 @@ export default function ChantiersPage() {
 
   const [successState, setSuccessState] = useState<{ nom: string; equipe: string } | null>(null);
 
-  async function handleCreer(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCreer() {
     if (creant) return; // anti double-clic
     setCreant(true);
     setMessage(null);
@@ -237,7 +236,7 @@ export default function ChantiersPage() {
               <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
             </div>
 
-            <form onSubmit={handleCreer} onKeyDown={bloquerEntree} className="p-8">
+            <div className="p-8" onKeyDown={bloquerEntree}>
               {/* ═══ STEP 1: CLIENT ═══ */}
               {step === 1 && (
                 <div className="space-y-5">
@@ -434,14 +433,14 @@ export default function ChantiersPage() {
                     Suivant <ChevronRight size={18} />
                   </button>
                 ) : (
-                  <button type="submit" disabled={creant}
+                  <button type="button" onClick={handleCreer} disabled={creant}
                     className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20">
                     {creant ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                     Créer le Chantier
                   </button>
                 )}
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
