@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { fetchChantiers, creerChantier, type ChantierData } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, type ChantierData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
@@ -102,6 +102,55 @@ export default function ChantiersPage() {
     }
   }
 
+  /* ─── ÉDITION / SUPPRESSION ─────────────────────────────────────── */
+  const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE' });
+  const [saving, setSaving] = useState(false);
+
+  function ouvrirEdition(c: ChantierData) {
+    setEditChantier(c);
+    setEditForm({
+      nom: c.nom,
+      client_nom: c.client_nom || '',
+      adresse: '',
+      latitude: c.lat?.toString() || '',
+      longitude: c.lng?.toString() || '',
+      complexite: c.complexite || 'MOYENNE',
+    });
+  }
+
+  async function handleSauvegarder() {
+    if (!editChantier) return;
+    setSaving(true);
+    try {
+      await modifierChantier(editChantier.id, {
+        nom: editForm.nom,
+        client_nom: editForm.client_nom || undefined,
+        adresse: editForm.adresse || undefined,
+        latitude: parseFloat(editForm.latitude),
+        longitude: parseFloat(editForm.longitude),
+        complexite: editForm.complexite,
+      });
+      setMessage({ type: 'success', text: 'Chantier mis à jour.' });
+      setEditChantier(null);
+      await loadChantiers();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur de mise à jour.' });
+    }
+    setSaving(false);
+  }
+
+  async function handleSupprimer(id: string, nom: string) {
+    if (!confirm(`Supprimer définitivement le chantier "${nom}" ?`)) return;
+    try {
+      await supprimerChantier(id);
+      setMessage({ type: 'success', text: `Chantier "${nom}" supprimé.` });
+      await loadChantiers();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur de suppression.' });
+    }
+  }
+
   function resetForm() {
     setForm({ nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
       latitude: '', longitude: '', rayon_geofencing: '50',
@@ -164,7 +213,7 @@ export default function ChantiersPage() {
           const Icon = PHASE_ICON[c.nom.includes('Meca') ? 'mecanique' : c.nom.includes('Elec') ? 'electrique' : 'verification'] || Wrench;
           const phase = c.nom.includes('Meca') ? 'Mécanique' : c.nom.includes('Elec') ? 'Électrique' : 'Vérification';
           return (
-            <div key={c.id} className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all cursor-pointer group">
+            <div key={c.id} className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2.5">
                   <div className={`w-3 h-3 mt-0.5 rounded-full shrink-0 ${STATUT_DOT[c.statut] || 'bg-stone-300'}`} />
@@ -173,15 +222,61 @@ export default function ChantiersPage() {
                     <p className="text-[10px] text-stone-400 font-mono">{c.ref}</p>
                   </div>
                 </div>
-                <ArrowUpRight size={14} className="text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                {/* Actions: Modifier / Supprimer */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => ouvrirEdition(c)}
+                    title="Modifier"
+                    className="p-2 rounded-lg bg-stone-50 text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  </button>
+                  <button
+                    onClick={() => handleSupprimer(c.id, c.nom)}
+                    title="Supprimer"
+                    className="p-2 rounded-lg bg-stone-50 text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                </div>
               </div>
+
+              {/* Complexité badge + client */}
               <div className="flex items-center gap-2 text-xs text-stone-500 mb-3">
                 <span>{c.client_nom || 'Client inconnu'}</span>
                 <span className="text-stone-300">•</span>
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${PHASE_COLOR[phase.toLowerCase()] || 'bg-stone-100 text-stone-600'}`}>
                   <Icon size={12} /> {phase}
                 </span>
+                {c.complexite && (
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                    c.complexite === 'DIFFICILE' ? 'bg-rose-50 text-rose-600 border-rose-200'
+                    : c.complexite === 'FACILE' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                    : 'bg-amber-50 text-amber-600 border-amber-200'
+                  }`}>
+                    {c.complexite}
+                  </span>
+                )}
               </div>
+
+              {/* Fichiers attachés */}
+              {(c.dxf || c.pdf) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {c.dxf && (
+                    <a href={c.dxf} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-full transition-all">
+                      <FileText size={11} /> Plan CAD
+                    </a>
+                  )}
+                  {c.pdf && (
+                    <a href={c.pdf} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-full transition-all">
+                      <FileText size={11} /> Fiche Technique
+                    </a>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-xs text-stone-400">
                 <span>📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
                 {c.en_cours > 0 && <span className="text-emerald-600 font-medium">🔄 {c.en_cours} mission{c.en_cours > 1 ? 's' : ''}</span>}
@@ -432,6 +527,95 @@ export default function ChantiersPage() {
                     Créer le Chantier
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: Modifier un Chantier ═══ */}
+      {editChantier && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setEditChantier(null); }}>
+          <div className="relative bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-8 py-5 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-stone-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                  <Building2 size={18} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-800">Modifier le Chantier</h3>
+                  <p className="text-xs text-stone-400">{editChantier.ref}</p>
+                </div>
+              </div>
+              <button onClick={() => setEditChantier(null)} className="text-stone-300 hover:text-stone-500"><X size={20} /></button>
+            </div>
+
+            <div className="p-8 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Nom du chantier</label>
+                <input value={editForm.nom} onChange={e => setEditForm({...editForm, nom: e.target.value})}
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 mb-1 block">Client</label>
+                  <input value={editForm.client_nom} onChange={e => setEditForm({...editForm, client_nom: e.target.value})}
+                    className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 mb-1 block">Complexité</label>
+                  <select value={editForm.complexite} onChange={e => setEditForm({...editForm, complexite: e.target.value})}
+                    className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
+                    <option value="FACILE">FACILE</option>
+                    <option value="MOYENNE">MOYENNE</option>
+                    <option value="DIFFICILE">DIFFICILE</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 mb-1 block">Latitude</label>
+                  <input value={editForm.latitude} onChange={e => setEditForm({...editForm, latitude: e.target.value})}
+                    type="number" step="any" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 mb-1 block">Longitude</label>
+                  <input value={editForm.longitude} onChange={e => setEditForm({...editForm, longitude: e.target.value})}
+                    type="number" step="any" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                </div>
+              </div>
+
+              {/* Fichiers existants */}
+              {(editChantier.dxf || editChantier.pdf) && (
+                <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
+                  <p className="text-[10px] text-stone-400 font-semibold uppercase mb-2">Fichiers attachés</p>
+                  <div className="flex flex-wrap gap-2">
+                    {editChantier.dxf && (
+                      <a href={editChantier.dxf} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">
+                        <FileText size={12} /> Plan CAD
+                      </a>
+                    )}
+                    {editChantier.pdf && (
+                      <a href={editChantier.pdf} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 bg-white border border-purple-200 hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-all">
+                        <FileText size={12} /> Fiche Technique
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setEditChantier(null)}
+                  className="flex-1 bg-stone-100 text-stone-500 py-3 rounded-xl text-sm font-semibold hover:bg-stone-200 transition-all">
+                  Annuler
+                </button>
+                <button onClick={handleSauvegarder} disabled={saving}
+                  className="flex-1 bg-indigo-500 text-white py-3 rounded-xl text-sm font-semibold hover:bg-indigo-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                  Enregistrer
+                </button>
               </div>
             </div>
           </div>

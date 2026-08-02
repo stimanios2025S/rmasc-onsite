@@ -5,6 +5,7 @@ import { apiFetch } from './auth';
 export interface ChantierData {
   id: string; ref: string; nom: string; statut: string; client_nom: string;
   lat: number; lng: number; missions: number; en_cours: number; date_creation: string;
+  complexite?: string; dxf?: string | null; pdf?: string | null;
 }
 export interface DemandeData {
   id: string; ref: string; client_nom: string; nom_chantier: string; statut: string; cree: string;
@@ -72,4 +73,12 @@ export interface CreerChantierResult {
 
 export async function creerChantier(data: NouveauChantier): Promise<CreerChantierResult> {
   return apiFetch('/chantiers', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function modifierChantier(id: string, data: Partial<NouveauChantier>) {
+  return apiFetch(`/chantiers/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function supprimerChantier(id: string) {
+  return apiFetch(`/chantiers/${id}`, { method: 'DELETE' });
 }

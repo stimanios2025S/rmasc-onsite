@@ -85,7 +85,8 @@ app.get('/api/chantiers', async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
-              c.client_nom, ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat,
+              c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
+              ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_cours') AS en_cours,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
@@ -149,6 +150,50 @@ app.post('/api/chantiers', async (req, res) => {
     }
 
     res.status(201).json({ chantierId, missionId, equipeNom, message: `Chantier "${nom}" créé.` });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
+// PUT /api/chantiers/:id — modifier un chantier (El Ghani)
+app.put('/api/chantiers/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique } = req.body;
+    if (!nom) return res.status(400).json({ erreur: 'nom requis.' });
+
+    const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
+    const lat = latitude !== undefined ? latitude : null;
+    const lng = longitude !== undefined ? longitude : null;
+
+    await pool.query(
+      `UPDATE chantiers SET
+         nom_chantier = $1, client_nom = COALESCE($2, client_nom), adresse = COALESCE($3, adresse),
+         rayon_geofencing = $4, complexite = $5,
+         dxf_url = COALESCE($6, dxf_url), pdf_url = COALESCE($7, pdf_url),
+         fiche_technique = COALESCE($8, fiche_technique),
+         coordonnees = CASE WHEN $9 IS NOT NULL AND $10 IS NOT NULL
+                            THEN ST_SetSRID(ST_MakePoint($10, $9), 4326)
+                            ELSE coordonnees END,
+         date_modification = NOW()
+       WHERE id = $11`,
+      [nom, client_nom || null, adresse || null, rayon_geofencing || 50, validComplexity,
+       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null,
+       lat, lng, id]
+    );
+    res.json({ message: `Chantier "${nom}" mis à jour.` });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
+// DELETE /api/chantiers/:id — supprimer un chantier (El Ghani)
+app.delete('/api/chantiers/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Supprimer les missions associées (cascade via chantier)
+    await pool.query(`DELETE FROM chantiers WHERE id = $1`, [id]);
+    res.json({ message: 'Chantier supprimé.' });
   } catch (err: any) {
     res.status(500).json({ erreur: err.message });
   }
