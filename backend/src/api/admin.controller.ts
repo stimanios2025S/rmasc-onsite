@@ -33,15 +33,18 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
       }
       const d = rows[0];
 
-      // Créer le chantier
+      // Créer le chantier (avec complexité, fiches, fichiers)
       const chantierResult = await pool.query(
         `INSERT INTO chantiers
            (reference_commande_erp, nom_chantier, adresse, coordonnees,
-            client_nom, client_telephone, statut)
-         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, $7, 'planifie')
+            client_nom, client_telephone, statut,
+            complexite, dxf_url, pdf_url, fiche_technique)
+         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, $7, 'planifie', $8, $9, $10, $11)
          RETURNING id`,
         [d.reference_commande_erp, d.nom_chantier, d.adresse_chantier,
-         d.longitude, d.latitude, d.client_nom, d.client_telephone]
+         d.longitude, d.latitude, d.client_nom, d.client_telephone,
+         d.complexite || 'MOYENNE', d.dxf_url || null, d.pdf_url || null,
+         d.fiche_technique || null]
       );
       const chantierId = chantierResult.rows[0].id;
 
@@ -74,11 +77,16 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
            RETURNING id`,
           [chantierId, equipe.id]
         );
-        missionInfo = {
-          equipeNom: equipe.nom,
-          equipeId: equipe.id,
-          missionId: missionResult.rows[0].id,
-        };
+        const missionId = missionResult.rows[0].id;
+
+        // Créer la checklist mécanique
+        await pool.query(
+          `INSERT INTO checklists_phases (mission_id, phase, etapes)
+           VALUES ($1, 'mecanique', generer_checklist('mecanique'))`,
+          [missionId]
+        );
+
+        missionInfo = { equipeNom: equipe.nom, equipeId: equipe.id, missionId };
       }
 
       logger.info('Demande approuvée → Chantier + Mission', {

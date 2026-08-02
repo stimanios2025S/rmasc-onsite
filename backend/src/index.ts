@@ -19,6 +19,8 @@ import { creerAuthRouter } from './api/auth.controller';
 import { creerAdminRouter } from './api/admin.controller';
 import { creerMissionRouter } from './api/mission.controller';
 import { creerEquipeRouter } from './api/equipe.controller';
+import { creerUploadRouter } from './api/upload.controller';
+import path from 'path';
 import { creerPages } from './views';
 
 const {
@@ -69,6 +71,12 @@ app.use('/api/mission', creerMissionRouter(pool, logger));
 
 // Routes équipe (statut, repos)
 app.use('/api/equipe', creerEquipeRouter(pool));
+
+// Routes upload
+app.use('/api/upload', creerUploadRouter(pool));
+
+// Static files (uploads)
+app.use('/uploads', express.static(path.resolve(__dirname, '../../public/uploads')));
 
 // Route API chantiers (avec coordonnées pour la carte)
 app.get('/api/chantiers', async (_req, res) => {

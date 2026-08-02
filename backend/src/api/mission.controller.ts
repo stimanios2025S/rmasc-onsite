@@ -95,6 +95,62 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
     }
   });
 
+  // GET /api/mission/:id
+  router.get('/:id', async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT om.id, om.phase, om.statut, om.duree_estimee_jours,
+                c.nom_chantier, c.adresse, c.complexite, c.dxf_url, c.pdf_url,
+                c.fiche_technique, c.client_nom, c.client_telephone,
+                c.reference_commande_erp AS ref_erp, c.rayon_geofencing,
+                ST_X(c.coordonnees::geometry) AS longitude,
+                ST_Y(c.coordonnees::geometry) AS latitude
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         WHERE om.id = $1`,
+        [req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ erreur: 'Mission introuvable.' });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // GET /api/mission/:id/checklist
+  router.get('/:id/checklist', async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, mission_id, phase, etapes, complete, date_mise_a_jour
+         FROM checklists_phases WHERE mission_id = $1 ORDER BY date_mise_a_jour DESC LIMIT 1`,
+        [req.params.id]
+      );
+      if (rows.length === 0) return res.json(null);
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // PATCH /api/mission/:id/checklist — update checklist progress
+  router.patch('/:id/checklist', async (req, res) => {
+    try {
+      const { etapes, complete } = req.body;
+      if (!etapes) return res.status(400).json({ erreur: 'etapes requis.' });
+
+      const { rows } = await pool.query(
+        `UPDATE checklists_phases SET etapes = $1, complete = $2, date_mise_a_jour = NOW()
+         WHERE mission_id = $3
+         RETURNING id`,
+        [JSON.stringify(etapes), !!complete, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ erreur: 'Checklist introuvable.' });
+      res.json({ id: rows[0].id, message: 'Progression mise à jour.' });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // POST /api/mission/blocage
   router.post('/blocage', async (req, res) => {
     try {
