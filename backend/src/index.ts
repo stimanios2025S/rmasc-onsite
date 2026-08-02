@@ -95,6 +95,61 @@ app.get('/api/chantiers', async (_req, res) => {
   }
 });
 
+// POST /api/chantiers — création manuelle d'un chantier (El Ghani)
+app.post('/api/chantiers', async (req, res) => {
+  try {
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp } = req.body;
+    if (!nom || latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ erreur: 'nom, latitude et longitude requis.' });
+    }
+    const ref = reference_commande_erp || `MAN-${Date.now().toString().slice(-6)}`;
+    const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
+
+    const { rows } = await pool.query(
+      `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
+                              rayon_geofencing, statut, client_nom, complexite)
+       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, 'planifie', $7, $8)
+       RETURNING id`,
+      [ref, nom, adresse || null, longitude, latitude, rayon_geofencing || 50, client_nom || null, validComplexity]
+    );
+    const chantierId = rows[0].id;
+
+    // Assigner une équipe mécanique disponible + créer mission + checklist
+    const equipeResult = await pool.query(
+      `SELECT e.id, e.nom FROM equipes e
+       WHERE e.type = 'mecanique' AND e.actif = TRUE
+         AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
+       ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om
+                 WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
+       LIMIT 1`
+    );
+
+    let missionId: string | null = null;
+    let equipeNom: string | null = null;
+    if (equipeResult.rows.length > 0) {
+      const equipe = equipeResult.rows[0];
+      await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [equipe.id]);
+      const missionResult = await pool.query(
+        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours)
+         VALUES ($1, $2, 'mecanique', 'en_attente', NOW(),
+                 (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = 'mecanique'))
+         RETURNING id`,
+        [chantierId, equipe.id]
+      );
+      missionId = missionResult.rows[0].id;
+      equipeNom = equipe.nom;
+      await pool.query(
+        `INSERT INTO checklists_phases (mission_id, phase, etapes) VALUES ($1, 'mecanique', generer_checklist('mecanique'))`,
+        [missionId]
+      );
+    }
+
+    res.status(201).json({ chantierId, missionId, equipeNom, message: `Chantier "${nom}" créé.` });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
 // Pages Web (chantiers, missions, détails)
 app.use('/', creerPages(pool));
 

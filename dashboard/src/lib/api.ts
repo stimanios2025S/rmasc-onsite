@@ -79,3 +79,18 @@ export async function approuverDemande(id: string) {
 export async function refuserDemande(id: string) {
   return apiFetch(`/api/admin/demandes/${id}/refuser`, { method: 'POST' });
 }
+
+export interface NouveauChantier {
+  nom: string;
+  client_nom?: string;
+  adresse?: string;
+  latitude: number;
+  longitude: number;
+  rayon_geofencing?: number;
+  complexite?: string;
+  reference_commande_erp?: string;
+}
+
+export async function creerChantier(data: NouveauChantier) {
+  return apiFetch('/api/chantiers', { method: 'POST', body: JSON.stringify(data) });
+}

@@ -1,23 +1,105 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { fetchChantiers, type ChantierData } from '@/lib/api';
-import { Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, Clock } from 'lucide-react';
+import { fetchChantiers, creerChantier, type ChantierData } from '@/lib/api';
+import {
+  Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
+  MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
+  User, Phone, Clock, AlertTriangle, HardHat, Send,
+} from 'lucide-react';
 
 const PHASE_ICON: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield };
 const PHASE_COLOR: Record<string, string> = { mecanique: 'text-blue-600 bg-blue-50', electrique: 'text-orange-600 bg-orange-50', verification: 'text-emerald-600 bg-emerald-50' };
 const STATUT_DOT: Record<string, string> = { en_cours: 'bg-emerald-400', bloque: 'bg-rose-400', planifie: 'bg-indigo-400', termine: 'bg-stone-300', en_attente: 'bg-amber-400', reception_officielle: 'bg-emerald-300' };
+const COMPLEXITE_BADGE: Record<string, string> = {
+  FACILE: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+  MOYENNE: 'bg-amber-50 text-amber-600 border-amber-200',
+  DIFFICILE: 'bg-rose-50 text-rose-600 border-rose-200',
+};
+
+const COMPLEXITE_OPTIONS = [
+  { value: 'FACILE', label: 'Facile', desc: 'Gaine standard. Délais normaux.', color: 'emerald', icon: CheckCircle },
+  { value: 'MOYENNE', label: 'Moyenne', desc: 'Contraintes mineures, buffer standard.', color: 'amber', icon: Clock },
+  { value: 'DIFFICILE', label: 'Difficile', desc: 'Gaine complexe. Alerte prioritaire.', color: 'rose', icon: AlertTriangle },
+];
 
 export default function ChantiersPage() {
   const [chantiers, setChantiers] = useState<ChantierData[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtreStatut, setFiltreStatut] = useState('Tous');
   const [recherche, setRecherche] = useState('');
+  const [showWizard, setShowWizard] = useState(false);
+  const [step, setStep] = useState(1);
+  const [creant, setCreant] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [form, setForm] = useState({
+    nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
+    latitude: '', longitude: '', rayon_geofencing: '50',
+    complexite: 'MOYENNE',
+    fiche_technique: '', dxf_url: '', pdf_url: '',
+  });
+  const [dxfFile, setDxfFile] = useState<File | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => { fetchChantiers().then(setChantiers).catch(() => {}).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadChantiers(); }, []);
+
+  async function loadChantiers() {
+    try { setChantiers(await fetchChantiers()); } catch (_) {}
+    setLoading(false);
+  }
+
+  async function uploadFile(file: File, type: string): Promise<string> {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('type', type);
+    const res = await fetch('/api/upload/single', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error('Upload échoué');
+    const data = await res.json();
+    return data.url;
+  }
+
+  async function handleCreer(e: React.FormEvent) {
+    e.preventDefault();
+    setCreant(true);
+    setMessage(null);
+    try {
+      // Upload files first
+      let dxfUrl = form.dxf_url;
+      let pdfUrl = form.pdf_url;
+      if (dxfFile) { dxfUrl = await uploadFile(dxfFile, 'dxf'); }
+      if (pdfFile) { pdfUrl = await uploadFile(pdfFile, 'pdf'); }
+
+      const res = await creerChantier({
+        nom: form.nom_projet,
+        client_nom: form.client_nom || undefined,
+        adresse: form.client_adresse || undefined,
+        latitude: parseFloat(form.latitude),
+        longitude: parseFloat(form.longitude),
+        rayon_geofencing: parseInt(form.rayon_geofencing) || 50,
+        complexite: form.complexite,
+        reference_commande_erp: undefined,
+      });
+      setMessage({ type: 'success', text: res.message || 'Chantier créé avec succès !' });
+      setShowWizard(false);
+      setStep(1);
+      resetForm();
+      await loadChantiers();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur de création.' });
+    }
+    setCreant(false);
+  }
+
+  function resetForm() {
+    setForm({ nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
+      latitude: '', longitude: '', rayon_geofencing: '50',
+      complexite: 'MOYENNE', fiche_technique: '', dxf_url: '', pdf_url: '' });
+    setDxfFile(null);
+    setPdfFile(null);
+  }
 
   const filtres = ['Tous', 'En cours', 'Bloqués', 'Planifiés', 'Terminés'];
   const statMap: Record<string, string> = { 'En cours': 'en_cours', 'Bloqués': 'bloque', 'Planifiés': 'planifie', 'Terminés': 'termine' };
-
   const filtered = chantiers.filter(c => {
     if (filtreStatut !== 'Tous' && c.statut !== statMap[filtreStatut]) return false;
     if (recherche && !c.nom.toLowerCase().includes(recherche.toLowerCase()) && !c.ref.toLowerCase().includes(recherche.toLowerCase())) return false;
@@ -28,13 +110,26 @@ export default function ChantiersPage() {
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-stone-800">Chantiers <span className="text-stone-400 font-normal">({chantiers.length})</span></h1>
-        <button className="flex items-center gap-2 bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-600 shadow-sm">
-          <Plus size={16} /> Nouveau Chantier
+        <button onClick={() => setShowWizard(true)}
+          className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/20 transition-all">
+          <Plus size={16} /> Ajouter un Chantier
         </button>
       </div>
 
+      {message && (
+        <div className={`mb-4 px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-2 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+        }`}>
+          {message.type === 'success' ? <CheckCircle size={18} /> : <X size={18} />}
+          {message.text}
+          <button onClick={() => setMessage(null)} className="ml-auto"><X size={16} /></button>
+        </div>
+      )}
+
+      {/* Search + Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="flex items-center gap-2 bg-white/80 rounded-2xl px-4 py-2 border border-stone-100 shadow-sm flex-1">
           <Search size={16} className="text-stone-300" />
@@ -49,6 +144,7 @@ export default function ChantiersPage() {
         </div>
       </div>
 
+      {/* Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.length === 0 ? (
           <p className="col-span-full text-center text-stone-400 py-16">Aucun chantier trouvé.</p>
@@ -82,6 +178,239 @@ export default function ChantiersPage() {
           );
         })}
       </div>
+
+      {/* ═══ WIZARD MODAL ═══ */}
+      {showWizard && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+            {/* Progress bar */}
+            <div className="flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-8 py-5 border-b border-stone-100">
+              {[1, 2, 3].map(s => (
+                <div key={s} className="flex items-center flex-1 last:flex-none">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                    step > s ? 'bg-emerald-500 text-white' : step === s ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-stone-200 text-stone-400'
+                  }`}>
+                    {step > s ? <CheckCircle size={18} /> : s}
+                  </div>
+                  <span className={`ml-3 text-xs font-semibold hidden sm:block ${
+                    step >= s ? 'text-stone-800' : 'text-stone-300'
+                  }`}>
+                    {s === 1 ? 'Client' : s === 2 ? 'Complexité' : 'Documents'}
+                  </span>
+                  {s < 3 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
+                </div>
+              ))}
+              <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
+            </div>
+
+            <form onSubmit={handleCreer} className="p-8">
+              {/* ═══ STEP 1: CLIENT ═══ */}
+              {step === 1 && (
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Building2 size={18} className="text-indigo-500" />
+                      <h4 className="font-bold text-stone-700">Informations Générales & Client</h4>
+                    </div>
+                    <p className="text-xs text-stone-400 mb-4">Saisissez les détails du projet et du client</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Nom du projet *</label>
+                        <input value={form.nom_projet} onChange={e => setForm({...form, nom_projet: e.target.value})} required
+                          placeholder="Ex: Clinique Saint-Charles"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><User size={12} className="inline mr-1" />Nom du client</label>
+                          <input value={form.client_nom} onChange={e => setForm({...form, client_nom: e.target.value})}
+                            placeholder="Dr. Martin" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><Phone size={12} className="inline mr-1" />Téléphone</label>
+                          <input value={form.client_telephone} onChange={e => setForm({...form, client_telephone: e.target.value})}
+                            placeholder="+213..." className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Adresse du chantier</label>
+                          <input value={form.client_adresse} onChange={e => setForm({...form, client_adresse: e.target.value})}
+                            placeholder="15 Rue des Capucins, Alger" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Rayon géofencing (m)</label>
+                          <input value={form.rayon_geofencing} onChange={e => setForm({...form, rayon_geofencing: e.target.value})}
+                            type="number" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Latitude *</label>
+                          <input value={form.latitude} onChange={e => setForm({...form, latitude: e.target.value})} required
+                            type="number" step="any" placeholder="36.7525" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Longitude *</label>
+                          <input value={form.longitude} onChange={e => setForm({...form, longitude: e.target.value})} required
+                            type="number" step="any" placeholder="3.0588" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ STEP 2: COMPLEXITÉ ═══ */}
+              {step === 2 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <HardHat size={18} className="text-amber-500" />
+                    <h4 className="font-bold text-stone-700">Complexité du Chantier</h4>
+                  </div>
+                  <p className="text-xs text-stone-400 mb-6">Évaluez la difficulté de la gaine pour déterminer les délais et les alertes</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {COMPLEXITE_OPTIONS.map(opt => {
+                      const Icon = opt.icon;
+                      const active = form.complexite === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setForm({...form, complexite: opt.value})}
+                          className={`p-5 rounded-2xl border-2 text-center transition-all ${
+                            active
+                              ? opt.value === 'DIFFICILE'
+                                ? 'border-rose-400 bg-rose-50 shadow-lg shadow-rose-100'
+                                : opt.value === 'MOYENNE'
+                                ? 'border-amber-400 bg-amber-50 shadow-lg shadow-amber-100'
+                                : 'border-emerald-400 bg-emerald-50 shadow-lg shadow-emerald-100'
+                              : 'border-stone-200 bg-white hover:border-stone-300'
+                          }`}
+                        >
+                          <div className={`w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center ${
+                            opt.value === 'DIFFICILE' ? 'bg-rose-100 text-rose-600' :
+                            opt.value === 'MOYENNE' ? 'bg-amber-100 text-amber-600' :
+                            'bg-emerald-100 text-emerald-600'
+                          }`}>
+                            <Icon size={24} />
+                          </div>
+                          <p className="font-bold text-stone-800 mb-1">{opt.label}</p>
+                          <p className="text-xs text-stone-400 leading-relaxed">{opt.desc}</p>
+                          {opt.value === 'DIFFICILE' && (
+                            <span className="inline-block mt-2 text-[10px] font-bold text-rose-500 bg-rose-100 px-2 py-0.5 rounded-full">
+                              ⚠ Alerte Prioritaire
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ STEP 3: DOCUMENTS ═══ */}
+              {step === 3 && (
+                <div className="space-y-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Upload size={18} className="text-purple-500" />
+                      <h4 className="font-bold text-stone-700">Documents Techniques & Fichiers CAD</h4>
+                    </div>
+                    <p className="text-xs text-stone-400 mb-4">Ajoutez les plans et la fiche technique</p>
+                  </div>
+
+                  {/* DXF Upload */}
+                  <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
+                    dxfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'
+                  }`}>
+                    {dxfFile ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <FileText size={24} className="text-emerald-500" />
+                          <div className="text-left">
+                            <p className="text-sm font-semibold text-stone-700">{dxfFile.name}</p>
+                            <p className="text-xs text-stone-400">{(dxfFile.size / 1024).toFixed(0)} KB</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setDxfFile(null)} className="text-rose-400 hover:text-rose-600"><X size={18} /></button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block">
+                        <FileText size={32} className="text-stone-300 mx-auto mb-2" />
+                        <p className="text-sm font-semibold text-stone-500">Fichier CAD / Plan</p>
+                        <p className="text-xs text-stone-400 mt-1">Déposez un fichier .DXF ou .PDF</p>
+                        <input type="file" accept=".dxf,.pdf,.dwg" onChange={e => setDxfFile(e.target.files?.[0] || null)}
+                          className="hidden" />
+                        <span className="inline-block mt-3 text-xs font-medium text-indigo-500 bg-indigo-50 px-3 py-1.5 rounded-full">Parcourir</span>
+                      </label>
+                    )}
+                  </div>
+
+                  {/* PDF Upload */}
+                  <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
+                    pdfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'
+                  }`}>
+                    {pdfFile ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <FileText size={24} className="text-emerald-500" />
+                          <div className="text-left">
+                            <p className="text-sm font-semibold text-stone-700">{pdfFile.name}</p>
+                            <p className="text-xs text-stone-400">{(pdfFile.size / 1024).toFixed(0)} KB</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setPdfFile(null)} className="text-rose-400 hover:text-rose-600"><X size={18} /></button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block">
+                        <FileText size={32} className="text-stone-300 mx-auto mb-2" />
+                        <p className="text-sm font-semibold text-stone-500">Fiche Technique</p>
+                        <p className="text-xs text-stone-400 mt-1">Déposez la fiche technique (.PDF)</p>
+                        <input type="file" accept=".pdf" onChange={e => setPdfFile(e.target.files?.[0] || null)}
+                          className="hidden" />
+                        <span className="inline-block mt-3 text-xs font-medium text-indigo-500 bg-indigo-50 px-3 py-1.5 rounded-full">Parcourir</span>
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Fiche Technique text */}
+                  <div>
+                    <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Spécifications techniques</label>
+                    <textarea value={form.fiche_technique} onChange={e => setForm({...form, fiche_technique: e.target.value})}
+                      placeholder="Type motorisation, dimensions gaine, vitesse, nombre étages..."
+                      rows={4}
+                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all resize-none" />
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ WIZARD BUTTONS ═══ */}
+              <div className="flex items-center justify-between mt-8 pt-6 border-t border-stone-100">
+                {step > 1 ? (
+                  <button type="button" onClick={() => setStep(step - 1)}
+                    className="flex items-center gap-2 text-sm font-medium text-stone-500 hover:text-stone-700">
+                    <ChevronLeft size={18} /> Retour
+                  </button>
+                ) : <div />}
+                {step < 3 ? (
+                  <button type="button" onClick={() => setStep(step + 1)}
+                    disabled={(step === 1 && (!form.nom_projet || !form.latitude || !form.longitude))}
+                    className="flex items-center gap-2 bg-stone-800 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-stone-900 disabled:opacity-40 transition-all shadow-lg">
+                    Suivant <ChevronRight size={18} />
+                  </button>
+                ) : (
+                  <button type="submit" disabled={creant}
+                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20">
+                    {creant ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                    Créer le Chantier
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
