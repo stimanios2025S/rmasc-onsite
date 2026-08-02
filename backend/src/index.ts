@@ -75,8 +75,10 @@ app.use('/api/equipe', creerEquipeRouter(pool));
 // Routes upload
 app.use('/api/upload', creerUploadRouter(pool));
 
-// Static files (uploads)
-app.use('/uploads', express.static(path.resolve(__dirname, '../../public/uploads')));
+// Static files (uploads) — same dir as upload.controller.ts (backend/public/uploads)
+const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');
+if (!require('fs').existsSync(UPLOADS_DIR)) require('fs').mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Route API chantiers (avec coordonnées pour la carte)
 app.get('/api/chantiers', async (_req, res) => {
