@@ -263,13 +263,13 @@ export default function ChantiersPage() {
               {(c.dxf || c.pdf) && (
                 <div className="flex flex-wrap gap-2 mb-3">
                   {c.dxf && (
-                    <a href={c.dxf} target="_blank" rel="noopener noreferrer"
+                    <a href={`https://onsite.sarl-rmasc.com${c.dxf}`} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-full transition-all">
                       <FileText size={11} /> Plan CAD
                     </a>
                   )}
                   {c.pdf && (
-                    <a href={c.pdf} target="_blank" rel="noopener noreferrer"
+                    <a href={`https://onsite.sarl-rmasc.com${c.pdf}`} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-full transition-all">
                       <FileText size={11} /> Fiche Technique
                     </a>
@@ -591,13 +591,13 @@ export default function ChantiersPage() {
                   <p className="text-[10px] text-stone-400 font-semibold uppercase mb-2">Fichiers attachés</p>
                   <div className="flex flex-wrap gap-2">
                     {editChantier.dxf && (
-                      <a href={editChantier.dxf} target="_blank" rel="noopener noreferrer"
+                      <a href={`https://onsite.sarl-rmasc.com${editChantier.dxf}`} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">
                         <FileText size={12} /> Plan CAD
                       </a>
                     )}
                     {editChantier.pdf && (
-                      <a href={editChantier.pdf} target="_blank" rel="noopener noreferrer"
+                      <a href={`https://onsite.sarl-rmasc.com${editChantier.pdf}`} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 bg-white border border-purple-200 hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-all">
                         <FileText size={12} /> Fiche Technique
                       </a>
