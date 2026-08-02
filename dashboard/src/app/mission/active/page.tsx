@@ -5,7 +5,7 @@ import { getUtilisateur, deconnecter } from '@/lib/auth';
 import {
   HardHat, MapPin, Clock, Wrench, Zap, Shield, AlertTriangle,
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
-  ChevronRight, Phone, Package,
+  ChevronRight, Phone, Package, FileText,
 } from 'lucide-react';
 
 /* ─── TYPES ────────────────────────────────────────────────────────── */
@@ -26,6 +26,25 @@ interface MissionInfo {
   duree_estimee: number;
   date_declenchement: string;
   date_debut: string | null;
+  complexite?: string;
+  dxf_url?: string | null;
+  pdf_url?: string | null;
+  fiche_technique?: Record<string, unknown> | null;
+}
+
+interface EtapeChecklist {
+  id: string;
+  label: string;
+  done: boolean;
+  subtasks?: { label: string; done: boolean }[];
+}
+
+interface ChecklistData {
+  id: string;
+  mission_id: string;
+  phase: string;
+  etapes: EtapeChecklist[];
+  complete: boolean;
 }
 
 interface PointageRec {
@@ -71,9 +90,14 @@ export default function MissionActivePage() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [pointageMsg, setPointageMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showBlocage, setShowBlocage] = useState(false);
-  const [blocageForm, setBlocageForm] = useState({ raison: '', pieceERP: '', priorite: 'moyenne' });
+  const [blocageForm, setBlocageForm] = useState({ raison: '', pieceERP: '', priorite: 'moyenne', stepId: '', motifRetard: '' });
   const [blocageLoading, setBlocageLoading] = useState(false);
+  const [blocagePhoto, setBlocagePhoto] = useState<File | null>(null);
+  const [blocagePhotoPreview, setBlocagePhotoPreview] = useState<string | null>(null);
   const [compteur, setCompteur] = useState('');
+  const [checklist, setChecklist] = useState<ChecklistData | null>(null);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [missionDetail, setMissionDetail] = useState<MissionInfo | null>(null);
 
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
@@ -89,10 +113,16 @@ export default function MissionActivePage() {
       if (missionRes.ok) {
         const m = await missionRes.json();
         setMission(m);
-        // Load pointages
+        // Load pointages + checklist + détails (fichiers, complexité)
         if (m.id) {
-          const pRes = await fetch(`/api/mission/${m.id}/pointages`);
+          const [pRes, cRes, dRes] = await Promise.all([
+            fetch(`/api/mission/${m.id}/pointages`),
+            fetch(`/api/mission/${m.id}/checklist`),
+            fetch(`/api/mission/${m.id}`),
+          ]);
           if (pRes.ok) setPointages(await pRes.json());
+          if (cRes.ok) setChecklist(await cRes.json());
+          if (dRes.ok) setMissionDetail(await dRes.json());
         }
       }
       if (equipeRes.ok) setEquipeStatus(await equipeRes.json());
@@ -160,11 +190,60 @@ export default function MissionActivePage() {
     );
   };
 
-  // Signaler blocage
+  // ─── Checklist interactive ────────────────────────────────────────
+  const toggleEtape = async (index: number) => {
+    if (!checklist || !mission) return;
+    const etapes = JSON.parse(JSON.stringify(checklist.etapes));
+    etapes[index].done = !etapes[index].done;
+    const complete = etapes.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
+    setChecklist({ ...checklist, etapes, complete });
+    setChecklistLoading(true);
+    try {
+      await fetch(`/api/mission/${mission.id}/checklist`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ etapes, complete }),
+      });
+    } catch (_) { /* keep local state */ }
+    setChecklistLoading(false);
+  };
+
+  const toggleSousTache = async (index: number, subIndex: number) => {
+    if (!checklist || !mission) return;
+    const etapes = JSON.parse(JSON.stringify(checklist.etapes));
+    etapes[index].subtasks[subIndex].done = !etapes[index].subtasks[subIndex].done;
+    const complete = etapes.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
+    setChecklist({ ...checklist, etapes, complete });
+    setChecklistLoading(true);
+    try {
+      await fetch(`/api/mission/${mission.id}/checklist`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ etapes, complete }),
+      });
+    } catch (_) { /* keep local state */ }
+    setChecklistLoading(false);
+  };
+
+  // Signaler blocage (avec photo + étape sélectionnée)
   const handleBlocage = async () => {
     if (!mission || !technicienId) return;
     setBlocageLoading(true);
     try {
+      // 1. Upload photo si fournie
+      let photoUrl: string | null = null;
+      if (blocagePhoto) {
+        const fd = new FormData();
+        fd.append('file', blocagePhoto);
+        fd.append('type', 'photo_blocage');
+        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+        if (upRes.ok) {
+          const upData = await upRes.json();
+          photoUrl = upData.url;
+        }
+      }
+
+      // 2. Créer le signalement
       const res = await fetch('/api/mission/blocage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,11 +253,16 @@ export default function MissionActivePage() {
           raison: blocageForm.raison,
           idPieceERP: blocageForm.pieceERP || null,
           priorite: blocageForm.priorite,
+          stepId: blocageForm.stepId || null,
+          motifRetard: blocageForm.motifRetard || null,
+          photoProofUrl: photoUrl,
         }),
       });
       if (res.ok) {
         setShowBlocage(false);
-        setBlocageForm({ raison: '', pieceERP: '', priorite: 'moyenne' });
+        setBlocageForm({ raison: '', pieceERP: '', priorite: 'moyenne', stepId: '', motifRetard: '' });
+        setBlocagePhoto(null);
+        setBlocagePhotoPreview(null);
         setPointageMsg({ type: 'success', text: '✅ Blocage signalé à El Ghani.' });
       } else {
         const d = await res.json();
@@ -189,6 +273,17 @@ export default function MissionActivePage() {
     }
     setBlocageLoading(false);
   };
+
+  // Preview photo
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setBlocagePhoto(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setBlocagePhotoPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  }
 
   // Rest countdown
   const dispoDate = equipeStatus?.disponible_a_partir_de
@@ -305,6 +400,97 @@ export default function MissionActivePage() {
           </div>
         )}
       </div>
+
+      {/* ═══ ALERTE COMPLEXITÉ DIFFICILE ═══ */}
+      {(missionDetail?.complexite === 'DIFFICILE' || mission?.complexite === 'DIFFICILE') && (
+        <div className="mx-4 mb-4 bg-rose-50 border-2 border-rose-300 rounded-3xl p-4 flex items-start gap-3">
+          <AlertTriangle size={24} className="text-rose-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-rose-700 text-sm">⚠ Chantier DIFFICILE</p>
+            <p className="text-xs text-rose-500 mt-0.5">Gaine complexe — soyez vigilant. Priorité haute signalée à El Ghani.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FICHIERS TECHNIQUES (CAD / PDF / Fiche) ═══ */}
+      {(missionDetail?.dxf_url || missionDetail?.pdf_url) && (
+        <div className="mx-4 mb-4 bg-white rounded-3xl shadow-sm border border-stone-100 p-4">
+          <p className="text-xs font-semibold text-stone-400 uppercase mb-3">📄 Documents Techniques</p>
+          <div className="flex flex-wrap gap-2">
+            {missionDetail?.dxf_url && (
+              <a href={`https://onsite.sarl-rmasc.com${missionDetail.dxf_url}`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition-all">
+                <FileText size={14} /> Plan CAD (.dxf)
+              </a>
+            )}
+            {missionDetail?.pdf_url && (
+              <a href={`https://onsite.sarl-rmasc.com${missionDetail.pdf_url}`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-xl transition-all">
+                <FileText size={14} /> Fiche Technique (.pdf)
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ CHECKLIST INTERACTIVE ═══ */}
+      {checklist && (
+        <div className="mx-4 mb-4 bg-white rounded-3xl shadow-sm border border-stone-100 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-stone-400 uppercase">📋 Checklist {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+              {checklist.etapes.filter(e => e.done).length}/{checklist.etapes.length}
+            </span>
+          </div>
+          {/* Barre de progression */}
+          <div className="w-full h-1.5 bg-stone-100 rounded-full mb-4 overflow-hidden">
+            <div className="h-full bg-emerald-400 rounded-full transition-all duration-300"
+              style={{ width: `${(checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100}%` }} />
+          </div>
+          <div className="space-y-1">
+            {checklist.etapes.map((etape, i) => (
+              <div key={etape.id} className="border border-stone-100 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => toggleEtape(i)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-stone-50 transition-colors text-left"
+                >
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all ${
+                    etape.done ? 'bg-emerald-500 text-white' : 'bg-stone-100 text-stone-300 border border-stone-200'
+                  }`}>
+                    {etape.done && <CheckCircle size={13} />}
+                  </div>
+                  <span className={`text-sm flex-1 ${etape.done ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
+                    {i + 1}. {etape.label}
+                  </span>
+                </button>
+                {/* Sous-tâches (Départ / 50% / 100%) */}
+                {etape.subtasks && (
+                  <div className="px-3 pb-2.5 flex gap-2">
+                    {etape.subtasks.map((sub, si) => (
+                      <button
+                        key={si}
+                        onClick={() => toggleSousTache(i, si)}
+                        className={`flex-1 text-[10px] font-semibold px-2 py-1.5 rounded-lg border transition-all ${
+                          sub.done
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-300'
+                            : 'bg-stone-50 text-stone-400 border-stone-200'
+                        }`}
+                      >
+                        {sub.done ? '✓ ' : ''}{sub.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {checklist.complete && (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+              <p className="text-sm font-bold text-emerald-600">🎉 Phase terminée !</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* GPS Pointage Button */}
       <div className="mx-4 mb-4">
