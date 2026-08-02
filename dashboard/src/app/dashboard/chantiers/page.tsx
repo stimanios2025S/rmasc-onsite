@@ -82,6 +82,9 @@ export default function ChantiersPage() {
         rayon_geofencing: parseInt(form.rayon_geofencing) || 50,
         complexite: form.complexite,
         reference_commande_erp: undefined,
+        dxfUrl: dxfUrl || undefined,
+        pdfUrl: pdfUrl || undefined,
+        ficheTechnique: form.fiche_technique || undefined,
       });
 
       // Afficher le succès DANS le modal, puis fermer après 1.5s (pas de fermeture brutale)

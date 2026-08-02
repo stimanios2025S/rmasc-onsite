@@ -100,7 +100,7 @@ app.get('/api/chantiers', async (_req, res) => {
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', async (req, res) => {
   try {
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique } = req.body;
     if (!nom || latitude === undefined || longitude === undefined) {
       return res.status(400).json({ erreur: 'nom, latitude et longitude requis.' });
     }
@@ -109,10 +109,12 @@ app.post('/api/chantiers', async (req, res) => {
 
     const { rows } = await pool.query(
       `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
-                              rayon_geofencing, statut, client_nom, complexite)
-       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, 'planifie', $7, $8)
+                              rayon_geofencing, statut, client_nom, complexite,
+                              dxf_url, pdf_url, fiche_technique)
+       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, 'planifie', $7, $8, $9, $10, $11)
        RETURNING id`,
-      [ref, nom, adresse || null, longitude, latitude, rayon_geofencing || 50, client_nom || null, validComplexity]
+      [ref, nom, adresse || null, longitude, latitude, rayon_geofencing || 50, client_nom || null, validComplexity,
+       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null]
     );
     const chantierId = rows[0].id;
 

@@ -58,6 +58,9 @@ export interface NouveauChantier {
   rayon_geofencing?: number;
   complexite?: string;
   reference_commande_erp?: string;
+  dxfUrl?: string;
+  pdfUrl?: string;
+  ficheTechnique?: string;
 }
 
 export interface CreerChantierResult {
