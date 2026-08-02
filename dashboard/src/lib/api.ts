@@ -91,6 +91,13 @@ export interface NouveauChantier {
   reference_commande_erp?: string;
 }
 
-export async function creerChantier(data: NouveauChantier) {
+export interface CreerChantierResult {
+  chantierId: string;
+  missionId: string | null;
+  equipeNom: string | null;
+  message: string;
+}
+
+export async function creerChantier(data: NouveauChantier): Promise<CreerChantierResult> {
   return apiFetch('/api/chantiers', { method: 'POST', body: JSON.stringify(data) });
 }
