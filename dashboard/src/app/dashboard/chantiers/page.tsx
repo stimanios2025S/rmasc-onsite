@@ -58,10 +58,14 @@ export default function ChantiersPage() {
     return data.url;
   }
 
+  const [successState, setSuccessState] = useState<{ nom: string; equipe: string } | null>(null);
+
   async function handleCreer(e: React.FormEvent) {
     e.preventDefault();
+    if (creant) return; // anti double-clic
     setCreant(true);
     setMessage(null);
+    setSuccessState(null);
     try {
       // Upload files first
       let dxfUrl = form.dxf_url;
@@ -79,15 +83,28 @@ export default function ChantiersPage() {
         complexite: form.complexite,
         reference_commande_erp: undefined,
       });
-      setMessage({ type: 'success', text: res.message || 'Chantier créé avec succès !' });
-      setShowWizard(false);
-      setStep(1);
-      resetForm();
+
+      // Afficher le succès DANS le modal, puis fermer après 1.5s (pas de fermeture brutale)
+      setSuccessState({ nom: form.nom_projet, equipe: res.equipeNom || '—' });
       await loadChantiers();
+      setTimeout(() => {
+        setShowWizard(false);
+        setStep(1);
+        resetForm();
+        setSuccessState(null);
+        setMessage({ type: 'success', text: res.message || 'Chantier créé avec succès !' });
+      }, 1500);
     } catch (e: any) {
       setMessage({ type: 'error', text: e.message || 'Erreur de création.' });
+      setCreant(false);
     }
-    setCreant(false);
+  }
+
+  // Empêcher la touche Entrée de soumettre le formulaire (causait la fermeture auto)
+  function bloquerEntree(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+    }
   }
 
   function resetForm() {
@@ -181,8 +198,22 @@ export default function ChantiersPage() {
 
       {/* ═══ WIZARD MODAL ═══ */}
       {showWizard && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowWizard(false); }}>
+          <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+            {/* Success overlay */}
+            {successState && (
+              <div className="absolute inset-0 z-10 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
+                <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-4 animate-bounce">
+                  <CheckCircle size={40} className="text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-bold text-stone-800 mb-1">Chantier créé !</h3>
+                <p className="text-sm text-stone-500 mb-4">{successState.nom}</p>
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-full">
+                  <HardHat size={14} /> Équipe assignée: {successState.equipe}
+                </span>
+              </div>
+            )}
+
             {/* Progress bar */}
             <div className="flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-8 py-5 border-b border-stone-100">
               {[1, 2, 3].map(s => (
@@ -203,7 +234,7 @@ export default function ChantiersPage() {
               <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
             </div>
 
-            <form onSubmit={handleCreer} className="p-8">
+            <form onSubmit={handleCreer} onKeyDown={bloquerEntree} className="p-8">
               {/* ═══ STEP 1: CLIENT ═══ */}
               {step === 1 && (
                 <div className="space-y-5">
