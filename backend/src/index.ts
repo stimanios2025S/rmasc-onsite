@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { Pool } from 'pg';
 import { ChantierRepository } from './repositories/chantier.repository';
 import { MissionRepository } from './repositories/mission.repository';
@@ -54,6 +55,17 @@ export const blocageService = new BlocageService(blocageRepo, missionRepo, chant
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ─── Rate limiting (sécurité) ──────────────────────────────────────────
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // 300 requêtes par fenêtre
+  message: { erreur: 'Trop de requêtes. Réessayez plus tard.' },
+  keyGenerator: (req) => req.ip || 'unknown',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -194,6 +206,56 @@ app.delete('/api/chantiers/:id', async (req, res) => {
     // Supprimer les missions associées (cascade via chantier)
     await pool.query(`DELETE FROM chantiers WHERE id = $1`, [id]);
     res.json({ message: 'Chantier supprimé.' });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
+// GET /api/chantiers/:id/pointages — pointages GPS réels d'un chantier
+app.get('/api/chantiers/:id/pointages', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT jp.id, jp.type_pointage AS "type",
+              TO_CHAR(jp.horodatage,'YYYY-MM-DD HH24:MI:SS') AS horodatage,
+              jp.distance_chantier_m AS distance, jp.dans_rayon AS conforme,
+              u.prenom || ' ' || u.nom AS technicien_nom
+       FROM journal_pointage_gps jp
+       JOIN ordres_de_mission om ON om.id = jp.ordre_mission_id
+       JOIN utilisateurs u ON u.id = jp.utilisateur_id
+       WHERE om.chantier_id = $1
+       ORDER BY jp.horodatage DESC LIMIT 20`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
+// GET /api/chantiers/:id/detail — détail complet (missions, fichiers, délais)
+app.get('/api/chantiers/:id/detail', async (req, res) => {
+  try {
+    const chantierRes = await pool.query(
+      `SELECT c.*, ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat
+       FROM chantiers c WHERE c.id = $1`, [req.params.id]
+    );
+    if (chantierRes.rows.length === 0) return res.status(404).json({ erreur: 'Introuvable.' });
+    const chantier = chantierRes.rows[0];
+
+    const missionsRes = await pool.query(
+      `SELECT om.id, om.phase, om.statut, om.duree_estimee_jours,
+              TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
+              TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
+              TO_CHAR(om.date_fin_effectif,'YYYY-MM-DD HH24:MI') AS date_fin,
+              e.nom AS equipe_nom,
+              CASE WHEN om.date_fin_effectif IS NOT NULL AND om.duree_estimee_jours IS NOT NULL
+                   THEN EXTRACT(DAY FROM om.date_fin_effectif - om.date_debut_effectif) - om.duree_estimee_jours
+                   ELSE NULL END AS retard_jours
+       FROM ordres_de_mission om JOIN equipes e ON e.id = om.equipe_id
+       WHERE om.chantier_id = $1 ORDER BY om.date_creation`, [req.params.id]
+    );
+
+    res.json({ chantier, missions: missionsRes.rows });
   } catch (err: any) {
     res.status(500).json({ erreur: err.message });
   }

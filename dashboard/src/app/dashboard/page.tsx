@@ -12,6 +12,7 @@ import {
   Clock, Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
   ArrowUpRight, CheckCheck, Search,
 } from 'lucide-react';
+import MapView from '@/components/MapView';
 
 const STATUT_BADGE: Record<string, string> = {
   DISPONIBLE: 'bg-emerald-50 text-emerald-600', EN_MISSION: 'bg-indigo-50 text-indigo-600',
@@ -156,7 +157,17 @@ export default function DashboardPage() {
 
       {/* Map + Incidents */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2"><MapWidget chantiers={chantiers} /></div>
+        <div className="lg:col-span-2">
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm overflow-hidden mb-4">
+            <div className="px-6 py-4 border-b border-stone-100 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><MapPin size={18} className="text-indigo-600" /></div>
+              <h2 className="font-bold text-stone-800">Carte des Chantiers</h2>
+              <span className="text-xs text-stone-400">({chantiers.length} sites)</span>
+            </div>
+            <MapView chantiers={chantiers} />
+          </div>
+          <MapWidget chantiers={chantiers} />
+        </div>
         <div><IncidentsWidget incidents={incidents} /></div>
       </div>
 

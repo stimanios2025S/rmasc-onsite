@@ -1,7 +1,15 @@
 'use client';
-import { X, MapPin, Users, Clock, Wrench, Zap, Shield, CheckCircle, AlertTriangle } from 'lucide-react';
-import type { Chantier, PointageRecent } from '@/types';
-import { POINTAGES_MOCK } from '@/data/mock-data';
+import { useEffect, useState } from 'react';
+import { X, MapPin, Users, Clock, Wrench, Zap, Shield, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import type { Chantier } from '@/types';
+
+interface PointageReal {
+  id: string;
+  type: string;
+  horodatage: string;
+  distance: number;
+  conforme: boolean;
+}
 
 const ICONE_PHASE: Record<string, { icon: any; couleur: string; fond: string; libelle: string }> = {
   mecanique: { icon: Wrench, couleur: '#2196F3', fond: '#E8F4FD', libelle: 'Mecanique' },
@@ -14,9 +22,22 @@ export default function SlideOverPanel({ chantier, ouvert, onFermer }: {
   ouvert: boolean;
   onFermer: () => void;
 }) {
+  const [pointages, setPointages] = useState<PointageReal[]>([]);
+  const [loadingPointages, setLoadingPointages] = useState(false);
+
+  useEffect(() => {
+    if (!chantier || !ouvert) return;
+    setLoadingPointages(true);
+    // Trouver la mission active du chantier et charger ses pointages réels
+    fetch(`/api/chantiers/${chantier.id}/pointages`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setPointages(data))
+      .catch(() => setPointages([]))
+      .finally(() => setLoadingPointages(false));
+  }, [chantier, ouvert]);
+
   if (!chantier) return null;
   const phase = ICONE_PHASE[chantier.phase];
-  const pointages = POINTAGES_MOCK[chantier.id] ?? [];
   const IconPhase = phase.icon;
 
   return (
@@ -111,8 +132,8 @@ export default function SlideOverPanel({ chantier, ouvert, onFermer }: {
                   <div key={p.id} className="flex items-center gap-3 bg-[#F4F6FB] rounded-xl px-4 py-3">
                     <div className={`w-2 h-2 rounded-full ${p.conforme ? 'bg-[#20C997]' : 'bg-[#FF5252]'}`} />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-[#1E2235]">{p.technicienNom}</p>
-                      <p className="text-xs text-[#6B7294]">{p.type === 'arrivee' ? 'Arrivee' : 'Depart'} — {p.distanceM}m</p>
+                      <p className="text-sm font-medium text-[#1E2235]">{p.technicien_nom || 'Technicien'}</p>
+                      <p className="text-xs text-[#6B7294]">{p.type === 'arrivee' ? 'Arrivee' : 'Depart'} — {p.distance}m</p>
                     </div>
                     <span className="text-[10px] text-[#A8AEC5]">{new Date(p.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
