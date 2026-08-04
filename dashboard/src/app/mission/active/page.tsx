@@ -292,7 +292,10 @@ export default function MissionActivePage() {
       })
     : '';
 
-  const phaseEquipe = equipeStatus?.type || '';
+  // Nom d'équipe : priorité au JWT (instantané), fallback API
+  const nomEquipeJWT = user?.nomEquipe || user?.identifiant || '';
+  const phaseEquipe = equipeStatus?.type || user?.typeEquipe || '';
+  const equipeNom = equipeStatus?.nom || nomEquipeJWT;
   const IconPhase = PHASE_ICON[phaseEquipe] || HardHat;
 
   if (loading) {
@@ -306,7 +309,7 @@ export default function MissionActivePage() {
   // ═══════════════ STATE C: DISPONIBLE ═══════════════════════════════
   if (equipeStatus?.statut_equipe === 'DISPONIBLE' && !mission) {
     return (
-      <TechnicianShell equipeNom={equipeStatus?.nom || ''} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
+      <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
         <div className="flex flex-col items-center justify-center py-16 px-6">
           <div className="w-20 h-20 rounded-full bg-stone-100 flex items-center justify-center mb-6">
             <CheckCircle size={40} className="text-stone-300" />
@@ -321,7 +324,7 @@ export default function MissionActivePage() {
   // ═══════════════ STATE B: EN REPOS ═════════════════════════════════
   if (equipeStatus?.statut_equipe === 'EN_REPOS') {
     return (
-      <TechnicianShell equipeNom={equipeStatus?.nom || ''} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
+      <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
         <div className="flex flex-col items-center justify-center py-12 px-6">
           <div className="w-24 h-24 rounded-full bg-amber-50 flex items-center justify-center mb-6">
             <Clock size={48} className="text-amber-400" />
@@ -350,7 +353,7 @@ export default function MissionActivePage() {
   const aBloque = mission?.statut === 'bloque';
 
   return (
-    <TechnicianShell equipeNom={equipeStatus?.nom || ''} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
+    <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
       {/* Message flash */}
       {pointageMsg && (
         <div className={`mx-4 mb-4 px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-2 ${

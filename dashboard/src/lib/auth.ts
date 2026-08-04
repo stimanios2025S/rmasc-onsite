@@ -7,6 +7,8 @@ export interface Utilisateur {
   role: 'technicien' | 'ingenieur' | 'dispatcher' | 'administrateur';
   equipeId?: string;
   telephone?: string;
+  nomEquipe?: string;
+  typeEquipe?: string;
 }
 
 export function getToken(): string | null {

@@ -18,8 +18,12 @@ export function creerAuthRouter(pool: Pool, logger: LoggerService): Router {
       }
 
       const { rows } = await pool.query(
-        `SELECT id, identifiant, email, prenom, nom, role, equipe_id AS "equipeId", mot_de_passe_hash
-         FROM utilisateurs WHERE identifiant = $1 AND actif = TRUE`,
+        `SELECT u.id, u.identifiant, u.email, u.prenom, u.nom, u.role,
+                u.equipe_id AS "equipeId", u.mot_de_passe_hash,
+                e.nom AS "nomEquipe", e.type AS "typeEquipe"
+         FROM utilisateurs u
+         LEFT JOIN equipes e ON e.id = u.equipe_id
+         WHERE u.identifiant = $1 AND u.actif = TRUE`,
         [identifiant]
       );
 
@@ -45,11 +49,13 @@ export function creerAuthRouter(pool: Pool, logger: LoggerService): Router {
         prenom: user.prenom,
         nom: user.nom,
         equipeId: user.equipeId,
+        nomEquipe: user.nomEquipe,
+        typeEquipe: user.typeEquipe,
       };
 
       const token = genererToken(payload);
 
-      logger.info('Connexion réussie', { identifiant, role: user.role });
+      logger.info('Connexion réussie', { identifiant, role: user.role, equipe: user.nomEquipe });
 
       res.json({
         token,
@@ -61,6 +67,8 @@ export function creerAuthRouter(pool: Pool, logger: LoggerService): Router {
           nom: user.nom,
           role: user.role,
           equipeId: user.equipeId,
+          nomEquipe: user.nomEquipe,
+          typeEquipe: user.typeEquipe,
         },
       });
     } catch (err: any) {
