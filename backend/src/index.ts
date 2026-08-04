@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { Pool } from 'pg';
 import { ChantierRepository } from './repositories/chantier.repository';
@@ -54,6 +55,7 @@ export const blocageService = new BlocageService(blocageRepo, missionRepo, chant
 
 // ─── Serveur HTTP Express ──────────────────────────────────────────────
 const app = express();
+app.use(compression()); // gzip — réponses plus rapides
 app.use(cors());
 app.use(express.json());
 

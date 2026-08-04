@@ -54,14 +54,16 @@ export default function DashboardPage() {
   // Sync temps réel : polling 15s quand l'onglet est visible (performance)
   useEffect(() => {
     loadAll();
+    // Polling 30s seulement quand visible (performance)
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
-    }, 15000);
+    }, 30000);
     return () => clearInterval(i);
   }, []);
 
   async function loadAll() {
     try {
+      // Tout en parallèle, une seule passe (pas de doublon chantiers)
       const [s, d, e, c, i, r] = await Promise.all([
         fetchStats(), fetchDemandes(), fetchEquipes(),
         fetchChantiers(), fetchIncidents(),
@@ -69,9 +71,6 @@ export default function DashboardPage() {
       ]);
       setStats(s); setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
       setRetards(r as any[]);
-      // Roadmap: missions par chantier (état réel + équipe)
-      const rm = await apiFetch('/chantiers').catch(() => []);
-      setChantiers(rm as ChantierData[]);
     } catch (_) { /* keep stale */ }
     setLoading(false);
   }

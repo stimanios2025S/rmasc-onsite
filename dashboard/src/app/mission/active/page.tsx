@@ -66,8 +66,8 @@ export default function MissionActivePage() {
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
 
-  /* ═══ SYNC TEMPS RÉEL (polling 5s) ═══ */
-  const loadMission = useCallback(async () => {
+  /* ═══ SYNC TEMPS RÉEL (polling 30s) ═══ */
+  const loadMission = useCallback(async (chargeDetail: boolean = false) => {
     if (!equipeId) { setLoading(false); return; }
     try {
       const [missionRes, equipeRes] = await Promise.all([
@@ -76,8 +76,11 @@ export default function MissionActivePage() {
       ]);
       if (missionRes.ok) {
         const m = await missionRes.json();
+        const missionChangee = m.id !== missionRef.current?.id;
         setMission(m);
-        if (m.id) {
+        // Charger checklist/pointages/détails seulement si :
+        // - au montage (chargeDetail=true) OU mission changée
+        if (m.id && (chargeDetail || missionChangee)) {
           const [pRes, cRes, dRes] = await Promise.all([
             fetch(`/api/mission/${m.id}/pointages`),
             fetch(`/api/mission/${m.id}/checklist`),
@@ -89,7 +92,6 @@ export default function MissionActivePage() {
         }
       } else if (missionRef.current) {
         // Garder la mission affichée si API retourne null (transition)
-        // Ne rien faire — on garde l'état précédent
       } else {
         setMission(null);
         setChecklist(null);
@@ -105,14 +107,14 @@ export default function MissionActivePage() {
   // Maintenir la référence de mission à jour
   useEffect(() => { missionRef.current = mission; }, [mission]);
 
-  useEffect(() => { loadMission(); }, [loadMission]);
+  // Chargement initial : mission + checklist + pointages + détails
+  useEffect(() => { loadMission(true); }, [loadMission]);
 
-  // Polling intelligent : 15s (équilibre sync + performance)
-  // Ne recharge que si l'onglet est visible (économie de requêtes)
+  // Polling : 30s, ne recharge que mission + statut équipe (léger)
   useEffect(() => {
     const iv = setInterval(() => {
-      if (document.visibilityState === 'visible') loadMission();
-    }, 15000);
+      if (document.visibilityState === 'visible') loadMission(false);
+    }, 30000);
     return () => clearInterval(iv);
   }, [loadMission]);
 

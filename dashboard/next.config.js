@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  compress: true, // gzip intégré
+  poweredByHeader: false,
   async rewrites() {
     return [
       {
@@ -11,14 +13,17 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Prevent Cloudflare/browser from caching HTML pages (causes stale unstyled pages)
+        // Pages HTML: pas de cache (contenu dynamique)
         source: '/:path*',
         headers: [
-          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
-          { key: 'Pragma', value: 'no-cache' },
-          { key: 'Expires', value: '0' },
-          { key: 'CDN-Cache-Control', value: 'no-store' },
-          { key: 'Cloudflare-CDN-Cache-Control', value: 'no-store' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+        ],
+      },
+      {
+        // Assets statiques (_next/static): cache long (rapidité)
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
     ];
