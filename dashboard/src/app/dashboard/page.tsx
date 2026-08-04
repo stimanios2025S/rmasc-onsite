@@ -63,6 +63,9 @@ export default function DashboardPage() {
       ]);
       setStats(s); setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
       setRetards(r as any[]);
+      // Roadmap: missions par chantier (état réel + équipe)
+      const rm = await apiFetch('/chantiers').catch(() => []);
+      setChantiers(rm as ChantierData[]);
     } catch (_) { /* keep stale */ }
     setLoading(false);
   }
@@ -218,6 +221,80 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ═══ ROADMAP DES CHANTIERS (état réel + équipe) ═══ */}
+      <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8 overflow-hidden">
+        <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
+              <MapPin size={18} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="font-bold text-stone-800">Roadmap des Chantiers</h2>
+              <p className="text-xs text-stone-400">État réel des phases et équipes assignées</p>
+            </div>
+          </div>
+        </div>
+        <div className="divide-y divide-stone-50">
+          {chantiers.length === 0 ? (
+            <p className="py-12 text-center text-stone-400 text-sm">Aucun chantier actif.</p>
+          ) : chantiers.map(c => (
+            <div key={c.id} className="px-6 py-4 hover:bg-stone-50/50 transition-colors">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-stone-800 text-sm">{c.nom}</span>
+                    <span className="text-[10px] font-mono text-stone-400">{c.ref}</span>
+                    {c.equipe_actuelle && (
+                      <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                        👥 {c.equipe_actuelle}
+                      </span>
+                    )}
+                    {c.phase_actuelle && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        c.phase_actuelle === 'mecanique' ? 'bg-blue-50 text-blue-600'
+                        : c.phase_actuelle === 'electrique' ? 'bg-orange-50 text-orange-600'
+                        : 'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {c.phase_actuelle === 'mecanique' ? '🔧 Méca' : c.phase_actuelle === 'electrique' ? '⚡ Élec' : '🛡️ Vérif'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${(c.en_cours ?? 0) > 0 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
+                      {c.en_cours ?? 0} en cours
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${(c.en_attente ?? 0) > 0 ? 'bg-indigo-400' : 'bg-stone-200'}`} />
+                      {c.en_attente ?? 0} en attente
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${(c.bloquee ?? 0) > 0 ? 'bg-rose-400' : 'bg-stone-200'}`} />
+                      {c.bloquee ?? 0} bloquées
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${(c.terminee ?? 0) > 0 ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                      {c.terminee ?? 0} terminées
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                    c.statut === 'en_cours' ? 'bg-emerald-50 text-emerald-600'
+                    : c.statut === 'bloque' ? 'bg-rose-50 text-rose-600'
+                    : c.statut === 'termine' || c.statut === 'reception_officielle' ? 'bg-stone-100 text-stone-500'
+                    : 'bg-indigo-50 text-indigo-600'
+                  }`}>
+                    {c.statut === 'en_cours' ? 'En cours' : c.statut === 'bloque' ? 'Bloqué' : c.statut === 'termine' ? 'Terminé' : c.statut === 'reception_officielle' ? 'Réceptionné' : 'Planifié'}
+                  </span>
+                  <span className="text-[9px] text-stone-300">{c.date_creation}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Team Matrix */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8">

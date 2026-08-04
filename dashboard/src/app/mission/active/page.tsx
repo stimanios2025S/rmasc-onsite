@@ -146,11 +146,33 @@ export default function MissionActivePage() {
     );
   };
 
-  /* ═══ CHECKLIST ═══ */
+  /* ═══ CHECKLIST SÉQUENTIELLE ═══ */
+  // Règle: on ne peut cocher l'étape N que si N-1 est complète
   const toggleEtape = async (index: number) => {
     if (!checklist || !mission) return;
     const etapes = JSON.parse(JSON.stringify(checklist.etapes));
-    etapes[index].done = !etapes[index].done;
+
+    // Si on dé-coche, c'est permis
+    if (etapes[index].done) {
+      etapes[index].done = false;
+    } else {
+      // Si on coche: l'étape précédente doit être complète
+      if (index > 0) {
+        const prev = etapes[index - 1];
+        const prevComplete = prev.done && (!prev.subtasks || prev.subtasks.every((s: any) => s.done));
+        if (!prevComplete) {
+          setPointageMsg({ type: 'error', text: `⚠ Complétez d'abord l'étape ${index} avant de passer à l'étape ${index + 1}.` });
+          return;
+        }
+      }
+      etapes[index].done = true;
+    }
+
+    // Si l'étape a des sous-tâches, on les remet à false quand on décoche
+    if (!etapes[index].done && etapes[index].subtasks) {
+      etapes[index].subtasks.forEach((s: any) => s.done = false);
+    }
+
     const complete = etapes.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
     setChecklist({ ...checklist, etapes, complete }); setChecklistLoading(true);
     try {
@@ -164,6 +186,12 @@ export default function MissionActivePage() {
   const toggleSousTache = async (index: number, subIndex: number) => {
     if (!checklist || !mission) return;
     const etapes = JSON.parse(JSON.stringify(checklist.etapes));
+
+    // L'étape parente doit être cochée pour cocher ses sous-tâches
+    if (!etapes[index].done) {
+      setPointageMsg({ type: 'error', text: '⚠ Cochez d\'abord l\'étape principale.' });
+      return;
+    }
     etapes[index].subtasks[subIndex].done = !etapes[index].subtasks[subIndex].done;
     const complete = etapes.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
     setChecklist({ ...checklist, etapes, complete }); setChecklistLoading(true);

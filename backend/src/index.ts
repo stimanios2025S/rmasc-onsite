@@ -21,6 +21,7 @@ import { creerAdminRouter } from './api/admin.controller';
 import { creerMissionRouter } from './api/mission.controller';
 import { creerEquipeRouter } from './api/equipe.controller';
 import { creerUploadRouter } from './api/upload.controller';
+import { creerGeofencingRouter } from './api/geofencing.controller';
 import path from 'path';
 import { creerPages } from './views';
 
@@ -87,6 +88,9 @@ app.use('/api/equipe', creerEquipeRouter(pool));
 // Routes upload
 app.use('/api/upload', creerUploadRouter(pool));
 
+// Routes géofencing (suivi position + alertes sortie zone + roadmap)
+app.use('/api/geofencing', creerGeofencingRouter(pool, logger));
+
 // Static files (uploads) — same dir as upload.controller.ts (backend/public/uploads)
 const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');
 if (!require('fs').existsSync(UPLOADS_DIR)) require('fs').mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -101,6 +105,13 @@ app.get('/api/chantiers', async (_req, res) => {
               ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_cours') AS en_cours,
+              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_attente') AS en_attente,
+              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='bloque') AS bloquee,
+              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='termine') AS terminee,
+              (SELECT e.nom FROM ordres_de_mission om JOIN equipes e ON e.id=om.equipe_id
+               WHERE om.chantier_id=c.id AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS equipe_actuelle,
+              (SELECT om.phase FROM ordres_de_mission om WHERE om.chantier_id=c.id
+               AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS phase_actuelle,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
        FROM chantiers c ORDER BY c.date_creation DESC`
     );

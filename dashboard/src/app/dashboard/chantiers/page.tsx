@@ -6,6 +6,7 @@ import {
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
   User, Phone, Clock, AlertTriangle, HardHat, Send,
 } from 'lucide-react';
+import MapPicker from '@/components/MapPicker';
 
 const PHASE_ICON: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield };
 const PHASE_COLOR: Record<string, string> = { mecanique: 'text-blue-600 bg-blue-50', electrique: 'text-orange-600 bg-orange-50', verification: 'text-emerald-600 bg-emerald-50' };
@@ -376,6 +377,18 @@ export default function ChantiersPage() {
                           <input value={form.longitude} onChange={e => setForm({...form, longitude: e.target.value})} required
                             type="number" step="any" placeholder="3.0588" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
+                      </div>
+
+                      {/* ═══ CARTE INTERACTIVE — positionner le chantier ═══ */}
+                      <div>
+                        <label className="text-xs font-semibold text-stone-500 mb-1.5 block">
+                          <MapPin size={12} className="inline mr-1" />Position du chantier sur la carte
+                        </label>
+                        <MapPicker
+                          initialLat={form.latitude ? parseFloat(form.latitude) : 36.75}
+                          initialLng={form.longitude ? parseFloat(form.longitude) : 3.05}
+                          onPositionChange={(lat, lng) => setForm({...form, latitude: String(lat), longitude: String(lng)})}
+                        />
                       </div>
                     </div>
                   </div>
