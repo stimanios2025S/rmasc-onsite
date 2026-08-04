@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { estConnecte, getUtilisateur } from '@/lib/auth';
+import { apiFetch } from '@/lib/auth';
 import {
   fetchStats, fetchDemandes, fetchEquipes, fetchChantiers, fetchIncidents,
   approuverDemande, refuserDemande,
@@ -10,7 +11,7 @@ import {
 import {
   HardHat, AlertTriangle, Users, MapPin, Bell, CheckCircle, XCircle,
   Clock, Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
-  ArrowUpRight, CheckCheck, Search,
+  ArrowUpRight, CheckCheck, Search, Timer,
 } from 'lucide-react';
 import MapView from '@/components/MapView';
 
@@ -43,21 +44,25 @@ export default function DashboardPage() {
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [chantiers, setChantiers] = useState<ChantierData[]>([]);
   const [incidents, setIncidents] = useState<IncidentData[]>([]);
+  const [retards, setRetards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showEquipes, setShowEquipes] = useState(true);
   const [showIncidents, setShowIncidents] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
-  useEffect(() => { loadAll(); const i = setInterval(loadAll, 30000); return () => clearInterval(i); }, []);
+  // Sync temps réel : polling 5s (technicien ↔ admin)
+  useEffect(() => { loadAll(); const i = setInterval(loadAll, 5000); return () => clearInterval(i); }, []);
 
   async function loadAll() {
     try {
-      const [s, d, e, c, i] = await Promise.all([
+      const [s, d, e, c, i, r] = await Promise.all([
         fetchStats(), fetchDemandes(), fetchEquipes(),
         fetchChantiers(), fetchIncidents(),
+        apiFetch('/admin/retards').catch(() => []),
       ]);
       setStats(s); setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
+      setRetards(r as any[]);
     } catch (_) { /* keep stale */ }
     setLoading(false);
   }
@@ -170,6 +175,49 @@ export default function DashboardPage() {
         </div>
         <div><IncidentsWidget incidents={incidents} /></div>
       </div>
+
+      {/* ═══ RETARDS SIGNALÉS (sync technicien → admin) ═══ */}
+      {retards.length > 0 && (
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-amber-200 shadow-sm mb-8 overflow-hidden">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-4 border-b border-amber-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                <Timer size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <h2 className="font-bold text-stone-800">⏰ Retards Signalés <span className="text-stone-400 font-normal">({retards.length})</span></h2>
+                <p className="text-xs text-stone-400">Signalés par les équipes en temps réel</p>
+              </div>
+            </div>
+          </div>
+          <div className="divide-y divide-stone-100">
+            {retards.slice(0, 8).map((r, i) => (
+              <div key={i} className="px-6 py-4 hover:bg-amber-50/30 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-stone-800">{r.nom_chantier}</span>
+                      <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{r.equipe_nom}</span>
+                      <span className="text-[10px] font-semibold text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">{r.phase}</span>
+                    </div>
+                    <p className="text-sm text-stone-600 mt-1.5">{r.motif}</p>
+                    {r.etape_id && <p className="text-xs text-stone-400 mt-0.5">Étape: {r.etape_id}</p>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] text-stone-400 whitespace-nowrap">{timeAgo(r.moment)}</span>
+                    {r.photo_url && (
+                      <a href={`https://onsite.sarl-rmasc.com${r.photo_url}`} target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-1 rounded-full hover:bg-amber-100">
+                        📷 Preuve
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Team Matrix */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8">
