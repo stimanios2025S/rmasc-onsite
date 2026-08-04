@@ -103,8 +103,9 @@ export default function TechnicianMap({ chantierLat, chantierLng, rayon, nomChan
           iconAnchor: [10, 10],
         });
 
-        L.marker([p.lat, p.lng], { icon: userIcon, options: { userMarker: true } as any })
-          .addTo(map)
+        const userMarker = L.marker([p.lat, p.lng], { icon: userIcon });
+        (userMarker as any).options.userMarker = true;
+        userMarker.addTo(map)
           .bindPopup('<strong style="font-family:sans-serif;font-size:12px">📍 Votre position</strong>');
 
         map.setView([p.lat, p.lng], 16);

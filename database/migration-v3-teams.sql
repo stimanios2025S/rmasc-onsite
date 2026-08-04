@@ -48,16 +48,17 @@ INSERT INTO equipes (id, nom, type, couleur_hex) VALUES
 ('e1000000-0000-4000-8000-000000000021','Verif-01','mixte','#4CAF50');
 
 -- ═══ 3. CRÉER LES COMPTES (mot de passe = rmasc2026) ═══
+-- UUID format: e1000000-0000-4000-8000-XXXXXXXXXXXX (12 chars suffix)
 INSERT INTO utilisateurs (identifiant, email, mot_de_passe_hash, prenom, nom, role, equipe_id)
 SELECT 'meca'||i, 'meca'||i||'@rmasc.dz', crypt('rmasc2026', gen_salt('bf')),
        'Meca-'||LPAD(i::text,2,'0'), '', 'technicien',
-       ('e1000000-0000-4000-8000-00000000000'||LPAD(i::text,2,'0'))::uuid
+       ('e1000000-0000-4000-8000-' || LPAD(i::text, 12, '0'))::uuid
 FROM generate_series(1,10) i;
 
 INSERT INTO utilisateurs (identifiant, email, mot_de_passe_hash, prenom, nom, role, equipe_id)
 SELECT 'elec'||i, 'elec'||i||'@rmasc.dz', crypt('rmasc2026', gen_salt('bf')),
        'Elec-'||LPAD(i::text,2,'0'), '', 'technicien',
-       ('e1000000-0000-4000-8000-0000000000'||LPAD((i+10)::text,2,'0'))::uuid
+       ('e1000000-0000-4000-8000-' || LPAD((i+10)::text, 12, '0'))::uuid
 FROM generate_series(1,10) i;
 
 INSERT INTO utilisateurs (identifiant, email, mot_de_passe_hash, prenom, nom, role, equipe_id)
