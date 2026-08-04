@@ -119,7 +119,7 @@ export default function ChantiersPage() {
 
   /* ─── ÉDITION / SUPPRESSION ─────────────────────────────────────── */
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE' });
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50 });
   const [saving, setSaving] = useState(false);
 
   function ouvrirEdition(c: ChantierData) {
@@ -130,6 +130,7 @@ export default function ChantiersPage() {
       adresse: '',
       latitude: c.lat?.toString() || '',
       longitude: c.lng?.toString() || '',
+      rayonGeofencing: 50,
       complexite: c.complexite || 'MOYENNE',
     });
   }
@@ -145,6 +146,7 @@ export default function ChantiersPage() {
         latitude: parseFloat(editForm.latitude),
         longitude: parseFloat(editForm.longitude),
         complexite: editForm.complexite,
+        rayon_geofencing: editForm.rayonGeofencing || 50,
       });
       setMessage({ type: 'success', text: 'Chantier mis à jour.' });
       setEditChantier(null);
@@ -375,9 +377,16 @@ export default function ChantiersPage() {
                             placeholder="15 Rue des Capucins, Alger" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Rayon géofencing (m)</label>
-                          <input value={form.rayon_geofencing} onChange={e => setForm({...form, rayon_geofencing: e.target.value})}
-                            type="number" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                          <label className="text-xs font-semibold text-stone-500 mb-1.5 block">
+                            📏 Zone de travail — métrage (m)
+                          </label>
+                          <div className="relative">
+                            <input value={form.rayon_geofencing} onChange={e => setForm({...form, rayon_geofencing: e.target.value})}
+                              type="number" min="10" max="500" placeholder="50"
+                              className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-stone-400 font-semibold">mètres</span>
+                          </div>
+                          <p className="text-[10px] text-stone-400 mt-1">Rayon autour du point GPS où le technicien peut pointer et travailler.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -610,6 +619,11 @@ export default function ChantiersPage() {
                   <input value={editForm.longitude} onChange={e => setEditForm({...editForm, longitude: e.target.value})}
                     type="number" step="any" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">📏 Zone de travail — métrage (m)</label>
+                <input value={editForm.rayonGeofencing ?? 50} onChange={e => setEditForm({...editForm, rayonGeofencing: parseInt(e.target.value) || 50})}
+                  type="number" min="10" max="500" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
 
               {/* Fichiers existants */}

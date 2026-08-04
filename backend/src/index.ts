@@ -58,13 +58,15 @@ app.use(cors());
 app.use(express.json());
 
 // ─── Rate limiting (sécurité) ──────────────────────────────────────────
+// 1000 req/15min par IP — suffisant pour le polling 5s + actions
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requêtes par fenêtre
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   message: { erreur: 'Trop de requêtes. Réessayez plus tard.' },
   keyGenerator: (req) => req.ip || 'unknown',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/api/health' || req.path === '/api/auth/login', // ne pas bloquer health + login
 });
 app.use('/api', limiter);
 
