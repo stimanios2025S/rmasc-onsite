@@ -51,8 +51,14 @@ export default function DashboardPage() {
   const [showIncidents, setShowIncidents] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
-  // Sync temps réel : polling 5s (technicien ↔ admin)
-  useEffect(() => { loadAll(); const i = setInterval(loadAll, 5000); return () => clearInterval(i); }, []);
+  // Sync temps réel : polling 15s quand l'onglet est visible (performance)
+  useEffect(() => {
+    loadAll();
+    const i = setInterval(() => {
+      if (document.visibilityState === 'visible') loadAll();
+    }, 15000);
+    return () => clearInterval(i);
+  }, []);
 
   async function loadAll() {
     try {

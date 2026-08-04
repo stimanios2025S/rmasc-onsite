@@ -275,16 +275,41 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
        WHERE om.chantier_id = $1 ORDER BY om.date_creation`, [req.params.id]
     );
 
-    // Calculer la progression par mission
+    // Calculer la progression + étape actuelle par mission
     const missions = missionsRes.rows.map((m: any) => {
       let progression = 0;
+      let etapeActuelle = '';
+      let etapeSuivante = '';
+      let sousTacheActuelle = '';
       if (m.checklist_etapes) {
         const etapes = Array.isArray(m.checklist_etapes) ? m.checklist_etapes : JSON.parse(m.checklist_etapes || '[]');
         const done = etapes.filter((e: any) => e.done).length;
         progression = etapes.length > 0 ? Math.round((done / etapes.length) * 100) : 0;
+
+        // Étape actuelle = première non-complétée
+        for (const e of etapes) {
+          const eComplete = e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done));
+          if (!eComplete) {
+            etapeActuelle = e.label;
+            // Sous-tâche actuelle si l'étape a des subtasks
+            if (e.subtasks) {
+              const sub = e.subtasks.find((s: any) => !s.done);
+              if (sub) sousTacheActuelle = sub.label;
+            }
+            break;
+          }
+        }
+        // Étape suivante = après la dernière complétée
+        const lastDone = [...etapes].reverse().find((e: any) => e.done);
+        if (lastDone) {
+          const idx = etapes.findIndex((e: any) => e.id === lastDone.id);
+          if (idx >= 0 && idx + 1 < etapes.length && etapes.every((e: any, i: number) => i <= idx ? (e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done))) : true)) {
+            etapeSuivante = etapes[idx + 1].label;
+          }
+        }
       }
-      if (m.statut === 'termine') progression = 100;
-      return { ...m, progression };
+      if (m.statut === 'termine') { progression = 100; etapeActuelle = ''; etapeSuivante = ''; }
+      return { ...m, progression, etapeActuelle, etapeSuivante, sousTacheActuelle };
     });
 
     res.json({ chantier, missions });

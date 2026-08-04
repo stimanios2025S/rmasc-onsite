@@ -772,6 +772,24 @@ export default function ChantiersPage() {
                           <span className="text-xs font-bold text-stone-500">{m.progression || 0}%</span>
                         </div>
 
+                        {/* Étape actuelle / suivante */}
+                        {m.statut === 'en_cours' && m.etapeActuelle && (
+                          <div className="mt-2.5 bg-white rounded-xl border border-indigo-100 p-2.5">
+                            <div className="flex items-start gap-2">
+                              <span className="w-1.5 h-1.5 mt-1 rounded-full bg-indigo-400 flex-shrink-0" />
+                              <div className="text-[11px]">
+                                <p className="text-stone-400 font-medium">Étape en cours:</p>
+                                <p className="text-stone-700 font-semibold">{m.etapeActuelle}
+                                  {m.sousTacheActuelle && <span className="text-indigo-500"> ({m.sousTacheActuelle})</span>}
+                                </p>
+                                {m.etapeSuivante && (
+                                  <p className="text-stone-400 mt-0.5">Suivant: <span className="text-stone-600">{m.etapeSuivante}</span></p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Dates */}
                         <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
                           {m.date_debut && <span>Début: {m.date_debut}</span>}

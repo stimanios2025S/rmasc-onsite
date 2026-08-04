@@ -52,6 +52,7 @@ export default function MissionActivePage() {
   const [checklist, setChecklist] = useState<ChecklistData | null>(null);
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [missionDetail, setMissionDetail] = useState<MissionInfo | null>(null);
+  const missionRef = useRef<MissionInfo | null>(null);
   const [onglet, setOnglet] = useState<'mission' | 'equipements'>('mission');
   const [equipementsEquipe, setEquipementsEquipe] = useState<any[]>([]);
   const [equipementsChantier, setEquipementsChantier] = useState<any[]>([]);
@@ -86,6 +87,9 @@ export default function MissionActivePage() {
           if (cRes.ok) setChecklist(await cRes.json());
           if (dRes.ok) setMissionDetail(await dRes.json());
         }
+      } else if (missionRef.current) {
+        // Garder la mission affichée si API retourne null (transition)
+        // Ne rien faire — on garde l'état précédent
       } else {
         setMission(null);
         setChecklist(null);
@@ -94,15 +98,21 @@ export default function MissionActivePage() {
       if (equipeRes.ok) setEquipeStatus(await equipeRes.json());
       setSyncDot(true); // clignote pour montrer la sync
       setTimeout(() => setSyncDot(false), 500);
-    } catch (_) { /* keep stale */ }
+    } catch (_) { /* keep stale — on garde l'état affiché */ }
     setLoading(false);
   }, [equipeId]);
 
+  // Maintenir la référence de mission à jour
+  useEffect(() => { missionRef.current = mission; }, [mission]);
+
   useEffect(() => { loadMission(); }, [loadMission]);
 
-  // Polling toutes les 5 secondes — sync admin ↔ technicien
+  // Polling intelligent : 15s (équilibre sync + performance)
+  // Ne recharge que si l'onglet est visible (économie de requêtes)
   useEffect(() => {
-    const iv = setInterval(loadMission, 5000);
+    const iv = setInterval(() => {
+      if (document.visibilityState === 'visible') loadMission();
+    }, 15000);
     return () => clearInterval(iv);
   }, [loadMission]);
 
