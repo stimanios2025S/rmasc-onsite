@@ -5,8 +5,8 @@ import { getUtilisateur, deconnecter } from '@/lib/auth';
 import {
   HardHat, MapPin, Clock, Wrench, Zap, Shield, AlertTriangle,
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
-  ChevronRight, Phone, Package, FileText, Outil, ClipboardList, Timer,
-  Radio, User,
+  ChevronRight, Phone, Package, FileText, ClipboardList, Timer,
+  Radio, User, Hammer,
 } from 'lucide-react';
 import TechnicianMap from '@/components/TechnicianMap';
 
@@ -352,7 +352,7 @@ export default function MissionActivePage() {
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               onglet === 'equipements' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md' : 'text-stone-400 hover:text-stone-600'
             }`}>
-            <Outil size={16} /> Équipements
+            <Hammer size={16} /> Équipements
           </button>
         </div>
       </div>
@@ -363,7 +363,7 @@ export default function MissionActivePage() {
           <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Outil size={18} className="text-white" />
+                <Hammer size={18} className="text-white" />
               </div>
               <div>
                 <h3 className="font-bold text-stone-800">Équipements requis</h3>
@@ -379,7 +379,7 @@ export default function MissionActivePage() {
                 {equipementsChantier.map(eq => (
                   <div key={eq.id} className="flex items-center gap-3 border border-stone-100 rounded-2xl p-3.5 hover:bg-stone-50 transition-all">
                     <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-                      <Outil size={16} className="text-indigo-500" />
+                      <Hammer size={16} className="text-indigo-500" />
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-stone-700">{eq.nom}</p>
@@ -399,7 +399,7 @@ export default function MissionActivePage() {
           <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                <Outil size={18} className="text-white" />
+                <Hammer size={18} className="text-white" />
               </div>
               <div>
                 <h3 className="font-bold text-stone-800">Équipements de l'équipe</h3>
