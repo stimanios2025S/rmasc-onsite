@@ -42,7 +42,21 @@ export default function ChantiersPage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Détail chantier (roadmap)
+  const [detailChantier, setDetailChantier] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
   useEffect(() => { loadChantiers(); }, []);
+
+  async function ouvrirDetail(id: string) {
+    setDetailLoading(true);
+    setDetailChantier(null);
+    try {
+      const res = await fetch(`/api/chantiers/${id}/detail`);
+      if (res.ok) setDetailChantier(await res.json());
+    } catch (_) { /* ignore */ }
+    setDetailLoading(false);
+  }
 
   async function loadChantiers() {
     try { setChantiers(await fetchChantiers()); } catch (_) {}
@@ -214,7 +228,7 @@ export default function ChantiersPage() {
           const Icon = PHASE_ICON[c.nom.includes('Meca') ? 'mecanique' : c.nom.includes('Elec') ? 'electrique' : 'verification'] || Wrench;
           const phase = c.nom.includes('Meca') ? 'Mécanique' : c.nom.includes('Elec') ? 'Électrique' : 'Vérification';
           return (
-            <div key={c.id} className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group">
+            <div key={c.id} onClick={() => ouvrirDetail(c.id)} className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group cursor-pointer">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2.5">
                   <div className={`w-3 h-3 mt-0.5 rounded-full shrink-0 ${STATUT_DOT[c.statut] || 'bg-stone-300'}`} />
@@ -224,7 +238,7 @@ export default function ChantiersPage() {
                   </div>
                 </div>
                 {/* Actions: Modifier / Supprimer */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => ouvrirEdition(c)}
                     title="Modifier"
@@ -630,6 +644,156 @@ export default function ChantiersPage() {
                   Enregistrer
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: DÉTAIL + ROADMAP DU CHANTIER ═══ */}
+      {detailChantier && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setDetailChantier(null); }}>
+          <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white shrink-0">
+              <div>
+                <h3 className="font-bold text-lg">{detailChantier.chantier?.nom_chantier}</h3>
+                <p className="text-white/70 text-xs font-mono">{detailChantier.chantier?.reference_commande_erp}</p>
+              </div>
+              <button onClick={() => setDetailChantier(null)} className="p-2 hover:bg-white/10 rounded-xl">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Infos chantier */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-100">
+                  <p className="text-[10px] text-stone-400 uppercase font-semibold mb-1">Client</p>
+                  <p className="text-sm font-medium text-stone-700">{detailChantier.chantier?.client_nom || '—'}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-100">
+                  <p className="text-[10px] text-stone-400 uppercase font-semibold mb-1">Complexité</p>
+                  <p className={`text-sm font-bold ${
+                    detailChantier.chantier?.complexite === 'DIFFICILE' ? 'text-rose-600'
+                    : detailChantier.chantier?.complexite === 'FACILE' ? 'text-emerald-600'
+                    : 'text-amber-600'
+                  }`}>{detailChantier.chantier?.complexite || '—'}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-100">
+                  <p className="text-[10px] text-stone-400 uppercase font-semibold mb-1">Adresse</p>
+                  <p className="text-sm font-medium text-stone-700">{detailChantier.chantier?.adresse || '—'}</p>
+                </div>
+                <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-100">
+                  <p className="text-[10px] text-stone-400 uppercase font-semibold mb-1">Coordonnées</p>
+                  <p className="text-sm font-medium text-stone-700 font-mono">
+                    {detailChantier.chantier?.lat?.toFixed(5)}, {detailChantier.chantier?.lng?.toFixed(5)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Roadmap des phases */}
+              <h4 className="font-bold text-stone-800 mb-4 flex items-center gap-2">
+                <MapPin size={16} className="text-indigo-500" /> Roadmap des Phases
+              </h4>
+              {detailLoading ? (
+                <div className="flex justify-center py-8"><Loader2 size={28} className="animate-spin text-indigo-500" /></div>
+              ) : detailChantier.missions?.length === 0 ? (
+                <p className="text-center text-stone-400 py-8 text-sm">Aucune mission assignée à ce chantier.</p>
+              ) : (
+                <div className="space-y-4">
+                  {detailChantier.missions.map((m: any, idx: number) => (
+                    <div key={m.id} className="relative pl-8">
+                      {/* Ligne timeline */}
+                      {idx < detailChantier.missions.length - 1 && (
+                        <div className="absolute left-[11px] top-7 bottom-[-8px] w-0.5 bg-stone-200" />
+                      )}
+                      {/* Point */}
+                      <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full flex items-center justify-center border-2 ${
+                        m.statut === 'termine' ? 'bg-emerald-500 border-emerald-500'
+                        : m.statut === 'en_cours' ? 'bg-indigo-500 border-indigo-500'
+                        : m.statut === 'bloque' ? 'bg-rose-500 border-rose-500'
+                        : 'bg-white border-stone-300'
+                      }`}>
+                        {m.statut === 'termine' && <CheckCircle size={12} className="text-white" />}
+                      </div>
+
+                      <div className={`bg-stone-50 rounded-2xl border p-4 ${
+                        m.statut === 'en_cours' ? 'border-indigo-200 bg-indigo-50/30'
+                        : m.statut === 'bloque' ? 'border-rose-200 bg-rose-50/30'
+                        : m.statut === 'termine' ? 'border-emerald-200 bg-emerald-50/30'
+                        : 'border-stone-200'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                              m.phase === 'mecanique' ? 'bg-blue-100 text-blue-700'
+                              : m.phase === 'electrique' ? 'bg-orange-100 text-orange-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {m.phase === 'mecanique' ? '🔧 Mécanique' : m.phase === 'electrique' ? '⚡ Électrique' : '🛡️ Vérification'}
+                            </span>
+                            {m.equipe_nom && (
+                              <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">👥 {m.equipe_nom}</span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            m.statut === 'termine' ? 'bg-emerald-50 text-emerald-600'
+                            : m.statut === 'en_cours' ? 'bg-indigo-50 text-indigo-600'
+                            : m.statut === 'bloque' ? 'bg-rose-50 text-rose-600'
+                            : 'bg-stone-100 text-stone-500'
+                          }`}>
+                            {m.statut === 'termine' ? 'Terminée' : m.statut === 'en_cours' ? 'En cours' : m.statut === 'bloque' ? 'Bloquée' : 'En attente'}
+                          </span>
+                        </div>
+
+                        {/* Barre progression */}
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-2 bg-stone-200 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${
+                              m.statut === 'termine' ? 'bg-emerald-400'
+                              : m.statut === 'bloque' ? 'bg-rose-400'
+                              : 'bg-indigo-400'
+                            }`} style={{ width: `${m.progression || 0}%` }} />
+                          </div>
+                          <span className="text-xs font-bold text-stone-500">{m.progression || 0}%</span>
+                        </div>
+
+                        {/* Dates */}
+                        <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
+                          {m.date_debut && <span>Début: {m.date_debut}</span>}
+                          {m.date_fin && <span>Fin: {m.date_fin}</span>}
+                          {m.retard_jours !== null && m.retard_jours > 0 && (
+                            <span className="text-rose-500 font-bold">⏱ +{m.retard_jours}j retard</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Fichiers */}
+              {(detailChantier.chantier?.dxf_url || detailChantier.chantier?.pdf_url) && (
+                <div className="mt-6">
+                  <h4 className="font-bold text-stone-800 mb-3 flex items-center gap-2">
+                    <FileText size={16} className="text-indigo-500" /> Documents
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {detailChantier.chantier?.dxf_url && (
+                      <a href={`https://onsite.sarl-rmasc.com${detailChantier.chantier.dxf_url}`} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2.5 rounded-xl transition-all">
+                        <FileText size={14} /> Plan CAD
+                      </a>
+                    )}
+                    {detailChantier.chantier?.pdf_url && (
+                      <a href={`https://onsite.sarl-rmasc.com${detailChantier.chantier.pdf_url}`} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 bg-purple-50 hover:bg-purple-100 px-4 py-2.5 rounded-xl transition-all">
+                        <FileText size={14} /> Fiche Technique
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

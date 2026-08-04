@@ -145,6 +145,50 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
         [JSON.stringify(etapes), !!complete, req.params.id]
       );
       if (rows.length === 0) return res.status(404).json({ erreur: 'Checklist introuvable.' });
+
+      // ═══ NOTIFICATION DE PROGRESSION (presque terminé → admin) ═══
+      try {
+        const missionInfo = await pool.query(
+          `SELECT om.chantier_id, om.equipe_id, om.phase, c.nom_chantier, e.nom AS equipe_nom
+           FROM ordres_de_mission om
+           JOIN chantiers c ON c.id = om.chantier_id
+           JOIN equipes e ON e.id = om.equipe_id
+           WHERE om.id = $1`, [req.params.id]
+        );
+        if (missionInfo.rows.length > 0) {
+          const m = missionInfo.rows[0];
+          const etapesArr = Array.isArray(etapes) ? etapes : JSON.parse(etapes || '[]');
+          const done = etapesArr.filter((e: any) => e.done).length;
+          const pct = etapesArr.length > 0 ? Math.round((done / etapesArr.length) * 100) : 0;
+
+          // Notifier l'admin quand la phase est presque finie (>= 80%) ou complète
+          if (pct >= 80 && !complete) {
+            await pool.query(
+              `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, lue)
+               VALUES ($1, $2, $3, $4, FALSE)`,
+              [m.chantier_id, req.params.id, m.equipe_id,
+               `🚀 Phase ${m.phase} presque terminée (${pct}%) sur "${m.nom_chantier}" — équipe ${m.equipe_nom}`]
+            );
+            logger.info('NOTIFICATION PROGRESSION: phase presque terminée', {
+              chantier: m.nom_chantier, pct, phase: m.phase,
+            });
+          }
+          if (complete) {
+            await pool.query(
+              `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, lue)
+               VALUES ($1, $2, $3, $4, FALSE)`,
+              [m.chantier_id, req.params.id, m.equipe_id,
+               `✅ Phase ${m.phase} TERMINÉE sur "${m.nom_chantier}" — équipe ${m.equipe_nom} passe en repos`]
+            );
+            logger.info('NOTIFICATION PROGRESSION: phase terminée', {
+              chantier: m.nom_chantier, phase: m.phase,
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error('Erreur notification progression', { erreur: (notifErr as any).message });
+      }
+
       res.json({ id: rows[0].id, message: 'Progression mise à jour.' });
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });

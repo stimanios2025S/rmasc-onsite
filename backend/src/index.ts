@@ -261,12 +261,31 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
               e.nom AS equipe_nom,
               CASE WHEN om.date_fin_effectif IS NOT NULL AND om.duree_estimee_jours IS NOT NULL
                    THEN EXTRACT(DAY FROM om.date_fin_effectif - om.date_debut_effectif) - om.duree_estimee_jours
-                   ELSE NULL END AS retard_jours
-       FROM ordres_de_mission om JOIN equipes e ON e.id = om.equipe_id
+                   ELSE NULL END AS retard_jours,
+              cl.etapes AS checklist_etapes,
+              cl.complete AS checklist_complete
+       FROM ordres_de_mission om
+       JOIN equipes e ON e.id = om.equipe_id
+       LEFT JOIN LATERAL (
+         SELECT etapes, complete FROM checklists_phases cp
+         WHERE cp.mission_id = om.id ORDER BY cp.date_mise_a_jour DESC LIMIT 1
+       ) cl ON true
        WHERE om.chantier_id = $1 ORDER BY om.date_creation`, [req.params.id]
     );
 
-    res.json({ chantier, missions: missionsRes.rows });
+    // Calculer la progression par mission
+    const missions = missionsRes.rows.map((m: any) => {
+      let progression = 0;
+      if (m.checklist_etapes) {
+        const etapes = Array.isArray(m.checklist_etapes) ? m.checklist_etapes : JSON.parse(m.checklist_etapes || '[]');
+        const done = etapes.filter((e: any) => e.done).length;
+        progression = etapes.length > 0 ? Math.round((done / etapes.length) * 100) : 0;
+      }
+      if (m.statut === 'termine') progression = 100;
+      return { ...m, progression };
+    });
+
+    res.json({ chantier, missions });
   } catch (err: any) {
     res.status(500).json({ erreur: err.message });
   }
