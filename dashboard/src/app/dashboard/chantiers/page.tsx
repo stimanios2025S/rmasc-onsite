@@ -402,15 +402,17 @@ export default function ChantiersPage() {
                         </div>
                       </div>
 
-                      {/* ═══ CARTE INTERACTIVE — positionner le chantier ═══ */}
+                      {/* ═══ CARTE INTERACTIVE — recherche + position + métrage ═══ */}
                       <div>
                         <label className="text-xs font-semibold text-stone-500 mb-1.5 block">
-                          <MapPin size={12} className="inline mr-1" />Position du chantier sur la carte
+                          <MapPin size={12} className="inline mr-1" />Position du chantier (recherche d'adresse réelle)
                         </label>
                         <MapPicker
                           initialLat={form.latitude ? parseFloat(form.latitude) : 36.75}
                           initialLng={form.longitude ? parseFloat(form.longitude) : 3.05}
+                          initialRayon={parseInt(form.rayon_geofencing) || 50}
                           onPositionChange={(lat, lng) => setForm({...form, latitude: String(lat), longitude: String(lng)})}
+                          onRayonChange={(r) => setForm({...form, rayon_geofencing: String(r)})}
                         />
                       </div>
                     </div>
