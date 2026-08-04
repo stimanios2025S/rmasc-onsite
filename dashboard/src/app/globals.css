@@ -10,3 +10,42 @@ body { background-color: #F4F6FB; }
 }
 
 .leaflet-container { border-radius: 16px; }
+
+/* ═══ Responsive professionnel ═══ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Safe areas iPhone (notch + barre du bas) */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+
+/* Scrollbar fine pour les listes */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+/* Empêcher le texte de devenir trop petit sur mobile */
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+  input, select, textarea, button { font-size: 16px !important; } /* évite zoom auto iOS */
+}
+
+/* Tables responsive : défilement horizontal sur petits écrans */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Grilles adaptatives */
+.grid-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+/* Images/iframes ne dépassent jamais */
+img, svg, iframe, video { max-width: 100%; }
+
+/* Cartes Leaflet ne débordent pas sur mobile */
+.leaflet-container { width: 100%; }

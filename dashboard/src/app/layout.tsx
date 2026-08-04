@@ -15,8 +15,7 @@ export const viewport: Viewport = {
   themeColor: '#3B4BB9',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Permettre le zoom sur mobile (accessibilité + responsive pro)
   viewportFit: 'cover',
 };
 

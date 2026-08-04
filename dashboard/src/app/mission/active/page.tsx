@@ -785,7 +785,7 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      <div className="h-8" />
+      <div className="h-8 pb-safe" />
     </TechnicianShell>
   );
 }
@@ -799,9 +799,9 @@ function TechnicianShell({ children, equipeNom, phaseEquipe, onLogout, syncDot }
   const phaseLabel = TYPE_LABEL[phaseEquipe] || '';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 max-w-md mx-auto">
-      {/* Header */}
-      <header className={`bg-gradient-to-r ${phaseColor} px-5 py-5 sticky top-0 z-20 shadow-lg`}>
+    <div className="min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 max-w-md mx-auto w-full">
+      {/* Header avec safe-area iPhone */}
+      <header className={`bg-gradient-to-r ${phaseColor} px-5 pt-safe py-4 sticky top-0 z-20 shadow-lg`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-inner">
