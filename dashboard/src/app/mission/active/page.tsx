@@ -5,8 +5,9 @@ import { getUtilisateur, deconnecter } from '@/lib/auth';
 import {
   HardHat, MapPin, Clock, Wrench, Zap, Shield, AlertTriangle,
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
-  ChevronRight, Phone, Package, FileText,
+  ChevronRight, Phone, Package, FileText, Wrench as Outil, ClipboardList, Timer,
 } from 'lucide-react';
+import TechnicianMap from '@/components/TechnicianMap';
 
 /* ─── TYPES ────────────────────────────────────────────────────────── */
 interface MissionInfo {
@@ -98,9 +99,69 @@ export default function MissionActivePage() {
   const [checklist, setChecklist] = useState<ChecklistData | null>(null);
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [missionDetail, setMissionDetail] = useState<MissionInfo | null>(null);
+  const [onglet, setOnglet] = useState<'mission' | 'equipements'>('mission');
+  const [equipementsEquipe, setEquipementsEquipe] = useState<any[]>([]);
+  const [equipementsChantier, setEquipementsChantier] = useState<any[]>([]);
+  const [equipementsLoading, setEquipementsLoading] = useState(false);
+  const [retardModal, setRetardModal] = useState(false);
+  const [retardForm, setRetardForm] = useState({ motif: '', etapeId: '' });
+  const [retardPhoto, setRetardPhoto] = useState<File | null>(null);
+  const [retardLoading, setRetardLoading] = useState(false);
 
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
+
+  // Charger les équipements
+  const loadEquipements = useCallback(async () => {
+    if (!equipeId || !missionDetail?.id) return;
+    setEquipementsLoading(true);
+    try {
+      const [eq, ec] = await Promise.all([
+        fetch(`/api/equipe/${equipeId}/equipements`),
+        fetch(`/api/equipe/${equipeId}/equipements_chantier?chantier_id=${missionDetail.id}`).then(r => r.ok ? r.json() : []),
+      ]);
+      setEquipementsEquipe(eq.ok ? await eq.json() : []);
+      setEquipementsChantier(ec);
+    } catch (_) { /* ignore */ }
+    setEquipementsLoading(false);
+  }, [equipeId, missionDetail?.id]);
+
+  // Vérifier un équipement chantier
+  const verifierEquipementLocal = async (eqId: string) => {
+    if (!equipeId) return;
+    try {
+      await fetch(`/api/equipe/${equipeId}/equipements_chantier/${eqId}`, { method: 'PATCH' });
+      await loadEquipements();
+    } catch (_) { /* ignore */ }
+  };
+
+  // Notifier l'admin du retard
+  const notifierRetard = async () => {
+    if (!mission || !retardForm.motif) return;
+    setRetardLoading(true);
+    try {
+      let photoUrl: string | null = null;
+      if (retardPhoto) {
+        const fd = new FormData();
+        fd.append('file', retardPhoto);
+        fd.append('type', 'photo_retard');
+        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+        if (upRes.ok) photoUrl = (await upRes.json()).url;
+      }
+      await fetch('/api/mission/retard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ missionId: mission.id, motif: retardForm.motif, etapeId: retardForm.etapeId || null, photoUrl }),
+      });
+      setRetardModal(false);
+      setRetardForm({ motif: '', etapeId: '' });
+      setRetardPhoto(null);
+      setPointageMsg({ type: 'success', text: '✅ Retard notifié à El Ghani.' });
+    } catch {
+      setPointageMsg({ type: 'error', text: 'Erreur de notification.' });
+    }
+    setRetardLoading(false);
+  };
 
   // Load mission data
   const loadMission = useCallback(async () => {
@@ -365,6 +426,99 @@ export default function MissionActivePage() {
         </div>
       )}
 
+      {/* ═══ ONGLETS: Mission / Équipements ═══ */}
+      <div className="mx-4 mb-4">
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-stone-100 shadow-sm p-1 flex">
+          <button onClick={() => setOnglet('mission')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              onglet === 'mission' ? 'bg-indigo-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'
+            }`}>
+            <ClipboardList size={16} /> Mission
+          </button>
+          <button onClick={() => { setOnglet('equipements'); loadEquipements(); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              onglet === 'equipements' ? 'bg-indigo-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'
+            }`}>
+            <Outil size={16} /> Équipements
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ ONGLET: ÉQUIPEMENTS ═══ */}
+      {onglet === 'equipements' ? (
+        <div className="mx-4 mb-4 space-y-4">
+          <div className="bg-white rounded-3xl shadow-sm border border-stone-100 p-5">
+            <h3 className="font-bold text-stone-800 mb-1">🛠️ Équipements requis pour ce chantier</h3>
+            <p className="text-xs text-stone-400 mb-3">Vérifiez chaque équipement avant de commencer</p>
+            {equipementsLoading ? (
+              <div className="flex justify-center py-6"><Loader2 size={24} className="animate-spin text-indigo-500" /></div>
+            ) : equipementsChantier.length === 0 ? (
+              <p className="text-center text-stone-400 py-6 text-sm">Aucun équipement spécifié pour ce chantier.</p>
+            ) : (
+              <div className="space-y-2">
+                {equipementsChantier.map(eq => (
+                  <div key={eq.id} className="flex items-center gap-3 border border-stone-100 rounded-xl p-3">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                      <Outil size={16} className="text-indigo-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-stone-700">{eq.nom}</p>
+                      <p className="text-[10px] text-stone-400">Qté: {eq.quantite} • Fourni par: {eq.fourni_par}</p>
+                    </div>
+                    <button
+                      onClick={() => verifierEquipementLocal(eq.id)}
+                      className={`text-[10px] font-bold px-3 py-1.5 rounded-full transition-all ${
+                        eq.verifie ? 'bg-emerald-50 text-emerald-600' : 'bg-stone-100 text-stone-400 hover:bg-indigo-50 hover:text-indigo-600'
+                      }`}
+                    >
+                      {eq.verifie ? '✓ Vérifié' : 'Vérifier'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-stone-100 p-5">
+            <h3 className="font-bold text-stone-800 mb-1">🧰 Équipements de votre équipe</h3>
+            <p className="text-xs text-stone-400 mb-3">Matériel assigné à votre équipe</p>
+            {equipementsEquipe.length === 0 ? (
+              <p className="text-center text-stone-400 py-6 text-sm">Aucun équipement assigné.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {equipementsEquipe.map(eq => (
+                  <div key={eq.id} className="border border-stone-100 rounded-xl p-3">
+                    <p className="text-sm font-medium text-stone-700">{eq.nom}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-stone-400">Qté: {eq.quantite}</span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                        eq.etat === 'OPERATIONNEL' ? 'bg-emerald-50 text-emerald-600'
+                        : eq.etat === 'MAINTENANCE' ? 'bg-amber-50 text-amber-600'
+                        : 'bg-rose-50 text-rose-600'
+                      }`}>
+                        {eq.etat === 'OPERATIONNEL' ? 'OK' : eq.etat === 'MAINTENANCE' ? 'Maintenance' : 'HS'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* ═══ CARTE CHANTIER ═══ */}
+      {mission && (
+        <div className="mx-4 mb-4">
+          <TechnicianMap
+            chantierLat={mission.latitude}
+            chantierLng={mission.longitude}
+            rayon={mission.rayon_geofencing}
+            nomChantier={mission.chantier}
+          />
+        </div>
+      )}
+
       {/* Site Details */}
       <div className="mx-4 mb-4 bg-white rounded-3xl shadow-sm border border-stone-100 p-5">
         <div className="flex items-start justify-between mb-3">
@@ -621,6 +775,65 @@ export default function MissionActivePage() {
                 className="w-full bg-rose-500 text-white py-4 rounded-2xl font-bold hover:bg-rose-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
                 {blocageLoading ? <Loader2 size={18} className="animate-spin" /> : <AlertTriangle size={18} />}
                 Envoyer le Signalement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bouton "Notifier admin du retard" */}
+      <div className="mx-4 mb-4">
+        <button
+          onClick={() => setRetardModal(true)}
+          className="w-full bg-white border-2 border-amber-300 text-amber-600 py-4 rounded-3xl font-semibold hover:bg-amber-50 transition-all flex items-center justify-center gap-2"
+        >
+          <Timer size={18} />
+          Signaler un Retard à El Ghani
+        </button>
+      </div>
+      </>
+      )}
+
+      {/* ═══ MODAL RETARD ═══ */}
+      {retardModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 sm:m-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-lg text-stone-800">⏰ Signaler un Retard</h3>
+              <button onClick={() => setRetardModal(false)} className="text-stone-300"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              {checklist && (
+                <div>
+                  <label className="text-xs font-semibold text-stone-500 mb-1 block">Étape en retard</label>
+                  <select value={retardForm.etapeId} onChange={e => setRetardForm({...retardForm, etapeId: e.target.value})}
+                    className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm text-stone-700 outline-none focus:border-indigo-400">
+                    <option value="">-- Sélectionner --</option>
+                    {checklist.etapes.map((et, i) => (
+                      <option key={et.id} value={et.id}>{i + 1}. {et.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Motif du retard *</label>
+                <textarea value={retardForm.motif} onChange={e => setRetardForm({...retardForm, motif: e.target.value})}
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm text-stone-700 outline-none min-h-[90px] resize-none"
+                  placeholder="Expliquez la cause du retard..." />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Photo preuve (optionnel)</label>
+                <label className="block border-2 border-dashed border-stone-200 bg-stone-50 rounded-2xl p-5 text-center cursor-pointer hover:border-amber-300 transition-all">
+                  <Camera size={24} className="text-stone-300 mx-auto mb-1" />
+                  <p className="text-xs text-stone-400">{retardPhoto ? retardPhoto.name : 'Ajouter une photo'}</p>
+                  <input type="file" accept="image/*" capture="environment"
+                    onChange={e => setRetardPhoto(e.target.files?.[0] || null)} className="hidden" />
+                </label>
+              </div>
+              <button onClick={notifierRetard} disabled={!retardForm.motif || retardLoading}
+                className="w-full bg-amber-500 text-white py-4 rounded-2xl font-bold hover:bg-amber-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {retardLoading ? <Loader2 size={18} className="animate-spin" /> : <Timer size={18} />}
+                Notifier El Ghani
               </button>
             </div>
           </div>

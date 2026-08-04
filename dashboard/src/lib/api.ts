@@ -42,6 +42,26 @@ export async function fetchIncidents(): Promise<IncidentData[]> {
   return apiFetch('/admin/incidents');
 }
 
+export interface EquipementEquipe {
+  id: string; nom: string; categorie: string; quantite: number; etat: string; date_assignation: string;
+}
+
+export interface EquipementChantier {
+  id: string; nom: string; quantite: number; fourni_par: string; verifie: boolean;
+}
+
+export async function fetchEquipementsEquipe(equipeId: string): Promise<EquipementEquipe[]> {
+  return apiFetch(`/equipe/${equipeId}/equipements`);
+}
+
+export async function fetchEquipementsChantier(equipeId: string, chantierId: string): Promise<EquipementChantier[]> {
+  return apiFetch(`/equipe/${equipeId}/equipements_chantier?chantier_id=${chantierId}`);
+}
+
+export async function verifierEquipement(equipeId: string, eqId: string) {
+  return apiFetch(`/equipe/${equipeId}/equipements_chantier/${eqId}`, { method: 'PATCH' });
+}
+
 export async function approuverDemande(id: string) {
   return apiFetch(`/admin/demandes/${id}/approuver`, { method: 'POST' });
 }

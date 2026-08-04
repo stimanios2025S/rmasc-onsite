@@ -182,5 +182,26 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
     res.json(rows);
   });
 
+  // ─── NOTIFICATIONS RETARD (pour El Ghani) ────────────────────────
+  router.get('/retards', async (_req, res) => {
+    const { rows } = await pool.query(
+      `SELECT nr.id, nr.motif, nr.etape_id, nr.photo_url, nr.lue,
+              c.nom_chantier, e.nom AS equipe_nom, om.phase,
+              TO_CHAR(nr.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+       FROM notifications_retard nr
+       JOIN chantiers c ON c.id = nr.chantier_id
+       JOIN equipes e ON e.id = nr.equipe_id
+       JOIN ordres_de_mission om ON om.id = nr.mission_id
+       ORDER BY nr.date_creation DESC LIMIT 30`
+    );
+    res.json(rows);
+  });
+
+  // PATCH /api/admin/retards/:id/lue — marquer comme lue
+  router.patch('/retards/:id/lue', async (req: any, res) => {
+    await pool.query(`UPDATE notifications_retard SET lue = TRUE WHERE id = $1`, [req.params.id]);
+    res.json({ message: 'Notification marquée comme lue.' });
+  });
+
   return router;
 }

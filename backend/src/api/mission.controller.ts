@@ -154,24 +154,73 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
   // POST /api/mission/blocage
   router.post('/blocage', async (req, res) => {
     try {
-      const { missionId, declarePar, raison, idPieceERP, priorite } = req.body;
+      const { missionId, declarePar, raison, idPieceERP, priorite, stepId, motifRetard, photoProofUrl } = req.body;
       if (!missionId || !declarePar || !raison) {
         return res.status(400).json({ erreur: 'missionId, declarePar et raison requis.' });
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO blocages_et_requisitions (ordre_mission_id, declare_par, raison_blocage, id_piece_erp, priorite, statut)
-         VALUES ($1, $2, $3, $4, $5, 'ouvert')
+        `INSERT INTO blocages_et_requisitions (ordre_mission_id, declare_par, raison_blocage, id_piece_erp, priorite, statut, step_id, motif_retard, photo_proof_url)
+         VALUES ($1, $2, $3, $4, $5, 'ouvert', $6, $7, $8)
          RETURNING id`,
-        [missionId, declarePar, raison, idPieceERP || null, priorite || 'moyenne']
+        [missionId, declarePar, raison, idPieceERP || null, priorite || 'moyenne',
+         stepId || null, motifRetard || null, photoProofUrl || null]
       );
 
       // Bloquer la mission
       await pool.query(`UPDATE ordres_de_mission SET statut = 'bloque' WHERE id = $1`, [missionId]);
 
+      // Notifier l'admin (El Ghani) du retard
+      const missionRes = await pool.query(
+        `SELECT om.chantier_id, om.equipe_id, c.nom_chantier, e.nom AS equipe_nom
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.id = $1`, [missionId]
+      );
+      if (missionRes.rows.length > 0) {
+        const m = missionRes.rows[0];
+        await pool.query(
+          `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, etape_id, photo_url)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [m.chantier_id, missionId, m.equipe_id,
+           motifRetard || raison, stepId || null, photoProofUrl || null]
+        );
+        logger.warn('RETARD signalé — notification admin', {
+          chantier: m.nom_chantier, equipe: m.equipe_nom, missionId,
+        });
+      }
+
       logger.warn('Blocage signalé depuis mobile', { blocageId: rows[0].id, missionId });
 
-      res.status(201).json({ id: rows[0].id, message: 'Blocage signalé.' });
+      res.status(201).json({ id: rows[0].id, message: 'Blocage signalé. Admin notifié du retard.' });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // POST /api/mission/retard — notifier admin du retard (sans bloquer)
+  router.post('/retard', async (req, res) => {
+    try {
+      const { missionId, motif, etapeId, photoUrl } = req.body;
+      if (!missionId || !motif) return res.status(400).json({ erreur: 'missionId et motif requis.' });
+
+      const missionRes = await pool.query(
+        `SELECT om.chantier_id, om.equipe_id, c.nom_chantier
+         FROM ordres_de_mission om JOIN chantiers c ON c.id = om.chantier_id
+         WHERE om.id = $1`, [missionId]
+      );
+      if (missionRes.rows.length === 0) return res.status(404).json({ erreur: 'Mission introuvable.' });
+      const m = missionRes.rows[0];
+
+      await pool.query(
+        `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, etape_id, photo_url)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [m.chantier_id, missionId, m.equipe_id, motif, etapeId || null, photoUrl || null]
+      );
+
+      logger.warn('Retard notifié à l admin', { chantier: m.nom_chantier, missionId });
+      res.status(201).json({ message: 'Admin notifié du retard.' });
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });
     }
