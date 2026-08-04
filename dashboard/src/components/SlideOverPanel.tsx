@@ -9,6 +9,7 @@ interface PointageReal {
   horodatage: string;
   distance: number;
   conforme: boolean;
+  technicien_nom?: string;
 }
 
 const ICONE_PHASE: Record<string, { icon: any; couleur: string; fond: string; libelle: string }> = {
