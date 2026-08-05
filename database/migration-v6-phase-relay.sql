@@ -64,10 +64,11 @@ BEGIN
                   WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
         LIMIT 1;
 
-        -- 7. Si aucune équipe dispo → créer la mission en attente (assignation manuelle)
+        -- 7. Si aucune équipe dispo → créer la mission SANS équipe (assignation manuelle par admin)
+        --    (pas la même équipe qui vient de terminer)
         IF v_equipe_id IS NULL THEN
             INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-            VALUES (NEW.chantier_id, NEW.equipe_id, v_prochaine_phase, 'en_attente', NOW(),
+            VALUES (NEW.chantier_id, NULL, v_prochaine_phase, 'en_attente', NOW(),
                     'Phase ' || v_prochaine_phase || ' — aucune equipe dispo, assignation manuelle requise')
             RETURNING id INTO v_mission_id;
         ELSE
