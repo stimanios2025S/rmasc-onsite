@@ -318,17 +318,6 @@ export default function ChantiersPage() {
                 <span className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-full">
                   <HardHat size={14} /> Équipe assignée: {successState.equipe}
                 </span>
-            {/* Success overlay */}
-            {successState && (
-              <div className="absolute inset-0 z-10 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
-                <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-4 animate-bounce">
-                  <CheckCircle size={40} className="text-emerald-500" />
-                </div>
-                <h3 className="text-xl font-bold text-stone-800 mb-1">Chantier créé !</h3>
-                <p className="text-sm text-stone-500 mb-4">{successState.nom}</p>
-                <span className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-full">
-                  <HardHat size={14} /> Équipe assignée: {successState.equipe}
-                </span>
               </div>
             )}
 
