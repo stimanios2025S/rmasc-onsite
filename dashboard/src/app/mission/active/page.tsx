@@ -158,29 +158,21 @@ export default function MissionActivePage() {
     );
   };
 
-  /* ═══ CHECKLIST SÉQUENTIELLE ═══ */
-  // Règle: on ne peut cocher l'étape N que si N-1 est complète
+  /* ═══ CHECKLIST (simple, sans blocage frustrant) ═══ */
+  // Toutes les étapes sont cochables librement
+  // Les sous-tâches suivent l'étape parente
   const toggleEtape = async (index: number) => {
     if (!checklist || !mission) return;
     const etapes = JSON.parse(JSON.stringify(checklist.etapes));
 
-    // Si on dé-coche, c'est permis
-    if (etapes[index].done) {
-      etapes[index].done = false;
-    } else {
-      // Si on coche: l'étape précédente doit être complète
-      if (index > 0) {
-        const prev = etapes[index - 1];
-        const prevComplete = prev.done && (!prev.subtasks || prev.subtasks.every((s: any) => s.done));
-        if (!prevComplete) {
-          setPointageMsg({ type: 'error', text: `⚠ Complétez d'abord l'étape ${index} avant de passer à l'étape ${index + 1}.` });
-          return;
-        }
-      }
-      etapes[index].done = true;
-    }
+    // Toggle l'étape
+    etapes[index].done = !etapes[index].done;
 
-    // Si l'étape a des sous-tâches, on les remet à false quand on décoche
+    // Si on coche et que l'étape a des sous-tâches → on les marque comme faites
+    if (etapes[index].done && etapes[index].subtasks) {
+      etapes[index].subtasks.forEach((s: any) => s.done = true);
+    }
+    // Si on décoche → on décoche aussi les sous-tâches
     if (!etapes[index].done && etapes[index].subtasks) {
       etapes[index].subtasks.forEach((s: any) => s.done = false);
     }
@@ -191,7 +183,7 @@ export default function MissionActivePage() {
       await fetch(`/api/mission/${mission.id}/checklist`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ etapes, complete }),
       });
-      loadMission(); // sync immédiate avec admin
+      loadMission(); // sync avec admin
     } catch (_) { /* keep local */ }
     setChecklistLoading(false);
   };
@@ -199,12 +191,14 @@ export default function MissionActivePage() {
     if (!checklist || !mission) return;
     const etapes = JSON.parse(JSON.stringify(checklist.etapes));
 
-    // L'étape parente doit être cochée pour cocher ses sous-tâches
-    if (!etapes[index].done) {
-      setPointageMsg({ type: 'error', text: '⚠ Cochez d\'abord l\'étape principale.' });
-      return;
-    }
+    // Cocher une sous-tâche coche automatiquement l'étape parente
     etapes[index].subtasks[subIndex].done = !etapes[index].subtasks[subIndex].done;
+    if (etapes[index].subtasks.every((s: any) => s.done)) {
+      etapes[index].done = true;
+    } else {
+      etapes[index].done = false;
+    }
+
     const complete = etapes.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
     setChecklist({ ...checklist, etapes, complete }); setChecklistLoading(true);
     try {

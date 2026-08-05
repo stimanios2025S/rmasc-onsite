@@ -303,10 +303,21 @@ export default function ChantiersPage() {
         })}
       </div>
 
-      {/* ═══ WIZARD MODAL ═══ */}
+      {/* ═══ WIZARD MODAL (responsive mobile) ═══ */}
       {showWizard && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowWizard(false); }}>
-          <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowWizard(false); }}>
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh]">
+            {/* Success overlay */}
+            {successState && (
+              <div className="absolute inset-0 z-10 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
+                <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-4 animate-bounce">
+                  <CheckCircle size={40} className="text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-bold text-stone-800 mb-1">Chantier créé !</h3>
+                <p className="text-sm text-stone-500 mb-4">{successState.nom}</p>
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-full">
+                  <HardHat size={14} /> Équipe assignée: {successState.equipe}
+                </span>
             {/* Success overlay */}
             {successState && (
               <div className="absolute inset-0 z-10 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
@@ -321,8 +332,8 @@ export default function ChantiersPage() {
               </div>
             )}
 
-            {/* Progress bar */}
-            <div className="flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-8 py-5 border-b border-stone-100">
+            {/* Progress bar (fixe) */}
+            <div className="shrink-0 flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 sm:py-5 border-b border-stone-100">
               {[1, 2, 3].map(s => (
                 <div key={s} className="flex items-center flex-1 last:flex-none">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
@@ -341,7 +352,7 @@ export default function ChantiersPage() {
               <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
             </div>
 
-            <div className="p-8">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8">
               {/* ═══ STEP 1: CLIENT ═══ */}
               {step === 1 && (
                 <div className="space-y-5">
@@ -544,23 +555,25 @@ export default function ChantiersPage() {
                 </div>
               )}
 
-              {/* ═══ WIZARD BUTTONS ═══ */}
-              <div className="flex items-center justify-between mt-8 pt-6 border-t border-stone-100">
+              </div>
+
+              {/* ═══ WIZARD BUTTONS (fixes en bas, toujours visibles) ═══ */}
+              <div className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-8 py-4 border-t border-stone-100 bg-white pb-safe">
                 {step > 1 ? (
                   <button type="button" onClick={() => setStep(step - 1)}
-                    className="flex items-center gap-2 text-sm font-medium text-stone-500 hover:text-stone-700">
+                    className="flex items-center justify-center gap-2 text-sm font-medium text-stone-500 hover:text-stone-700 px-4 py-3 rounded-xl min-w-[100px]">
                     <ChevronLeft size={18} /> Retour
                   </button>
-                ) : <div />}
+                ) : <div className="min-w-[100px]" />}
                 {step < 3 ? (
                   <button type="button" onClick={() => setStep(step + 1)}
                     disabled={(step === 1 && (!form.nom_projet || !form.latitude || !form.longitude))}
-                    className="flex items-center gap-2 bg-stone-800 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-stone-900 disabled:opacity-40 transition-all shadow-lg">
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-stone-800 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-stone-900 disabled:opacity-40 transition-all shadow-lg">
                     Suivant <ChevronRight size={18} />
                   </button>
                 ) : (
                   <button type="button" onClick={handleCreer} disabled={creant}
-                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20">
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20">
                     {creant ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                     Créer le Chantier
                   </button>
