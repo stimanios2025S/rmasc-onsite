@@ -552,7 +552,6 @@ export default function ChantiersPage() {
                       rows={4}
                       className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all resize-none" />
                   </div>
-                  </div>
                 </div>
               )}
 
