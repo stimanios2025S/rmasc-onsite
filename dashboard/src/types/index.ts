@@ -1,6 +1,6 @@
 export type PhaseChantier = 'mecanique' | 'electrique' | 'verification';
 export type StatutChantier = 'planifie' | 'en_attente' | 'en_cours' | 'bloque' | 'termine' | 'reception_officielle';
-export type PrioriteBlocage = 'basse' | 'moyenne' | 'haute' | 'critique';
+export type PrioriteBlocage = 'basse' | 'moyenne' | 'haute' | 'critique' | 'info';
 
 export interface Chantier {
   id: string; referenceERP: string; nom: string; adresse: string;
