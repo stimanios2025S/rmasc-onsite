@@ -110,11 +110,11 @@ export default function MissionActivePage() {
   // Chargement initial : mission + checklist + pointages + détails
   useEffect(() => { loadMission(true); }, [loadMission]);
 
-  // Polling : 30s, ne recharge que mission + statut équipe (léger)
+  // Polling : 10s, ne recharge que mission + statut équipe (léger)
   useEffect(() => {
     const iv = setInterval(() => {
       if (document.visibilityState === 'visible') loadMission(false);
-    }, 30000);
+    }, 10000);
     return () => clearInterval(iv);
   }, [loadMission]);
 

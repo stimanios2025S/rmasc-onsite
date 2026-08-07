@@ -54,10 +54,10 @@ export default function DashboardPage() {
   // Sync temps réel : polling 15s quand l'onglet est visible (performance)
   useEffect(() => {
     loadAll();
-    // Polling 30s seulement quand visible (performance)
+    // Polling 10s — sync temps réel admin ↔ technicien
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
-    }, 30000);
+    }, 10000);
     return () => clearInterval(i);
   }, []);
 

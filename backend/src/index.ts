@@ -112,7 +112,7 @@ app.get('/api/chantiers', async (_req, res) => {
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_attente') AS en_attente,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='bloque') AS bloquee,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='termine') AS terminee,
-              (SELECT e.nom FROM ordres_de_mission om JOIN equipes e ON e.id=om.equipe_id
+              (SELECT COALESCE(e.nom,'Aucune équipe') FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
                WHERE om.chantier_id=c.id AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS equipe_actuelle,
               (SELECT om.phase FROM ordres_de_mission om WHERE om.chantier_id=c.id
                AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS phase_actuelle,
@@ -262,14 +262,14 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
               TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
               TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
               TO_CHAR(om.date_fin_effectif,'YYYY-MM-DD HH24:MI') AS date_fin,
-              e.nom AS equipe_nom,
+              COALESCE(e.nom, 'Aucune équipe') AS equipe_nom,
               CASE WHEN om.date_fin_effectif IS NOT NULL AND om.duree_estimee_jours IS NOT NULL
                    THEN EXTRACT(DAY FROM om.date_fin_effectif - om.date_debut_effectif) - om.duree_estimee_jours
                    ELSE NULL END AS retard_jours,
               cl.etapes AS checklist_etapes,
               cl.complete AS checklist_complete
        FROM ordres_de_mission om
-       JOIN equipes e ON e.id = om.equipe_id
+       LEFT JOIN equipes e ON e.id = om.equipe_id
        LEFT JOIN LATERAL (
          SELECT etapes, complete FROM checklists_phases cp
          WHERE cp.mission_id = om.id ORDER BY cp.date_mise_a_jour DESC LIMIT 1

@@ -52,16 +52,18 @@ BEGIN
             RETURN NEW;
         END IF;
 
-        -- 6. Trouver une équipe DISPONIBLE du bon type (pas en repos, pas la même)
+        -- 6. Trouver l'équipe la MOINS CHARGÉE du bon type (rotation intelligente)
+        --    Priorité: DISPONIBLE, puis la moins chargée (même si EN_MISSION)
         SELECT e.id, e.nom INTO v_equipe_id, v_equipe_nom
         FROM equipes e
         WHERE e.type = v_equipe_type
           AND e.actif = TRUE
-          AND e.statut_equipe = 'DISPONIBLE'
-          AND e.disponible_a_partir_de <= NOW()
           AND e.id <> NEW.equipe_id
-        ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om
-                  WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
+          AND e.disponible_a_partir_de <= NOW()
+        ORDER BY
+          CASE WHEN e.statut_equipe = 'DISPONIBLE' THEN 0 ELSE 1 END,
+          (SELECT COUNT(*) FROM ordres_de_mission om
+           WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
         LIMIT 1;
 
         -- 7. Si aucune équipe dispo → créer la mission SANS équipe (assignation manuelle par admin)
