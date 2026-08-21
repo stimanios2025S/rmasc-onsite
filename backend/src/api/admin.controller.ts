@@ -2,8 +2,9 @@ import { Request, Response, Router } from 'express';
 import { Pool } from 'pg';
 import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
+import { SmsService } from '../services/sms/sms.service';
 
-export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
+export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
   router.use(verifierToken);
 
@@ -87,6 +88,23 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
         );
 
         missionInfo = { equipeNom: equipe.nom, equipeId: equipe.id, missionId };
+
+        // 📲 SMS à l'équipe mécanique assignée
+        try {
+          const telRes = await pool.query(
+            `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+               AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+            [equipe.id]
+          );
+          await smsService?.notifierNouvelleMission({
+            equipeId: equipe.id, equipeNom: equipe.nom,
+            telephone: telRes.rows[0]?.telephone || null,
+            phase: 'mecanique', chantierNom: d.nom_chantier, adresse: d.adresse_chantier || null,
+            chantierId: chantierId, missionId: missionId,
+          });
+        } catch (smsErr) {
+          logger.error('Erreur programmation SMS approbation', { erreur: (smsErr as any).message });
+        }
       }
 
       logger.info('Demande approuvée → Chantier + Mission', {
@@ -201,6 +219,62 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService): Router {
   router.patch('/retards/:id/lue', async (req: any, res) => {
     await pool.query(`UPDATE notifications_retard SET lue = TRUE WHERE id = $1`, [req.params.id]);
     res.json({ message: 'Notification marquée comme lue.' });
+  });
+
+  // ─── JOURNAL SMS (file d'attente + envois) ──────────────────────────
+  router.get('/sms', async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT s.id, s.telephone, s.destinataire_nom, s.contenu, s.type_evenement,
+                s.statut, s.tentative, s.fournisseur, s.erreur,
+                c.nom_chantier, e.nom AS equipe_nom,
+                TO_CHAR(s.date_creation,'YYYY-MM-DD HH24:MI:SS') AS cree,
+                TO_CHAR(s.date_envoi,'YYYY-MM-DD HH24:MI:SS') AS envoye
+         FROM sms_outbox s
+         LEFT JOIN chantiers c ON c.id = s.chantier_id
+         LEFT JOIN equipes e ON e.id = s.equipe_id
+         ORDER BY s.date_creation DESC LIMIT 50`
+      );
+      const provider = smsService?.provider.nom ?? 'inconnu';
+      res.json({ fournisseur: provider, sms: rows });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── TÉLÉPHONES — liste équipes + utilisateurs ──────────────────────
+  router.get('/telephones', async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT e.id AS equipe_id, e.nom AS equipe_nom, e.type,
+                u.id AS utilisateur_id, u.prenom, u.nom, u.telephone, u.role, u.actif
+         FROM equipes e
+         LEFT JOIN utilisateurs u ON u.equipe_id = e.id
+         WHERE e.actif = TRUE
+         ORDER BY e.type, e.nom, u.actif DESC, u.prenom`
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── TÉLÉPHONES — mise à jour en masse ──────────────────────────────
+  router.put('/telephones', async (req, res) => {
+    try {
+      const lignes: { utilisateur_id: string; telephone: string | null }[] = req.body?.lignes ?? [];
+      if (lignes.length === 0) return res.status(400).json({ erreur: 'lignes requis.' });
+
+      for (const l of lignes) {
+        if (!l.utilisateur_id) continue;
+        const tel = l.telephone ? l.telephone.replace(/[^\d+]/g, '') : null;
+        await pool.query(`UPDATE utilisateurs SET telephone = $1, date_modification = NOW() WHERE id = $2`, [tel, l.utilisateur_id]);
+      }
+      logger.info('Téléphones mis à jour', { nb: lignes.length });
+      res.json({ message: `${lignes.length} numéro(s) mis à jour.` });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
   });
 
   return router;

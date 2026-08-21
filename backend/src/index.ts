@@ -23,6 +23,8 @@ import { creerMissionRouter } from './api/mission.controller';
 import { creerEquipeRouter } from './api/equipe.controller';
 import { creerUploadRouter } from './api/upload.controller';
 import { creerGeofencingRouter } from './api/geofencing.controller';
+import { SmsService } from './services/sms/sms.service';
+import { SmsWorker } from './services/sms/sms.worker';
 import path from 'path';
 import { creerPages } from './views';
 
@@ -30,6 +32,7 @@ const {
   DB_HOST = 'localhost', DB_PORT = '5432', DB_NAME = 'rmasc_onsite',
   DB_USER = 'rmasc', DB_PASSWORD = '', ERP_WEBHOOK_URL = '', ERP_WEBHOOK_SECRET = '',
   JWT_SECRET = 'rmasc-onsite-jwt-secret',
+  SMS_PROVIDER = 'simulation', TWILIO_ACCOUNT_SID = '', TWILIO_AUTH_TOKEN = '', TWILIO_FROM_NUMBER = '',
   PORT = '4000',
 } = process.env;
 
@@ -41,6 +44,15 @@ const pool = new Pool({
 
 const logger = new LoggerService('RMASC-OnSite');
 const notifier = new NotificationService(logger, { erpWebhookUrl: ERP_WEBHOOK_URL, erpWebhookSecret: ERP_WEBHOOK_SECRET });
+
+// ─── Service SMS (file d'attente + worker d'envoi) ────────────────────
+const smsService = new SmsService(pool, logger, {
+  fournisseur: (SMS_PROVIDER === 'twilio' ? 'twilio' : 'simulation'),
+  twilioAccountSid: TWILIO_ACCOUNT_SID,
+  twilioAuthToken: TWILIO_AUTH_TOKEN,
+  twilioFromNumber: TWILIO_FROM_NUMBER,
+});
+export { smsService };
 
 const chantierRepo = new ChantierRepository(pool);
 const missionRepo = new MissionRepository(pool);
@@ -81,7 +93,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', creerAuthRouter(pool, logger));
 
 // Routes admin (El Ghani — protégées par JWT)
-app.use('/api/admin', creerAdminRouter(pool, logger));
+app.use('/api/admin', creerAdminRouter(pool, logger, smsService));
 
 // Routes mission (technicien mobile)
 app.use('/api/mission', creerMissionRouter(pool, logger));
@@ -174,6 +186,23 @@ app.post('/api/chantiers', async (req, res) => {
         `INSERT INTO checklists_phases (mission_id, phase, etapes) VALUES ($1, 'mecanique', generer_checklist('mecanique'))`,
         [missionId]
       );
+
+      // 📲 SMS à l'équipe mécanique assignée
+      try {
+        const telRes = await pool.query(
+          `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+             AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+          [equipe.id]
+        );
+        await smsService.notifierNouvelleMission({
+          equipeId: equipe.id, equipeNom: equipe.nom,
+          telephone: telRes.rows[0]?.telephone || null,
+          phase: 'mecanique', chantierNom: nom, adresse: adresse || null,
+          chantierId: chantierId, missionId: missionId!,
+        });
+      } catch (smsErr) {
+        logger.error('Erreur programmation SMS création chantier', { erreur: (smsErr as any).message });
+      }
     }
 
     res.status(201).json({ chantierId, missionId, equipeNom, message: `Chantier "${nom}" créé.` });
@@ -335,6 +364,9 @@ app.listen(port, () => {
   pool.query('SELECT 1')
     .then(() => logger.info('PostgreSQL OK'))
     .catch(e => logger.error('PostgreSQL', { erreur: e.message }));
+  // Démarrer le worker SMS (file d'attente sms_outbox)
+  const smsWorker = new SmsWorker(pool, smsService, logger);
+  smsWorker.demarrer();
 });
 
 export { app };

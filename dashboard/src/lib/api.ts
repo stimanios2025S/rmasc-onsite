@@ -104,3 +104,30 @@ export async function modifierChantier(id: string, data: Partial<NouveauChantier
 export async function supprimerChantier(id: string) {
   return apiFetch(`/chantiers/${id}`, { method: 'DELETE' });
 }
+
+// ─── SMS automatiques ────────────────────────────────────────────────
+
+export interface SmsLogData {
+  id: string; telephone: string; destinataire_nom: string | null; contenu: string;
+  type_evenement: string; statut: string; tentative: number; fournisseur: string | null;
+  erreur: string | null; nom_chantier: string | null; equipe_nom: string | null;
+  cree: string; envoye: string | null;
+}
+
+export interface TelephoneData {
+  equipe_id: string; equipe_nom: string; type: string;
+  utilisateur_id: string | null; prenom: string | null; nom: string | null;
+  telephone: string | null; role: string; actif: boolean;
+}
+
+export async function fetchSmsLog(): Promise<{ fournisseur: string; sms: SmsLogData[] }> {
+  return apiFetch('/admin/sms');
+}
+
+export async function fetchTelephones(): Promise<TelephoneData[]> {
+  return apiFetch('/admin/telephones');
+}
+
+export async function sauvegarderTelephones(lignes: { utilisateur_id: string; telephone: string | null }[]) {
+  return apiFetch('/admin/telephones', { method: 'PUT', body: JSON.stringify({ lignes }) });
+}
