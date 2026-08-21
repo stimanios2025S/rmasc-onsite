@@ -1,26 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  compress: true, // gzip intégré
+  // ─── Static export ───────────────────────────────────────────────
+  // Le dashboard est servi comme fichiers statiques par Express (port 4002).
+  // Pas de serveur Next.js séparé — tout est un seul processus.
+  output: 'export',
+  distDir: 'out',
+
   poweredByHeader: false,
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:4002/api/:path*',
-      },
-    ];
-  },
+
+  // ─── Headers (appliqués aux fichiers statiques exportés) ─────────
   async headers() {
     return [
       {
-        // Pages HTML: pas de cache (contenu dynamique)
-        source: '/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
-        ],
-      },
-      {
-        // Assets statiques (_next/static): cache long (rapidité)
         source: '/_next/static/:path*',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },

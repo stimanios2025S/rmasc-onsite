@@ -357,6 +357,23 @@ app.post('/api/webhook/erp', creerWebhookHandler(
   pool, chantierRepo, missionRepo, equipeRepo, logger, ERP_WEBHOOK_SECRET
 ));
 
+// ─── Dashboard statique (Next.js static export) ──────────────────────
+// Le build Next.js génère des fichiers HTML/CSS/JS dans dashboard/out/.
+// Express les sert directement — pas de serveur Next.js séparé.
+// Un seul processus, un seul port, un seul PM2.
+const DASHBOARD_OUT = path.join(__dirname, '..', '..', 'dashboard', 'out');
+
+// 1. Servir les fichiers existants (HTML, CSS, JS, images)
+app.use(express.static(DASHBOARD_OUT));
+
+// 2. Fallback SPA : toute route non-API → index.html (navigation côté client)
+app.use((req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ erreur: 'Route API introuvable.' });
+  }
+  res.sendFile(path.join(DASHBOARD_OUT, 'index.html'));
+});
+
 // Démarrer le serveur
 const port = parseInt(PORT, 10);
 app.listen(port, () => {
