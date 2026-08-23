@@ -349,14 +349,6 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
   }
 });
 
-// Pages Web (chantiers, missions, détails)
-app.use('/', creerPages(pool));
-
-// Webhook ERP — appelé par l'ERP quand une commande est terminée
-app.post('/api/webhook/erp', creerWebhookHandler(
-  pool, chantierRepo, missionRepo, equipeRepo, logger, ERP_WEBHOOK_SECRET
-));
-
 // ─── Dashboard statique (Next.js static export) ──────────────────────
 // Le build Next.js génère des fichiers HTML/CSS/JS dans dashboard/out/.
 // Express les sert directement — pas de serveur Next.js séparé.
@@ -366,7 +358,25 @@ const DASHBOARD_OUT = path.join(__dirname, '..', '..', 'dashboard', 'out');
 // 1. Servir les fichiers existants (HTML, CSS, JS, images)
 app.use(express.static(DASHBOARD_OUT));
 
-// 2. Fallback SPA : toute route non-API → index.html (navigation côté client)
+// 2. Fallback SPA — uniquement pour les routes du dashboard
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  // Dashboard routes: /dashboard/*, /login, /mission/*
+  if (req.path.startsWith('/dashboard') || req.path === '/login' || req.path.startsWith('/mission')) {
+    return res.sendFile(path.join(DASHBOARD_OUT, 'index.html'));
+  }
+  next();
+});
+
+// 3. Pages Web server-side (chantiers, missions, détails) — after dashboard
+app.use('/', creerPages(pool));
+
+// Webhook ERP — appelé par l'ERP quand une commande est terminée
+app.post('/api/webhook/erp', creerWebhookHandler(
+  pool, chantierRepo, missionRepo, equipeRepo, logger, ERP_WEBHOOK_SECRET
+));
+
+// 4. Fallback final — dashboard index.html pour toute autre route
 app.use((req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ erreur: 'Route API introuvable.' });
