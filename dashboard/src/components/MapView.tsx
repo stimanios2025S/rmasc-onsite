@@ -164,10 +164,11 @@ const LeafletMap = React.memo(function LeafletMap({
       bounds.extend([c.lat, c.lng]);
     });
 
-    if (filtered.length > 1) {
+    if (markersRef.current.length > 1) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-    } else if (filtered.length === 1) {
-      map.setView([filtered[0].lat, filtered[0].lng], 14);
+    } else if (markersRef.current.length === 1) {
+      const m = markersRef.current[0];
+      map.setView(m.getLatLng(), 14);
     }
   }, [filtered, mapReady]);
 

@@ -26,7 +26,9 @@ import { creerGeofencingRouter } from './api/geofencing.controller';
 import { SmsService } from './services/sms/sms.service';
 import { SmsWorker } from './services/sms/sms.worker';
 import path from 'path';
+import https from 'https';
 import { creerPages } from './views';
+import { verifierToken } from './middleware/auth.middleware';
 
 const {
   DB_HOST = 'localhost', DB_PORT = '5432', DB_NAME = 'rmasc_onsite',
@@ -118,6 +120,7 @@ app.get('/api/chantiers', async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
               c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
+              c.adresse,
               CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
               CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
@@ -138,8 +141,8 @@ app.get('/api/chantiers', async (_req, res) => {
   }
 });
 
-// POST /api/chantiers/geocode — géocoder les chantiers sans coordonnées
-app.post('/api/chantiers/geocode', async (_req, res) => {
+// POST /api/chantiers/geocode — géocoder les chantiers sans coordonnées (admin only)
+app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
   try {
     // Find chantiers with NULL coordinates but an address
     const { rows: missing } = await pool.query(
@@ -181,10 +184,15 @@ app.post('/api/chantiers/geocode', async (_req, res) => {
       // Try Nominatim geocoding first
       try {
         const q = encodeURIComponent(`${chantier.adresse}, Algeria`);
-        const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=dz`, {
-          headers: { 'User-Agent': 'RMASC-OnSite/1.0' },
+        const data = await new Promise<any[]>((resolve, reject) => {
+          https.get(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=dz`, {
+            headers: { 'User-Agent': 'RMASC-OnSite/1.0' },
+          }, (resp) => {
+            let body = '';
+            resp.on('data', (chunk) => body += chunk);
+            resp.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve([]); } });
+          }).on('error', () => resolve([]));
         });
-        const data = await resp.json() as any[];
         if (data.length > 0) {
           lat = parseFloat(data[0].lat);
           lng = parseFloat(data[0].lon);
