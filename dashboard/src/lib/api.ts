@@ -4,10 +4,10 @@ import { apiFetch } from './auth';
 
 export interface ChantierData {
   id: string; ref: string; nom: string; statut: string; client_nom: string;
-  lat: number; lng: number; missions: number; en_cours: number; date_creation: string;
+  lat?: number | null; lng?: number | null; missions: number; en_cours: number; date_creation: string;
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
-  equipe_actuelle?: string; phase_actuelle?: string;
+  equipe_actuelle?: string; phase_actuelle?: string; adresse?: string;
 }
 export interface DemandeData {
   id: string; ref: string; client_nom: string; nom_chantier: string; statut: string; cree: string;

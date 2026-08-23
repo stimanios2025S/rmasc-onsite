@@ -76,7 +76,7 @@ async function insererDemande(body: PayloadERP, db: Pool, logger: LoggerService,
     [
       referenceERP, payload.clientNom ?? 'Inconnu', payload.clientTelephone ?? null,
       payload.adresse ?? null, payload.nomChantier,
-      payload.latitude ?? 45.75, payload.longitude ?? 4.85,
+      payload.latitude ?? 36.7535, payload.longitude ?? 3.0588,
       JSON.stringify(payload), payload.ficheTechnique ? JSON.stringify(payload.ficheTechnique) : null,
       payload.dxfUrl ?? null, payload.pdfUrl ?? null,
       validComplexity(payload.complexite),

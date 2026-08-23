@@ -56,7 +56,8 @@ export function creerPages(pool: Pool): Router {
       const chantier = await pool.query(
         `SELECT id, reference_commande_erp AS ref, nom_chantier AS nom,
                 statut, client_nom, client_telephone, adresse,
-                ST_X(coordonnees::geometry) AS lat, ST_Y(coordonnees::geometry) AS lng,
+                CASE WHEN coordonnees IS NOT NULL THEN ST_X(coordonnees::geometry) END AS lng,
+                CASE WHEN coordonnees IS NOT NULL THEN ST_Y(coordonnees::geometry) END AS lat,
                 rayon_geofencing,
                 TO_CHAR(date_creation, 'YYYY-MM-DD HH24:MI') AS date_creation
          FROM chantiers WHERE id = $1`, [req.params.id]

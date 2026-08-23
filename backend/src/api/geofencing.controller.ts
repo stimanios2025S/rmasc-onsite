@@ -21,7 +21,8 @@ export function creerGeofencingRouter(pool: Pool, logger: LoggerService): Router
       // Récupérer la mission + chantier + zone
       const missionRes = await pool.query(
         `SELECT om.id, om.chantier_id, c.rayon_geofencing AS rayon,
-                ST_X(c.coordonnees::geometry) AS lat, ST_Y(c.coordonnees::geometry) AS lng,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lat,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lng,
                 c.nom_chantier
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id

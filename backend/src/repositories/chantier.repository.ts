@@ -8,7 +8,8 @@ export class ChantierRepository implements IChantierRepository {
   async trouverParId(id: string): Promise<Chantier | null> {
     const { rows } = await this.db.query(
       `SELECT id, reference_commande_erp AS "referenceERP", nom_chantier AS "nom",
-              ST_X(coordonnees::geometry) AS "latitude", ST_Y(coordonnees::geometry) AS "longitude",
+              CASE WHEN coordonnees IS NOT NULL THEN ST_Y(coordonnees::geometry) END AS "latitude",
+              CASE WHEN coordonnees IS NOT NULL THEN ST_X(coordonnees::geometry) END AS "longitude",
               rayon_geofencing AS "rayonGeofencing", statut
        FROM chantiers WHERE id = $1`, [id]);
     if (!rows[0]) return null;
@@ -18,7 +19,8 @@ export class ChantierRepository implements IChantierRepository {
   async trouverParReferenceERP(ref: string): Promise<Chantier | null> {
     const { rows } = await this.db.query(
       `SELECT id, reference_commande_erp AS "referenceERP", nom_chantier AS "nom",
-              ST_X(coordonnees::geometry) AS "latitude", ST_Y(coordonnees::geometry) AS "longitude",
+              CASE WHEN coordonnees IS NOT NULL THEN ST_Y(coordonnees::geometry) END AS "latitude",
+              CASE WHEN coordonnees IS NOT NULL THEN ST_X(coordonnees::geometry) END AS "longitude",
               rayon_geofencing AS "rayonGeofencing", statut
        FROM chantiers WHERE reference_commande_erp = $1`, [ref]);
     if (!rows[0]) return null;
@@ -32,7 +34,9 @@ export class ChantierRepository implements IChantierRepository {
   private map(r: any): Chantier {
     return {
       id: r.id, referenceERP: r.referenceERP, nom: r.nom,
-      coordonnees: { latitude: parseFloat(r.latitude), longitude: parseFloat(r.longitude) },
+      coordonnees: r.latitude != null && r.longitude != null
+        ? { latitude: parseFloat(r.latitude), longitude: parseFloat(r.longitude) }
+        : null as any,
       rayonGeofencing: parseFloat(r.rayonGeofencing), statut: r.statut,
     };
   }

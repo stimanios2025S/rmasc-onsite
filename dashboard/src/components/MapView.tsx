@@ -184,14 +184,33 @@ const LeafletMap = React.memo(function LeafletMap({
 /* ── Main Component ── */
 export default function MapView({ chantiers }: Props) {
   const [filtre, setFiltre] = useState<FiltreType>('tous');
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoResult, setGeoResult] = useState<string | null>(null);
 
   const stats = useMemo(() => ({
     total: chantiers.length,
+    avecGPS: chantiers.filter(c => c.lat && c.lng).length,
+    sansGPS: chantiers.filter(c => !c.lat || !c.lng).length,
     en_cours: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'en_cours').length,
     en_attente: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'en_attente').length,
     bloquee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'bloquee').length,
     terminee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'terminee').length,
   }), [chantiers]);
+
+  async function handleGeocode() {
+    setGeoLoading(true); setGeoResult(null);
+    try {
+      const token = localStorage.getItem('rmasc_token');
+      const res = await fetch('/api/chantiers/geocode', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      setGeoResult(data.message || 'Géocodage terminé.');
+      if (data.updated > 0) window.location.reload();
+    } catch { setGeoResult('Erreur de géocodage.'); }
+    setGeoLoading(false);
+  }
 
   const filtres: { key: FiltreType; label: string; count: number; color: string }[] = [
     { key: 'tous', label: 'Tous', count: stats.total, color: '#374151' },
@@ -207,7 +226,7 @@ export default function MapView({ chantiers }: Props) {
       <div className="map-view__header">
         <div className="map-view__title-row">
           <h2 className="map-view__title">🗺️ Carte de Commande</h2>
-          <span className="map-view__subtitle">{stats.total} chantiers</span>
+          <span className="map-view__subtitle">{stats.avecGPS}/{stats.total} sur la carte</span>
         </div>
 
         {/* Summary Stats */}
@@ -233,6 +252,17 @@ export default function MapView({ chantiers }: Props) {
             <div className="map-stat__label">Terminée</div>
           </div>
         </div>
+
+        {/* GPS Warning + Geocode button */}
+        {stats.sansGPS > 0 && (
+          <div className="map-gps-warning">
+            <span>⚠️ {stats.sansGPS} chantier(s) sans coordonnées GPS</span>
+            <button onClick={handleGeocode} disabled={geoLoading} className="map-geocode-btn">
+              {geoLoading ? '⏳ Géocodage...' : '📍 Géocoder maintenant'}
+            </button>
+            {geoResult && <span className="map-geocode-result">{geoResult}</span>}
+          </div>
+        )}
 
         {/* Filter Buttons */}
         <div className="map-view__filters">

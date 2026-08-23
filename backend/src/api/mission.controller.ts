@@ -18,7 +18,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
       const { rows } = await pool.query(
         `SELECT om.id, c.nom_chantier AS chantier, c.adresse, c.client_nom, c.client_telephone,
                 c.reference_commande_erp AS ref_erp, om.phase, om.statut, om.equipe_id, e.nom AS equipe_nom,
-                ST_X(c.coordonnees::geometry) AS latitude, ST_Y(c.coordonnees::geometry) AS longitude,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS latitude,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS longitude,
                 c.rayon_geofencing, om.duree_estimee_jours AS duree_estimee,
                 TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
                 TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut
@@ -103,8 +104,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
                 c.nom_chantier, c.adresse, c.complexite, c.dxf_url, c.pdf_url,
                 c.fiche_technique, c.client_nom, c.client_telephone,
                 c.reference_commande_erp AS ref_erp, c.rayon_geofencing,
-                ST_X(c.coordonnees::geometry) AS longitude,
-                ST_Y(c.coordonnees::geometry) AS latitude
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS longitude,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS latitude
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id
          WHERE om.id = $1`,

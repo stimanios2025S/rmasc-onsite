@@ -118,7 +118,8 @@ app.get('/api/chantiers', async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
               c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
-              ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat,
+              CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
+              CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_cours') AS en_cours,
               (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_attente') AS en_attente,
@@ -137,23 +138,110 @@ app.get('/api/chantiers', async (_req, res) => {
   }
 });
 
+// POST /api/chantiers/geocode — géocoder les chantiers sans coordonnées
+app.post('/api/chantiers/geocode', async (_req, res) => {
+  try {
+    // Find chantiers with NULL coordinates but an address
+    const { rows: missing } = await pool.query(
+      `SELECT id, nom_chantier, adresse FROM chantiers
+       WHERE coordonnees IS NULL AND adresse IS NOT NULL AND adresse <> ''`
+    );
+    if (missing.length === 0) {
+      return res.json({ message: 'Tous les chantiers ont déjà des coordonnées.', updated: 0 });
+    }
+
+    let updated = 0;
+    const defaults: Record<string, { lat: number; lng: number }> = {
+      'alger': { lat: 36.7535, lng: 3.0588 },
+      'oran': { lat: 35.6969, lng: -0.6331 },
+      'constantine': { lat: 36.3650, lng: 6.6147 },
+      'annaba': { lat: 36.9000, lng: 7.7667 },
+      'blida': { lat: 36.4700, lng: 2.8300 },
+      'setif': { lat: 36.1900, lng: 5.4100 },
+      'batna': { lat: 35.5600, lng: 6.1700 },
+      'tlemcen': { lat: 34.8828, lng: -1.3167 },
+      'bejaia': { lat: 36.7509, lng: 5.0567 },
+      'tizi_ouzou': { lat: 36.7117, lng: 4.0456 },
+      'djelfa': { lat: 34.6700, lng: 3.2500 },
+      'msila': { lat: 35.7000, lng: 4.5425 },
+      'mostaganem': { lat: 35.9333, lng: 0.0833 },
+      'relizane': { lat: 35.7333, lng: 0.5500 },
+      'chlef': { lat: 36.1650, lng: 1.3317 },
+      'tiaret': { lat: 35.3800, lng: 1.3200 },
+      'biskra': { lat: 34.8500, lng: 5.7333 },
+      'ghardaia': { lat: 32.4900, lng: 3.6700 },
+      'ouargla': { lat: 31.9500, lng: 5.3300 },
+    };
+
+    for (const chantier of missing) {
+      const addr = (chantier.adresse || '').toLowerCase();
+      let lat: number | null = null;
+      let lng: number | null = null;
+
+      // Try Nominatim geocoding first
+      try {
+        const q = encodeURIComponent(`${chantier.adresse}, Algeria`);
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=dz`, {
+          headers: { 'User-Agent': 'RMASC-OnSite/1.0' },
+        });
+        const data = await resp.json() as any[];
+        if (data.length > 0) {
+          lat = parseFloat(data[0].lat);
+          lng = parseFloat(data[0].lon);
+        }
+      } catch (_) { /* Nominatim failed, try defaults */ }
+
+      // Fallback: match city name from address
+      if (!lat || !lng) {
+        for (const [city, coords] of Object.entries(defaults)) {
+          if (addr.includes(city.replace('_', ' '))) {
+            lat = coords.lat;
+            lng = coords.lng;
+            break;
+          }
+        }
+      }
+
+      // Last resort: center of Algeria
+      if (!lat || !lng) {
+        lat = 36.7535;
+        lng = 3.0588;
+      }
+
+      await pool.query(
+        `UPDATE chantiers SET coordonnees = ST_SetSRID(ST_MakePoint($1, $2), 4326) WHERE id = $3`,
+        [lng, lat, chantier.id]
+      );
+      updated++;
+      // Respect Nominatim rate limit (1 req/s)
+      await new Promise(r => setTimeout(r, 1100));
+    }
+
+    res.json({ message: `${updated} chantier(s) géocodé(s).`, updated });
+  } catch (err: any) {
+    res.status(500).json({ erreur: 'Erreur géocodage.', detail: err.message });
+  }
+});
+
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', async (req, res) => {
   try {
     const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique } = req.body;
-    if (!nom || latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ erreur: 'nom, latitude et longitude requis.' });
+    if (!nom) {
+      return res.status(400).json({ erreur: 'nom requis.' });
     }
     const ref = reference_commande_erp || `MAN-${Date.now().toString().slice(-6)}`;
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
 
+    // Handle coordinates: if provided, use them; otherwise NULL (no geocoding crash)
+    const hasCoords = latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null;
     const { rows } = await pool.query(
       `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
                               rayon_geofencing, statut, client_nom, complexite,
                               dxf_url, pdf_url, fiche_technique)
-       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, 'planifie', $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11)
        RETURNING id`,
-      [ref, nom, adresse || null, longitude, latitude, rayon_geofencing || 50, client_nom || null, validComplexity,
+      [ref, nom, adresse || null, hasCoords ? longitude : null, hasCoords ? latitude : null, rayon_geofencing || 50, client_nom || null, validComplexity,
        dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null]
     );
     const chantierId = rows[0].id;
@@ -280,7 +368,9 @@ app.get('/api/chantiers/:id/pointages', async (req, res) => {
 app.get('/api/chantiers/:id/detail', async (req, res) => {
   try {
     const chantierRes = await pool.query(
-      `SELECT c.*, ST_X(c.coordonnees::geometry) AS lng, ST_Y(c.coordonnees::geometry) AS lat
+      `SELECT c.*,
+              CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
+              CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat
        FROM chantiers c WHERE c.id = $1`, [req.params.id]
     );
     if (chantierRes.rows.length === 0) return res.status(404).json({ erreur: 'Introuvable.' });

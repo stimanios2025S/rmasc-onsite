@@ -35,15 +35,17 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       const d = rows[0];
 
       // Créer le chantier (avec complexité, fiches, fichiers)
+      const hasCoords = d.latitude != null && d.longitude != null;
       const chantierResult = await pool.query(
         `INSERT INTO chantiers
            (reference_commande_erp, nom_chantier, adresse, coordonnees,
             client_nom, client_telephone, statut,
             complexite, dxf_url, pdf_url, fiche_technique)
-         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, $7, 'planifie', $8, $9, $10, $11)
+         VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, $7, 'planifie', $8, $9, $10, $11)
          RETURNING id`,
         [d.reference_commande_erp, d.nom_chantier, d.adresse_chantier,
-         d.longitude, d.latitude, d.client_nom, d.client_telephone,
+         hasCoords ? d.longitude : null, hasCoords ? d.latitude : null,
+         d.client_nom, d.client_telephone,
          d.complexite || 'MOYENNE', d.dxf_url || null, d.pdf_url || null,
          d.fiche_technique || null]
       );
