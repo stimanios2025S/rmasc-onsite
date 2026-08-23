@@ -1,17 +1,15 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { estConnecte, getUtilisateur } from '@/lib/auth';
-import { apiFetch } from '@/lib/auth';
+import { getUtilisateur, apiFetch } from '@/lib/auth';
 import {
   fetchStats, fetchDemandes, fetchEquipes, fetchChantiers, fetchIncidents,
   approuverDemande, refuserDemande,
   type StatsData, type DemandeData, type EquipeData, type ChantierData, type IncidentData,
 } from '@/lib/api';
 import {
-  HardHat, AlertTriangle, Users, MapPin, Bell, CheckCircle, XCircle,
-  Clock, Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
-  ArrowUpRight, CheckCheck, Search, Timer,
+  HardHat, AlertTriangle, Users, MapPin, Bell, XCircle,
+  Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
+  CheckCheck, Timer,
 } from 'lucide-react';
 import MapView from '@/components/MapView';
 
@@ -37,7 +35,6 @@ function timeAgo(d: string): string {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const user = getUtilisateur();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [demandes, setDemandes] = useState<DemandeData[]>([]);
@@ -48,7 +45,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showEquipes, setShowEquipes] = useState(true);
-  const [showIncidents, setShowIncidents] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
   // Sync temps réel : polling 15s quand l'onglet est visible (performance)
@@ -157,6 +153,11 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ═══ CARTE DE COMMANDE — Full width ═══ */}
+      <div className="mb-8">
+        <MapView chantiers={chantiers} />
+      </div>
+
       {/* KPIs + Gauge */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
         <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -175,20 +176,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Map + Incidents */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2">
-          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm overflow-hidden mb-4">
-            <div className="px-6 py-4 border-b border-stone-100 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><MapPin size={18} className="text-indigo-600" /></div>
-              <h2 className="font-bold text-stone-800">Carte des Chantiers</h2>
-              <span className="text-xs text-stone-400">({chantiers.length} sites)</span>
-            </div>
-            <MapView chantiers={chantiers} />
-          </div>
-          <MapWidget chantiers={chantiers} />
-        </div>
-        <div><IncidentsWidget incidents={incidents} /></div>
+      {/* Incidents */}
+      <div className="mb-8">
+        <IncidentsWidget incidents={incidents} />
       </div>
 
       {/* ═══ RETARDS SIGNALÉS (sync technicien → admin) ═══ */}
@@ -359,38 +349,6 @@ function KpiCard({ titre, valeur, couleur, icon, badge }: { titre: string; valeu
       {badge && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" /></span>}
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cm[couleur]}`}>{icon}</div>
       <div><p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-0.5">{titre}</p><span className="text-2xl font-bold text-stone-800">{valeur}</span></div>
-    </div>
-  );
-}
-
-function MapWidget({ chantiers }: { chantiers: ChantierData[] }) {
-  const dot = (s: string) => s === 'en_cours' ? 'bg-emerald-400' : s === 'bloque' ? 'bg-rose-400' : s === 'termine' || s === 'reception_officielle' ? 'bg-stone-300' : 'bg-indigo-400';
-  return (
-    <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-stone-100 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><MapPin size={18} className="text-indigo-600" /></div>
-        <h2 className="font-bold text-stone-800">Carte des Chantiers</h2><span className="text-xs text-stone-400">({chantiers.length})</span>
-      </div>
-      <div className="p-6">
-        {chantiers.length === 0 ? <p className="text-center text-stone-400 py-12 text-sm">Aucun chantier.</p> : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto">
-            {chantiers.map((c) => (
-              <div key={c.id} className="flex items-start gap-3 p-3.5 rounded-2xl border border-stone-100 hover:bg-stone-50 transition-colors cursor-pointer">
-                <div className={`w-3 h-3 mt-1.5 rounded-full shrink-0 ${dot(c.statut)}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-stone-700">{c.nom}</p>
-                  <p className="text-[11px] text-stone-400 font-mono">{c.ref}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[11px] text-stone-400">{c.client_nom || '—'}</span>
-                    {c.en_cours > 0 && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">{c.en_cours} actif</span>}
-                  </div>
-                </div>
-                <ArrowUpRight size={14} className="text-stone-300 mt-1 shrink-0" />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

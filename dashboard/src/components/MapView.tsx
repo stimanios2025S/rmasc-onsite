@@ -1,111 +1,261 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { ChantierData } from '@/lib/api';
 
-const COULEUR_PIN: Record<string, string> = {
-  en_cours: '#20C997',
-  bloque: '#FF5252',
-  planifie: '#3B4BB9',
-  en_attente: '#FF9800',
-  termine: '#A8AEC5',
-  reception_officielle: '#20C997',
+/* ═══════════════════════════════════════════════════════════
+   MAPVIEW PROFESSIONNEL — Carte de Commande
+   Pin intelligentes, popups riches, légende, filtres
+   ═══════════════════════════════════════════════════════════ */
+
+type FiltreType = 'tous' | 'en_cours' | 'en_attente' | 'bloquee' | 'terminee';
+
+interface Props { chantiers: ChantierData[]; }
+
+/* ── Config couleurs par statut ── */
+const STATUS_CONFIG: Record<string, { color: string; bg: string; glow: string; label: string; icon: string }> = {
+  en_cours:  { color: '#059669', bg: '#d1fae5', glow: 'rgba(5,150,105,0.5)', label: 'En Cours', icon: '🟢' },
+  en_attente:{ color: '#d97706', bg: '#fef3c7', glow: 'rgba(217,119,6,0.5)', label: 'En Attente', icon: '🟡' },
+  bloquee:   { color: '#dc2626', bg: '#fee2e2', glow: 'rgba(220,38,38,0.5)', label: 'Bloquée', icon: '🔴' },
+  terminee:  { color: '#2563eb', bg: '#dbeafe', glow: 'rgba(37,99,235,0.3)', label: 'Terminée', icon: '🔵' },
+  planifiee: { color: '#6b7280', bg: '#f3f4f6', glow: 'rgba(107,114,128,0.3)', label: 'Planifiée', icon: '⚪' },
 };
 
-export default function MapView({ chantiers }: { chantiers: ChantierData[] }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
+function getStatus(statut: string) {
+  const key = statut?.toLowerCase().replace(/[^a-z]/g, '') || 'planifiee';
+  return STATUS_CONFIG[key] || STATUS_CONFIG.planifiee;
+}
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !mapRef.current || mapInstanceRef.current) return;
-    let cancelled = false;
+function daysSince(dateStr: string) {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
 
-    const initMap = async () => {
+function calcProgress(c: ChantierData) {
+  const total = (c.terminee || 0) + (c.en_cours || 0) + (c.en_attente || 0) + (c.bloquee || 0);
+  if (!total) return 0;
+  return Math.round(((c.terminee || 0) / total) * 100);
+}
+
+/* ── Carte Leaflet dynamique ── */
+const LeafletMap = React.memo(function LeafletMap({
+  chantiers, filtre
+}: { chantiers: ChantierData[]; filtre: FiltreType }) {
+  const [mapReady, setMapReady] = React.useState(false);
+  const mapRef = React.useRef<HTMLDivElement>(null);
+  const instanceRef = React.useRef<any>(null);
+  const markersRef = React.useRef<any[]>([]);
+
+  const filtered = useMemo(() => {
+    if (filtre === 'tous') return chantiers;
+    return chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === filtre);
+  }, [chantiers, filtre]);
+
+  React.useEffect(() => {
+    if (mapReady) return;
+    (async () => {
       const L = (await import('leaflet')).default;
-      if (cancelled || !mapRef.current) return;
+      await import('leaflet/dist/leaflet.css');
+      if (!mapRef.current) return;
 
-      mapInstanceRef.current = L.map(mapRef.current, {
-        center: [36.75, 3.05],
-        zoom: 6,
+      const map = L.map(mapRef.current, {
+        center: [36.75, 3.06],
+        zoom: 5.8,
         zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: true,
       });
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
-      }).addTo(mapInstanceRef.current);
+        attribution: '© OpenStreetMap © CARTO',
+      }).addTo(map);
 
-      L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
-    };
+      instanceRef.current = map;
+      setMapReady(true);
+    })();
+  }, [mapReady]);
 
-    initMap();
+  // Update markers when filtered chantiers change
+  React.useEffect(() => {
+    if (!mapReady || !instanceRef.current) return;
+    const map = instanceRef.current;
+    const L = (window as any).L;
+    if (!L) return;
 
-    return () => {
-      cancelled = true;
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, []);
+    // Clear old markers
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
 
-  useEffect(() => {
-    if (!mapInstanceRef.current || typeof window === 'undefined') return;
+    const bounds = L.latLngBounds();
 
-    const updateMarkers = async () => {
-      const L = (await import('leaflet')).default;
-      const map = mapInstanceRef.current;
-      if (!map) return;
+    filtered.forEach(c => {
+      if (!c.lat || !c.lng) return;
+      const s = getStatus(c.statut);
+      const progress = calcProgress(c);
+      const days = daysSince(c.date_creation);
 
-      map.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker) map.removeLayer(layer);
+      // Custom icon with pulse
+      const icon = L.divIcon({
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -14],
+        html: `<div class="map-pin map-pin--${c.statut?.toLowerCase().replace(/[^a-z]/g, '') || 'planifiee'}">
+          <div class="map-pin__pulse"></div>
+          <div class="map-pin__dot" style="background:${s.color}"></div>
+        </div>`,
       });
 
-      const markers: any[] = [];
-      chantiers.forEach((c) => {
-        if (!c.lat || !c.lng) return;
-        const couleur = COULEUR_PIN[c.statut] || '#A8AEC5';
+      // Rich popup
+      const popup = `
+        <div class="map-popup">
+          <div class="map-popup__header" style="background:${s.color}">
+            <span class="map-popup__icon">${s.icon}</span>
+            <div>
+              <div class="map-popup__nom">${c.nom}</div>
+              <div class="map-popup__ref">${c.ref}</div>
+            </div>
+          </div>
+          <div class="map-popup__body">
+            <div class="map-popup__badge" style="background:${s.bg};color:${s.color}">${s.label}</div>
+            <div class="map-popup__info">
+              <div class="map-popup__row"><span class="map-popup__lbl">Client</span><span class="map-popup__val">${c.client_nom || '—'}</span></div>
+              <div class="map-popup__row"><span class="map-popup__lbl">Équipe</span><span class="map-popup__val">${c.equipe_actuelle || 'Non assignée'}</span></div>
+              <div class="map-popup__row"><span class="map-popup__lbl">Phase</span><span class="map-popup__val">${c.phase_actuelle || '—'}</span></div>
+              <div class="map-popup__row"><span class="map-popup__lbl">Complexité</span><span class="map-popup__val">${c.complexite || '—'}</span></div>
+              <div class="map-popup__row"><span class="map-popup__lbl">Jours</span><span class="map-popup__val" style="color:${days > 30 ? '#dc2626' : '#374151'}">${days}j</span></div>
+            </div>
+            <div class="map-popup__progress-wrap">
+              <div class="map-popup__progress-header">
+                <span>Progression</span>
+                <span class="map-popup__progress-pct">${progress}%</span>
+              </div>
+              <div class="map-popup__progress-bar">
+                <div class="map-popup__progress-fill" style="width:${progress}%;background:${s.color}"></div>
+              </div>
+              <div class="map-popup__missions">
+                <span>✅ ${c.terminee || 0}</span>
+                <span>🔄 ${c.en_cours || 0}</span>
+                <span>⏳ ${c.en_attente || 0}</span>
+                <span>🚫 ${c.bloquee || 0}</span>
+              </div>
+            </div>
+            ${c.bloquee && c.bloquee > 0 ? `<div class="map-popup__alert">⚠️ ${c.bloquee} mission(s) bloquée(s)</div>` : ''}
+            <a href="/dashboard/chantier/${c.id}" class="map-popup__cta" style="background:${s.color}">
+              Voir les détails →
+            </a>
+          </div>
+        </div>
+      `;
 
-        const icon = L.divIcon({
-          className: 'custom-marker',
-          html: `<div style="
-            width: 18px; height: 18px; border-radius: 50%;
-            background: ${couleur}; border: 3px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            ${c.statut === 'bloque' ? 'animation: pulse-alert 1.5s infinite;' : ''}
-          "></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9],
-        });
+      const marker = L.marker([c.lat, c.lng], { icon })
+        .addTo(map)
+        .bindPopup(popup, { className: 'map-popup-wrap', maxWidth: 320, minWidth: 280 });
 
-        const marker = L.marker([c.lat, c.lng], { icon })
-          .addTo(map)
-          .bindPopup(`<div style="font-family:sans-serif;font-size:12px;min-width:150px">
-            <strong>${c.nom}</strong><br/>
-            <span style="color:#888">${c.ref}</span><br/>
-            <span style="color:#3B4BB9">${c.client_nom || '—'}</span><br/>
-            ${c.en_cours > 0 ? `<span style="color:#20C997;font-weight:bold">🔄 ${c.en_cours} mission</span>` : ''}
-          </div>`);
+      markersRef.current.push(marker);
+      bounds.extend([c.lat, c.lng]);
+    });
 
-        markers.push(marker);
-      });
+    if (filtered.length > 1) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    } else if (filtered.length === 1) {
+      map.setView([filtered[0].lat, filtered[0].lng], 14);
+    }
+  }, [filtered, mapReady]);
 
-      if (markers.length > 0) {
-        const bounds = L.latLngBounds(markers.map((m: any) => m.getLatLng()));
-        if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
-      }
-    };
+  // Resize handler
+  React.useEffect(() => {
+    if (!mapReady || !instanceRef.current) return;
+    const timer = setTimeout(() => instanceRef.current?.invalidateSize(), 200);
+    return () => clearTimeout(timer);
+  }, [mapReady]);
 
-    updateMarkers();
-  }, [chantiers]);
+  return <div ref={mapRef} className="map-view__container" />;
+});
+
+/* ── Main Component ── */
+export default function MapView({ chantiers }: Props) {
+  const [filtre, setFiltre] = useState<FiltreType>('tous');
+
+  const stats = useMemo(() => ({
+    total: chantiers.length,
+    en_cours: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'en_cours').length,
+    en_attente: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'en_attente').length,
+    bloquee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'bloquee').length,
+    terminee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'terminee').length,
+  }), [chantiers]);
+
+  const filtres: { key: FiltreType; label: string; count: number; color: string }[] = [
+    { key: 'tous', label: 'Tous', count: stats.total, color: '#374151' },
+    { key: 'en_cours', label: '🟢 En Cours', count: stats.en_cours, color: '#059669' },
+    { key: 'en_attente', label: '🟡 Attente', count: stats.en_attente, color: '#d97706' },
+    { key: 'bloquee', label: '🔴 Bloquée', count: stats.bloquee, color: '#dc2626' },
+    { key: 'terminee', label: '🔵 Terminée', count: stats.terminee, color: '#2563eb' },
+  ];
 
   return (
-    <div className="relative rounded-3xl overflow-hidden border border-stone-100 shadow-sm" style={{ height: 420 }}>
-      <div ref={mapRef} style={{ width: '100%', height: '100%', zIndex: 1 }} />
-      <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl p-3 shadow-md text-xs space-y-1.5">
-        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#20C997]" /> En cours</div>
-        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#FF5252]" /> Bloqué</div>
-        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#3B4BB9]" /> Planifié</div>
-        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#A8AEC5]" /> Terminé</div>
+    <div className="map-view">
+      {/* ── Header + Stats ── */}
+      <div className="map-view__header">
+        <div className="map-view__title-row">
+          <h2 className="map-view__title">🗺️ Carte de Commande</h2>
+          <span className="map-view__subtitle">{stats.total} chantiers</span>
+        </div>
+
+        {/* Summary Stats */}
+        <div className="map-view__stats">
+          <div className="map-stat">
+            <div className="map-stat__value">{stats.total}</div>
+            <div className="map-stat__label">Total</div>
+          </div>
+          <div className="map-stat map-stat--active">
+            <div className="map-stat__value">{stats.en_cours}</div>
+            <div className="map-stat__label">En Cours</div>
+          </div>
+          <div className="map-stat map-stat--warning">
+            <div className="map-stat__value">{stats.en_attente}</div>
+            <div className="map-stat__label">En Attente</div>
+          </div>
+          <div className="map-stat map-stat--danger">
+            <div className="map-stat__value">{stats.bloquee}</div>
+            <div className="map-stat__label">Bloquée</div>
+          </div>
+          <div className="map-stat map-stat--done">
+            <div className="map-stat__value">{stats.terminee}</div>
+            <div className="map-stat__label">Terminée</div>
+          </div>
+        </div>
+
+        {/* Filter Buttons */}
+        <div className="map-view__filters">
+          {filtres.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFiltre(f.key)}
+              className={`map-filter ${filtre === f.key ? 'map-filter--active' : ''}`}
+              style={filtre === f.key ? { background: f.color, color: '#fff', borderColor: f.color } : {}}
+            >
+              {f.label}
+              <span className="map-filter__count">{f.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Map ── */}
+      <LeafletMap chantiers={chantiers} filtre={filtre} />
+
+      {/* ── Legend ── */}
+      <div className="map-view__legend">
+        <span className="map-legend__title">Légende :</span>
+        {Object.entries(STATUS_CONFIG).map(([key, s]) => (
+          <div key={key} className="map-legend__item">
+            <span className="map-legend__dot" style={{ background: s.color, boxShadow: `0 0 6px ${s.glow}` }} />
+            <span>{s.label}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
