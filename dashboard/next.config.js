@@ -7,18 +7,6 @@ const nextConfig = {
   distDir: 'out',
 
   poweredByHeader: false,
-
-  // ─── Headers (appliqués aux fichiers statiques exportés) ─────────
-  async headers() {
-    return [
-      {
-        source: '/_next/static/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
-    ];
-  },
 };
 
 module.exports = nextConfig;

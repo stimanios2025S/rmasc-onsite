@@ -21,7 +21,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return;
     }
     setChecking(false);
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (checking) {
     return (

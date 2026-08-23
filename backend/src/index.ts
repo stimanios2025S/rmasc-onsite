@@ -356,9 +356,10 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
 const DASHBOARD_OUT = path.join(__dirname, '..', '..', 'dashboard', 'out');
 
 // 1. Servir les fichiers existants (HTML, CSS, JS, images)
-app.use(express.static(DASHBOARD_OUT));
+//    extensions: ['html'] permet à /dashboard de servir dashboard.html
+app.use(express.static(DASHBOARD_OUT, { extensions: ['html'] }));
 
-// 2. Fallback SPA — uniquement pour les routes du dashboard
+// 2. Fallback SPA — pour les routes client-side du dashboard
 app.use((req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   // Dashboard routes: /dashboard/*, /login, /mission/*

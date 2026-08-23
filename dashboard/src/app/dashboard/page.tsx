@@ -54,25 +54,32 @@ export default function DashboardPage() {
   // Sync temps réel : polling 15s quand l'onglet est visible (performance)
   useEffect(() => {
     loadAll();
+    // Safety: force loading to false after 5s even if all APIs fail
+    const safetyTimeout = setTimeout(() => setLoading(false), 5000);
     // Polling 10s — sync temps réel admin ↔ technicien
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
     }, 10000);
-    return () => clearInterval(i);
+    return () => { clearInterval(i); clearTimeout(safetyTimeout); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAll() {
     try {
       // Tout en parallèle, une seule passe (pas de doublon chantiers)
       const [s, d, e, c, i, r] = await Promise.all([
-        fetchStats(), fetchDemandes(), fetchEquipes(),
-        fetchChantiers(), fetchIncidents(),
+        fetchStats().catch(() => null),
+        fetchDemandes().catch(() => []),
+        fetchEquipes().catch(() => []),
+        fetchChantiers().catch(() => []),
+        fetchIncidents().catch(() => []),
         apiFetch('/admin/retards').catch(() => []),
       ]);
-      setStats(s); setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
+      if (s) setStats(s);
+      setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
       setRetards(r as any[]);
     } catch (_) { /* keep stale */ }
-    setLoading(false);
+    finally { setLoading(false); }
   }
 
   async function handleApprouver(id: string) {
