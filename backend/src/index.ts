@@ -185,7 +185,7 @@ app.get('/api/chantiers', async (_req, res) => {
            om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.statut IN ('en_cours','en_attente')
+         WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
          ORDER BY om.chantier_id, om.date_creation DESC
        )
        SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
@@ -236,7 +236,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
          am AS (
            SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
            FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
-           WHERE om.statut IN ('en_cours','en_attente')
+           WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
            ORDER BY om.chantier_id, om.date_creation DESC
          )
          SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
