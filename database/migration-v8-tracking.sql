@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS pointages_jour (
 
 CREATE INDEX idx_pointages_jour_equipe ON pointages_jour (equipe_id, horodatage DESC);
 CREATE INDEX idx_pointages_jour_mission ON pointages_jour (mission_id, horodatage DESC);
-CREATE INDEX idx_pointages_jour_date ON pointages_jour (DATE(horodatage));
+CREATE INDEX idx_pointages_jour_date ON pointages_jour (date_trunc('day', horodatage));
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 3. TABLE : gps_tracking (position en temps réel pendant trajet)
