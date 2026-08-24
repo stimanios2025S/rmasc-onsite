@@ -94,9 +94,9 @@ export class SmsWorker {
     } else {
       await this.pool.query(
         `UPDATE sms_outbox SET tentative = $2, erreur = $3, fournisseur = $4,
-                prochaine_tentative = NOW() + ($2 * INTERVAL '60 seconds')
+                prochaine_tentative = NOW() + ($5 * INTERVAL '60 seconds')
          WHERE id = $1`,
-        [sms.id, tentative, erreur.slice(0, 300), this.smsService.provider.nom]
+        [sms.id, tentative, erreur.slice(0, 300), this.smsService.provider.nom, tentative]
       );
       this.logger.warn(`SMS échec (tentative ${tentative}/${MAX_TENTATIVES})`, { id: sms.id, tel: sms.telephone, erreur });
     }
