@@ -311,9 +311,9 @@ export default function ChantiersPage() {
                 <span className="flex items-center gap-1">📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
                 <span className="flex items-center gap-2 font-medium">
                   {c.en_cours > 0 && <span className="text-indigo-600">🔄 {c.en_cours}</span>}
-                  {c.en_attente > 0 && <span className="text-amber-500">⏳ {c.en_attente}</span>}
-                  {c.bloquee > 0 && <span className="text-rose-500">🚫 {c.bloquee}</span>}
-                  {c.terminee > 0 && <span className="text-emerald-500">✅ {c.terminee}</span>}
+                  {(c.en_attente ?? 0) > 0 && <span className="text-amber-500">⏳ {c.en_attente}</span>}
+                  {(c.bloquee ?? 0) > 0 && <span className="text-rose-500">🚫 {c.bloquee}</span>}
+                  {(c.terminee ?? 0) > 0 && <span className="text-emerald-500">✅ {c.terminee}</span>}
                 </span>
               </div>
             </div>
