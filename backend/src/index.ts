@@ -36,7 +36,7 @@ const {
   DB_HOST = 'localhost', DB_PORT = '5432', DB_NAME = 'rmasc_onsite',
   DB_USER = 'rmasc', DB_PASSWORD = '', ERP_WEBHOOK_URL = '', ERP_WEBHOOK_SECRET = '',
   JWT_SECRET = 'rmasc-onsite-jwt-secret',
-  SMS_PROVIDER = 'simulation', TWILIO_ACCOUNT_SID = '', TWILIO_AUTH_TOKEN = '', TWILIO_FROM_NUMBER = '',
+  SMS_PROVIDER = 'simulation', TWILIO_ACCOUNT_SID = '', TWILIO_AUTH_TOKEN = '', TWILIO_FROM_NUMBER = '', TWILIO_CONTENT_SID = '',
   PORT = '4000',
 } = process.env;
 
@@ -52,10 +52,11 @@ const notifier = new NotificationService(logger, { erpWebhookUrl: ERP_WEBHOOK_UR
 
 // ─── Service SMS (file d'attente + worker d'envoi) ────────────────────
 const smsService = new SmsService(pool, logger, {
-  fournisseur: (SMS_PROVIDER === 'twilio' ? 'twilio' : 'simulation'),
+  fournisseur: (SMS_PROVIDER === 'twilio' ? 'twilio' : SMS_PROVIDER === 'twilio-whatsapp' ? 'twilio-whatsapp' : 'simulation'),
   twilioAccountSid: TWILIO_ACCOUNT_SID,
   twilioAuthToken: TWILIO_AUTH_TOKEN,
   twilioFromNumber: TWILIO_FROM_NUMBER,
+  twilioContentSid: TWILIO_CONTENT_SID,
 });
 export { smsService };
 

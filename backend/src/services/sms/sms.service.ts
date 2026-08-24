@@ -6,10 +6,11 @@ import { normaliserTelephone } from './providers/sms.provider.types';
 import type { SmsProvider } from './providers/sms.provider.types';
 
 export interface SmsConfig {
-  fournisseur: 'twilio' | 'simulation';
+  fournisseur: 'twilio' | 'twilio-whatsapp' | 'simulation';
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioFromNumber?: string;
+  twilioContentSid?: string;
 }
 
 export interface ProgrammerSmsParams {
@@ -34,9 +35,10 @@ export class SmsService {
     private readonly logger: LoggerService,
     config: SmsConfig = { fournisseur: 'simulation' }
   ) {
-    if (config.fournisseur === 'twilio' && config.twilioAccountSid && config.twilioAuthToken && config.twilioFromNumber) {
-      this.provider = new TwilioProvider(config.twilioAccountSid, config.twilioAuthToken, config.twilioFromNumber);
-      this.logger.info('SMS: provider Twilio ACTIF');
+    if ((config.fournisseur === 'twilio' || config.fournisseur === 'twilio-whatsapp') && config.twilioAccountSid && config.twilioAuthToken && config.twilioFromNumber) {
+      const mode = config.fournisseur === 'twilio-whatsapp' ? 'whatsapp' : 'sms';
+      this.provider = new TwilioProvider(config.twilioAccountSid, config.twilioAuthToken, config.twilioFromNumber, mode, config.twilioContentSid);
+      this.logger.info(`SMS: provider Twilio ${mode.toUpperCase()} ACTIF`);
     } else {
       this.provider = new DryRunProvider(this.logger);
       this.logger.warn('SMS: provider SIMULATION (Twilio non configuré) — aucun SMS réel envoyé');
