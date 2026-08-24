@@ -42,8 +42,9 @@ const {
 
 const pool = new Pool({
   host: DB_HOST, port: parseInt(DB_PORT, 10), database: DB_NAME,
-  user: DB_USER, password: DB_PASSWORD, max: 20,
-  idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000,
+  user: DB_USER, password: DB_PASSWORD, max: 30,
+  idleTimeoutMillis: 30000, connectionTimeoutMillis: 8000,
+  statement_timeout: 15000, // 15s per query max
 });
 
 const logger = new LoggerService('RMASC-OnSite');
@@ -212,12 +213,16 @@ app.get('/api/chantiers', async (_req, res) => {
 });
 
 // ─── DASHBOARD ALL-IN-ONE — 1 seule requête pour tout le dashboard ──────
+// Resilient: each sub-query is independent — if one fails, others still return data
 app.get('/api/dashboard/all', async (_req, res) => {
+  // Helper: run query and return { rows } or null on error (never throws)
+  const safe = (p: Promise<any>) => p.catch((e) => { console.error('[dashboard/all] query error:', e.message); return { rows: [] as any[] }; });
+
   try {
-    // Run 3 fast queries in parallel (instead of 7 sequential)
-    const [chantiersRes, statsRes, teamsRes] = await Promise.all([
-      // 1. Chantiers with mission counts
-      pool.query(
+    // Run all queries in parallel — each is independent
+    const results = await Promise.all([
+      // 1. Chantiers with mission counts (CTE)
+      safe(pool.query(
         `WITH ms AS (
            SELECT chantier_id,
                   COUNT(*)::INT AS missions,
@@ -246,37 +251,38 @@ app.get('/api/dashboard/all', async (_req, res) => {
          LEFT JOIN ms ON ms.chantier_id=c.id
          LEFT JOIN am ON am.chantier_id=c.id
          ORDER BY c.date_creation DESC`
-      ),
-      // 2. Stats + equipes + demandes + incidents (simple COUNTs)
-      Promise.all([
-        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours, COUNT(*) FILTER (WHERE statut='bloque') AS bloques FROM chantiers`),
-        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours FROM ordres_de_mission`),
-        pool.query(`SELECT COUNT(*) AS total FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'`),
-        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='ouvert') AS ouverts FROM blocages_et_requisitions`),
-        pool.query(`SELECT COUNT(*) AS total FROM equipes WHERE statut_equipe='DISPONIBLE'`),
-        pool.query(
-          `SELECT e.id, e.nom, e.type, eqs.statut_equipe,
-                  (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
-                  CASE WHEN eqs.disponible_a_partir_de > NOW()
-                    THEN EXTRACT(DAY FROM eqs.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants
-           FROM equipes e LEFT JOIN equipes eqs ON eqs.id=e.id ORDER BY e.type, e.nom`
-        ),
-        pool.query(
-          `SELECT di.id, di.reference_erp AS ref, di.client_nom, di.nom_chantier, di.statut,
-                  TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI') AS cree
-           FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION'`
-        ),
-        pool.query(
-          `SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
-                  TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
-           FROM blocages_et_requisitions b
-           JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
-           JOIN chantiers c ON c.id=om.chantier_id
-           WHERE b.statut IN ('ouvert','en_cours') LIMIT 20`
-        ),
-      ]),
-      // 3. Team positions (GPS tracking)
-      pool.query(
+      )),
+      // 2-8: Individual stat queries (each independent)
+      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours, COUNT(*) FILTER (WHERE statut='bloque') AS bloques FROM chantiers`)),
+      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours FROM ordres_de_mission`)),
+      safe(pool.query(`SELECT COUNT(*) AS total FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'`)),
+      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='ouvert') AS ouverts FROM blocages_et_requisitions`)),
+      safe(pool.query(`SELECT COUNT(*) AS total FROM equipes WHERE statut_equipe='DISPONIBLE'`)),
+      // 9. Equipes list
+      safe(pool.query(
+        `SELECT e.id, e.nom, e.type, e.statut_equipe,
+                (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
+                CASE WHEN e.disponible_a_partir_de > NOW()
+                  THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants
+         FROM equipes e ORDER BY e.type, e.nom`
+      )),
+      // 10. Demandes
+      safe(pool.query(
+        `SELECT di.id, di.reference_erp AS ref, di.client_nom, di.nom_chantier, di.statut,
+                TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI') AS cree
+         FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION'`
+      )),
+      // 11. Incidents
+      safe(pool.query(
+        `SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
+                TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+         FROM blocages_et_requisitions b
+         JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
+         JOIN chantiers c ON c.id=om.chantier_id
+         WHERE b.statut IN ('ouvert','en_cours') LIMIT 20`
+      )),
+      // 12. Team positions (GPS tracking)
+      safe(pool.query(
         `WITH dp AS (
            SELECT DISTINCT ON (gt.equipe_id)
              gt.equipe_id, gt.latitude, gt.longitude, gt.vitesse_kmh, gt.batterie_pct,
@@ -293,29 +299,34 @@ app.get('/api/dashboard/all', async (_req, res) => {
          FROM dp
          JOIN equipes e ON e.id=dp.equipe_id
          LEFT JOIN equipes eqs ON eqs.id=dp.equipe_id`
-      ),
-    ]);
+      )),
+    ]) as { rows: any[] }[];
 
-    const s = statsRes;
+    const [chantiersRes, cTotal, cEnCours, cBloques, mTotal, mEnCours, dAttente, bStats, eDispo, equipesRes, demandesRes, incidentsRes, teamsRes] = results;
+
+    // Build stats safely — fallback to 0 if query failed
+    const num = (r: any, i = 0, col = 'total') => Number(r?.rows?.[i]?.[col] ?? 0);
+
     res.json({
       chantiers: chantiersRes.rows || [],
       stats: {
-        chantiersTotal: Number(s[0].rows[0].total),
-        chantiersActifs: Number(s[0].rows[0].en_cours),
-        chantiersBloques: Number(s[0].rows[0].bloques),
-        missionsTotal: Number(s[1].rows[0].total),
-        missionsEnCours: Number(s[1].rows[0].en_cours),
-        demandesEnAttente: Number(s[2].rows[0].total),
-        blocagesOuverts: Number(s[3].rows[0].ouverts),
-        blocagesTotal: Number(s[3].rows[0].total),
-        equipesDisponibles: Number(s[4].rows[0].total),
+        chantiersTotal: num(cTotal),
+        chantiersActifs: num(cEnCours, 0, 'en_cours'),
+        chantiersBloques: num(cBloques, 0, 'bloques'),
+        missionsTotal: num(mTotal),
+        missionsEnCours: num(mEnCours, 0, 'en_cours'),
+        demandesEnAttente: num(dAttente),
+        blocagesOuverts: num(bStats, 0, 'ouverts'),
+        blocagesTotal: num(bStats),
+        equipesDisponibles: num(eDispo),
       },
-      equipes: s[5].rows || [],
-      demandes: s[6].rows || [],
-      incidents: s[7].rows || [],
+      equipes: equipesRes.rows || [],
+      demandes: demandesRes.rows || [],
+      incidents: incidentsRes.rows || [],
       teamPositions: teamsRes.rows || [],
     });
   } catch (err: any) {
+    console.error('[dashboard/all] fatal:', err.message);
     res.status(500).json({ erreur: 'Erreur serveur.', detail: err.message });
   }
 });

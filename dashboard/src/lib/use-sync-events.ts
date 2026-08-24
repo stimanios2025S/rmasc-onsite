@@ -32,25 +32,16 @@ interface UseSyncEventsReturn {
 }
 
 export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEventsReturn {
-  const {
-    onEvent,
-    onDemandeRecue,
-    onChantierCree,
-    onMissionAssignee,
-    onBlocageSignale,
-    onEquipePosition,
-    onEquipeEnRoute,
-    onEquipeArrivee,
-    onMissionTransferee,
-    onDataChanged,
-    autoReconnect = true,
-  } = options;
-
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<SyncEvent | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
+  const mountedRef = useRef(true);
+
+  // Store callbacks in refs so connect() never changes identity
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   const cleanup = useCallback(() => {
     if (eventSourceRef.current) {
@@ -64,11 +55,16 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
     setConnected(false);
   }, []);
 
+  // connect() is stable — reads callbacks from ref, never recreated
   const connect = useCallback(() => {
     cleanup();
+    if (!mountedRef.current) return;
 
     const token = getToken();
     if (!token) return;
+
+    const opts = optionsRef.current;
+    const autoReconnect = opts.autoReconnect !== false;
 
     // EventSource doesn't support custom headers, so pass token as query param
     const url = `/api/sync/events?token=${encodeURIComponent(token)}`;
@@ -84,45 +80,45 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
       try {
         const event: SyncEvent = JSON.parse(msg.data);
         setLastEvent(event);
-        onEvent?.(event);
+        opts.onEvent?.(event);
 
         switch (event.type) {
           case 'demande_recue':
-            onDemandeRecue?.(event.payload);
+            opts.onDemandeRecue?.(event.payload);
             break;
           case 'chantier_cree':
-            onChantierCree?.(event.payload);
+            opts.onChantierCree?.(event.payload);
             break;
           case 'mission_assignee':
-            onMissionAssignee?.(event.payload);
+            opts.onMissionAssignee?.(event.payload);
             break;
           case 'blocage_signale':
-            onBlocageSignale?.(event.payload);
+            opts.onBlocageSignale?.(event.payload);
             break;
           case 'equipe_position':
-            onEquipePosition?.(event.payload);
+            opts.onEquipePosition?.(event.payload);
             break;
           case 'equipe_en_route':
-            onEquipeEnRoute?.(event.payload);
-            onDataChanged?.(event.payload);
+            opts.onEquipeEnRoute?.(event.payload);
+            opts.onDataChanged?.(event.payload);
             break;
           case 'equipe_arrivee':
-            onEquipeArrivee?.(event.payload);
-            onDataChanged?.(event.payload);
+            opts.onEquipeArrivee?.(event.payload);
+            opts.onDataChanged?.(event.payload);
             break;
           case 'mission_transferee':
-            onMissionTransferee?.(event.payload);
-            onDataChanged?.(event.payload);
+            opts.onMissionTransferee?.(event.payload);
+            opts.onDataChanged?.(event.payload);
             break;
           case 'mission_terminee':
           case 'equipe_en_pause':
           case 'equipe_reprise':
           case 'equipe_terminee':
           case 'pointage_jour':
-            onDataChanged?.(event.payload);
+            opts.onDataChanged?.(event.payload);
             break;
           case 'data_changed':
-            onDataChanged?.(event.payload);
+            opts.onDataChanged?.(event.payload);
             break;
         }
       } catch {
@@ -135,17 +131,18 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
       es.close();
       eventSourceRef.current = null;
 
-      if (autoReconnect) {
+      if (autoReconnect && mountedRef.current) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
         reconnectAttempts.current++;
         reconnectTimerRef.current = setTimeout(connect, delay);
       }
     };
-  }, [cleanup, onEvent, onDemandeRecue, onChantierCree, onMissionAssignee, onBlocageSignale, onEquipePosition, onEquipeEnRoute, onEquipeArrivee, onMissionTransferee, onDataChanged, autoReconnect]);
+  }, [cleanup]);
 
   useEffect(() => {
+    mountedRef.current = true;
     connect();
-    return cleanup;
+    return () => { mountedRef.current = false; cleanup(); };
   }, [connect, cleanup]);
 
   const reconnect = useCallback(() => {

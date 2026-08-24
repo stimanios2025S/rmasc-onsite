@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [retards, setRetards] = useState<any[]>([]);
   const [teamPositions, setTeamPositions] = useState<TeamPosition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showEquipes, setShowEquipes] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
@@ -51,8 +52,8 @@ export default function DashboardPage() {
   // Sync temps réel : 1 seule requête toutes les 8s
   useEffect(() => {
     loadAll();
-    // Safety: force loading to false after 3s even if all APIs fail
-    const safetyTimeout = setTimeout(() => setLoading(false), 3000);
+    // Safety: force loading to false after 5s even if all APIs fail
+    const safetyTimeout = setTimeout(() => setLoading(false), 5000);
     // Polling 8s — 1 seule requête au lieu de 7
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
@@ -71,7 +72,14 @@ export default function DashboardPage() {
       if (data.chantiers) setChantiers(data.chantiers);
       if (data.incidents) setIncidents(data.incidents);
       if (data.teamPositions) setTeamPositions(data.teamPositions);
-    } catch (_) { /* keep stale */ }
+      setError(null); // Clear any previous error on success
+    } catch (e: any) {
+      // Only set error if we have NO data at all (first load)
+      if (!stats && chantiers.length === 0) {
+        setError(e?.message || 'Erreur de connexion au serveur.');
+      }
+      // Otherwise keep stale data (don't overwrite with error)
+    }
     finally { setLoading(false); }
   }
 
@@ -90,6 +98,25 @@ export default function DashboardPage() {
   }, [equipes]);
 
   if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-indigo-500" /></div>;
+
+  // Error state (only shown if no data loaded at all)
+  if (error && !stats && chantiers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center">
+          <AlertTriangle size={32} className="text-rose-500" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-bold text-stone-800">Erreur de connexion</h2>
+          <p className="text-sm text-stone-400 mt-1 max-w-md">{error}</p>
+        </div>
+        <button onClick={() => { setError(null); setLoading(true); loadAll(); }}
+          className="px-6 py-2.5 bg-indigo-500 text-white rounded-xl text-sm font-semibold hover:bg-indigo-600 shadow-sm">
+          Réessayer
+        </button>
+      </div>
+    );
+  }
 
   const totalM = stats?.missionsTotal ?? 0;
   const pct = totalM > 0 ? Math.round(((stats?.chantiersTotal ?? 0) / totalM) * 100) : 0;

@@ -54,17 +54,37 @@ export async function apiFetch<T = unknown>(
     (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(apiUrl(path), { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), { ...options, headers });
+  } catch (networkErr: any) {
+    // Network error (DNS failure, timeout, CORS, offline)
+    throw new Error('Impossible de contacter le serveur. Vérifiez votre connexion.');
+  }
+
   if (res.status === 401) {
-    // Token expiré → rediriger vers login
+    // Token expire -> rediriger vers login
     if (typeof window !== 'undefined') {
       deconnecter();
     }
     throw new Error('Non authentifié');
   }
-  const data = await res.json();
+
+  // Parse response safely — server might return HTML (Cloudflare error page, etc.)
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    // Non-JSON response (HTML error page, empty body, etc.)
+    if (!res.ok) {
+      throw new Error(`Erreur serveur (HTTP ${res.status}). Reessayez plus tard.`);
+    }
+    // 200 but not JSON — rare, return empty
+    return {} as T;
+  }
+
   if (!res.ok) {
-    throw new Error(data.erreur || 'Erreur serveur');
+    throw new Error(data.erreur || `Erreur serveur (HTTP ${res.status}).`);
   }
   return data;
 }
