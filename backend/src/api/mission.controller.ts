@@ -5,6 +5,7 @@ import { LoggerService } from '../services/notifications/logger.service';
 import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
+import { eventBus } from '../services/events/event-bus';
 
 export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
   const router = Router();
@@ -72,6 +73,26 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
           [missionId]
         );
         logger.info('Mission terminée', { missionId });
+
+        // 📡 SSE: Broadcast mission completion
+        const missionInfo = await pool.query(
+          `SELECT om.id, om.chantier_id, om.equipe_id, e.nom AS equipe_nom, c.nom_chantier
+           FROM ordres_de_mission om
+           JOIN equipes e ON e.id = om.equipe_id
+           JOIN chantiers c ON c.id = om.chantier_id
+           WHERE om.id = $1`,
+          [missionId]
+        );
+        if (missionInfo.rows.length > 0) {
+          const m = missionInfo.rows[0];
+          eventBus.emit('mission_terminee', {
+            missionId: m.id,
+            chantierId: m.chantier_id,
+            equipeId: m.equipe_id,
+            equipeNom: m.equipe_nom,
+            chantierNom: m.nom_chantier,
+          });
+        }
       }
 
       res.status(201).json(rows[0]);
@@ -237,6 +258,28 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
       }
 
       logger.warn('Blocage signalé depuis mobile', { blocageId: rows[0].id, missionId });
+
+      // 📡 SSE: Broadcast blocage event
+      const blocageMission = await pool.query(
+        `SELECT om.chantier_id, c.nom_chantier, e.nom AS equipe_nom
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.id = $1`,
+        [missionId]
+      );
+      if (blocageMission.rows.length > 0) {
+        const bm = blocageMission.rows[0];
+        eventBus.emit('blocage_signale', {
+          blocageId: rows[0].id,
+          missionId,
+          chantierId: bm.chantier_id,
+          chantierNom: bm.nom_chantier,
+          equipeNom: bm.equipe_nom,
+          raison,
+          priorite: priorite || 'moyenne',
+        });
+      }
 
       res.status(201).json({ id: rows[0].id, message: 'Blocage signalé. Admin notifié du retard.' });
     } catch (err: any) {

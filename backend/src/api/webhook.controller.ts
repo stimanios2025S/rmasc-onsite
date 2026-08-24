@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { LoggerService } from '../services/notifications/logger.service';
+import { eventBus } from '../services/events/event-bus';
 import type { IChantierRepository, IMissionRepository, IEquipeRepository } from '../repositories/interfaces';
 
 export interface PayloadERP {
@@ -84,6 +85,19 @@ async function insererDemande(body: PayloadERP, db: Pool, logger: LoggerService,
   );
 
   logger.info('Demande intégration créée', { demandeId: rows[0].id, ref: referenceERP });
+
+  // Broadcast SSE real-time sync event
+  eventBus.emit('demande_recue', {
+    demandeId: rows[0].id,
+    referenceERP,
+    nomChantier: payload.nomChantier,
+    client: payload.client,
+    ville: payload.ville,
+    typeTravaux: payload.typeTravaux,
+    complexite: payload.complexite,
+    source: payload.source,
+  });
+
   res.status(201).json({
     demandeId: rows[0].id, statut: 'EN_ATTENTE_VALIDATION',
     message: `✅ Commande "${payload.nomChantier}" en attente d'approbation.`,

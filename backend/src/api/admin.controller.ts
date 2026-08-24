@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
+import { eventBus } from '../services/events/event-bus';
 
 export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
@@ -112,6 +113,27 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       logger.info('Demande approuvée → Chantier + Mission', {
         demandeId: d.id, chantierId, equipe: missionInfo.equipeNom,
       });
+
+      // 📡 SSE: Broadcast chantier creation + team assignment
+      eventBus.emit('chantier_cree', {
+        chantierId,
+        nom: d.nom_chantier,
+        client: d.client_nom,
+        adresse: d.adresse_chantier,
+        complexite: d.complexite || 'MOYENNE',
+        referenceERP: d.reference_commande_erp,
+      });
+
+      if (missionInfo.equipeId) {
+        eventBus.emit('mission_assignee', {
+          missionId: missionInfo.missionId,
+          chantierId,
+          equipeId: missionInfo.equipeId,
+          equipeNom: missionInfo.equipeNom,
+          chantierNom: d.nom_chantier,
+          phase: 'mecanique',
+        });
+      }
 
       res.json({
         message: `✅ Chantier "${d.nom_chantier}" créé.`,

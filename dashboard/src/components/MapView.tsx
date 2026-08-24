@@ -5,11 +5,28 @@ import type { ChantierData } from '@/lib/api';
 /* ═══════════════════════════════════════════════════════════
    MAPVIEW PROFESSIONNEL — Carte de Commande
    Pin intelligentes, popups riches, légende, filtres
+   + Suivi temps réel des équipes (GPS tracking)
    ═══════════════════════════════════════════════════════════ */
 
 type FiltreType = 'tous' | 'en_cours' | 'en_attente' | 'bloquee' | 'terminee';
 
-interface Props { chantiers: ChantierData[]; }
+export interface TeamPosition {
+  equipe_id: string;
+  equipe_nom: string;
+  equipe_type: string;
+  latitude: number | null;
+  longitude: number | null;
+  vitesse_kmh: number | null;
+  batterie_pct: number | null;
+  last_update: string;
+  mission_id: string | null;
+  destination: string | null;
+  mission_statut: string | null;
+  statut_equipe: string | null;
+  distance_destination_m: number | null;
+}
+
+interface Props { chantiers: ChantierData[]; teamPositions?: TeamPosition[]; }
 
 /* ── Config couleurs par statut ── */
 const STATUS_CONFIG: Record<string, { color: string; bg: string; glow: string; label: string; icon: string }> = {
@@ -38,12 +55,14 @@ function calcProgress(c: ChantierData) {
 
 /* ── Carte Leaflet dynamique ── */
 const LeafletMap = React.memo(function LeafletMap({
-  chantiers, filtre
-}: { chantiers: ChantierData[]; filtre: FiltreType }) {
+  chantiers, filtre, teamPositions
+}: { chantiers: ChantierData[]; filtre: FiltreType; teamPositions?: TeamPosition[] }) {
   const [mapReady, setMapReady] = React.useState(false);
   const mapRef = React.useRef<HTMLDivElement>(null);
   const instanceRef = React.useRef<any>(null);
   const markersRef = React.useRef<any[]>([]);
+  const teamMarkersRef = React.useRef<any[]>([]);
+  const trailsRef = React.useRef<any[]>([]);
 
   const filtered = useMemo(() => {
     if (filtre === 'tous') return chantiers;
@@ -172,6 +191,96 @@ const LeafletMap = React.memo(function LeafletMap({
     }
   }, [filtered, mapReady]);
 
+  // Team position markers (live GPS tracking)
+  React.useEffect(() => {
+    if (!mapReady || !instanceRef.current) return;
+    const map = instanceRef.current;
+    const L = (window as any).L;
+    if (!L) return;
+
+    // Clear old team markers and trails
+    teamMarkersRef.current.forEach(m => map.removeLayer(m));
+    trailsRef.current.forEach(l => map.removeLayer(l));
+    teamMarkersRef.current = [];
+    trailsRef.current = [];
+
+    if (!teamPositions || teamPositions.length === 0) return;
+
+    const TEAM_COLORS: Record<string, string> = {
+      mecanique: '#f59e0b',
+      electrique: '#3b82f6',
+      mixte: '#8b5cf6',
+    };
+
+    teamPositions.forEach(tp => {
+      if (!tp.latitude || !tp.longitude) return;
+
+      const color = TEAM_COLORS[tp.equipe_type] || '#6b7280';
+      const isEnRoute = tp.mission_statut === 'en_route';
+      const isPaused = tp.mission_statut === 'en_pause';
+
+      // Animated team marker (moving dot)
+      const pulseClass = isEnRoute ? 'team-pulse--moving' : isPaused ? 'team-pulse--paused' : 'team-pulse--static';
+      const icon = L.divIcon({
+        className: '',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -20],
+        html: `
+          <div class="team-marker ${pulseClass}" style="--team-color: ${color}">
+            <div class="team-marker__ring" style="border-color: ${color}"></div>
+            <div class="team-marker__dot" style="background: ${color}">
+              ${tp.equipe_type === 'electrique' ? '⚡' : tp.equipe_type === 'mecanique' ? '🔧' : '🛡️'}
+            </div>
+            <div class="team-marker__label" style="background: ${color}">${tp.equipe_nom.split(' ').pop()}</div>
+          </div>
+        `,
+      });
+
+      // Popup info
+      const timeSince = Math.round((Date.now() - new Date(tp.last_update).getTime()) / 60000);
+      const popup = `
+        <div class="team-popup">
+          <div class="team-popup__header" style="background: ${color}">
+            <span style="font-size: 18px">${tp.equipe_type === 'electrique' ? '⚡' : tp.equipe_type === 'mecanique' ? '🔧' : '🛡️'}</span>
+            <div>
+              <div class="team-popup__nom">${tp.equipe_nom}</div>
+              <div class="team-popup__type">${tp.equipe_type}</div>
+            </div>
+          </div>
+          <div class="team-popup__body">
+            <div class="team-popup__row"><span>Statut</span><span class="team-popup__badge" style="background: ${color}22;color: ${color}">${tp.mission_statut || tp.statut_equipe || '—'}</span></div>
+            ${tp.destination ? `<div class="team-popup__row"><span>Destination</span><span>${tp.destination}</span></div>` : ''}
+            ${tp.vitesse_kmh ? `<div class="team-popup__row"><span>Vitesse</span><span>${tp.vitesse_kmh} km/h</span></div>` : ''}
+            ${tp.distance_destination_m ? `<div class="team-popup__row"><span>Distance</span><span>${tp.distance_destination_m}m</span></div>` : ''}
+            ${tp.batterie_pct !== null ? `<div class="team-popup__row"><span>Batterie</span><span>${tp.batterie_pct}%</span></div>` : ''}
+            <div class="team-popup__row"><span>Dernière MAJ</span><span>Il y a ${timeSince} min</span></div>
+            <a href="/dashboard/chantier/${tp.mission_id || ''}" class="team-popup__cta" style="background: ${color}">Voir chantier →</a>
+          </div>
+        </div>
+      `;
+
+      const marker = L.marker([tp.latitude, tp.longitude], { icon })
+        .addTo(map)
+        .bindPopup(popup, { className: 'map-popup-wrap', maxWidth: 280, minWidth: 240 });
+
+      teamMarkersRef.current.push(marker);
+
+      // Draw trail (last known route) if destination exists
+      if (tp.mission_statut === 'en_route' && tp.destination) {
+        // Find matching chantier for trail endpoint
+        const dest = chantiers.find(ch => ch.nom === tp.destination);
+        if (dest && dest.lat && dest.lng) {
+          const trail = L.polyline(
+            [[tp.latitude, tp.longitude], [dest.lat, dest.lng]],
+            { color, weight: 3, opacity: 0.4, dashArray: '8,8', className: 'team-trail' }
+          ).addTo(map);
+          trailsRef.current.push(trail);
+        }
+      }
+    });
+  }, [teamPositions, mapReady, chantiers]);
+
   // Resize handler
   React.useEffect(() => {
     if (!mapReady || !instanceRef.current) return;
@@ -183,10 +292,11 @@ const LeafletMap = React.memo(function LeafletMap({
 });
 
 /* ── Main Component ── */
-export default function MapView({ chantiers }: Props) {
+export default function MapView({ chantiers, teamPositions = [] }: Props) {
   const [filtre, setFiltre] = useState<FiltreType>('tous');
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoResult, setGeoResult] = useState<string | null>(null);
+  const [showTeams, setShowTeams] = useState(true);
 
   const stats = useMemo(() => ({
     total: chantiers.length,
@@ -197,6 +307,11 @@ export default function MapView({ chantiers }: Props) {
     bloquee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'bloquee').length,
     terminee: chantiers.filter(c => c.statut?.toLowerCase().replace(/[^a-z]/g, '') === 'terminee').length,
   }), [chantiers]);
+
+  const visibleTeams = useMemo(() =>
+    showTeams ? teamPositions.filter(tp => tp.latitude && tp.longitude) : [],
+    [teamPositions, showTeams]
+  );
 
   async function handleGeocode() {
     setGeoLoading(true); setGeoResult(null);
@@ -228,6 +343,14 @@ export default function MapView({ chantiers }: Props) {
         <div className="map-view__title-row">
           <h2 className="map-view__title">🗺️ Carte de Commande</h2>
           <span className="map-view__subtitle">{stats.avecGPS}/{stats.total} sur la carte</span>
+          {teamPositions.length > 0 && (
+            <button
+              onClick={() => setShowTeams(!showTeams)}
+              className={`map-team-toggle ${showTeams ? 'map-team-toggle--active' : ''}`}
+            >
+              🚗 {teamPositions.length} équipe(s) GPS {showTeams ? 'ON' : 'OFF'}
+            </button>
+          )}
         </div>
 
         {/* Summary Stats */}
@@ -282,7 +405,7 @@ export default function MapView({ chantiers }: Props) {
       </div>
 
       {/* ── Map ── */}
-      <LeafletMap chantiers={chantiers} filtre={filtre} />
+      <LeafletMap chantiers={chantiers} filtre={filtre} teamPositions={visibleTeams} />
 
       {/* ── Legend ── */}
       <div className="map-view__legend">
@@ -293,6 +416,19 @@ export default function MapView({ chantiers }: Props) {
             <span>{s.label}</span>
           </div>
         ))}
+        <div className="map-legend__separator" />
+        <div className="map-legend__item">
+          <span className="map-legend__dot" style={{ background: '#f59e0b', boxShadow: '0 0 6px rgba(245,158,11,0.5)' }} />
+          <span>🔧 Méca</span>
+        </div>
+        <div className="map-legend__item">
+          <span className="map-legend__dot" style={{ background: '#3b82f6', boxShadow: '0 0 6px rgba(59,130,246,0.5)' }} />
+          <span>⚡ Élec</span>
+        </div>
+        <div className="map-legend__item">
+          <span className="map-legend__dot" style={{ background: '#8b5cf6', boxShadow: '0 0 6px rgba(139,92,246,0.5)' }} />
+          <span>🛡️ Mixte</span>
+        </div>
       </div>
     </div>
   );

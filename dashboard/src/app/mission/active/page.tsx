@@ -6,7 +6,7 @@ import {
   HardHat, MapPin, Clock, Wrench, Zap, Shield, AlertTriangle,
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
   ChevronRight, Phone, Package, FileText, ClipboardList, Timer,
-  Radio, User, Hammer,
+  Radio, User, Hammer, Coffee, Store, Sunrise, Sunset, ArrowRightLeft,
 } from 'lucide-react';
 import TechnicianMap from '@/components/TechnicianMap';
 
@@ -62,6 +62,20 @@ export default function MissionActivePage() {
   const [retardPhoto, setRetardPhoto] = useState<File | null>(null);
   const [retardLoading, setRetardLoading] = useState(false);
   const [syncDot, setSyncDot] = useState(false); // indicateur sync temps réel
+
+  // ─── NEW: Tracking & lifecycle states ───
+  const [gpsInZone, setGpsInZone] = useState<boolean | null>(null);
+  const [gpsDistance, setGpsDistance] = useState<number | null>(null);
+  const [arriveeLoading, setArriveeLoading] = useState(false);
+  const [pauseLoading, setPauseLoading] = useState(false);
+  const [enPause, setEnPause] = useState(false);
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [journeeResume, setJourneeResume] = useState<any>(null);
+  const [trackingActive, setTrackingActive] = useState(false);
+  const trackingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [estEnRoute, setEstEnRoute] = useState(false);
+  const [estArriveChantier, setEstArriveChantier] = useState(false);
+  const [peutTransférer, setPeutTransférer] = useState(false);
 
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
@@ -156,6 +170,169 @@ export default function MissionActivePage() {
       () => { setPointageMsg({ type: 'error', text: 'Activez la géolocalisation.' }); setGpsLoading(false); },
       { enableHighAccuracy: true, timeout: 10000 },
     );
+  };
+
+  /* ═══ NEW: POINTAGE JOUR (matinal / fin journée) ═══ */
+  const handlePointageJour = async (type: 'matinal' | 'fin_journee') => {
+    if (!equipeId) return;
+    setGpsLoading(true); setPointageMsg(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch('/api/tracking/pointage-jour', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ equipeId, missionId: mission?.id || null, type, latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setPointageMsg({ type: 'success', text: type === 'matinal' ? '🌅 Pointage matinal enregistré ! Vous êtes en route.' : '🌙 Fin de journée enregistrée !' });
+            if (type === 'matinal') {
+              setEstEnRoute(true);
+              startGpsTracking(); // Start continuous GPS tracking
+            }
+            loadMission();
+          } else {
+            setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+          }
+        } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+        setGpsLoading(false);
+      },
+      () => { setPointageMsg({ type: 'error', text: 'Activez la géolocalisation.' }); setGpsLoading(false); },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  /* ═══ NEW: GPS CONTINUOUS TRACKING (pendant le trajet) ═══ */
+  const startGpsTracking = useCallback(() => {
+    if (trackingIntervalRef.current) return; // Already tracking
+    setTrackingActive(true);
+    trackingIntervalRef.current = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            await fetch('/api/tracking/gps', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                equipeId, missionId: mission?.id || null,
+                latitude: pos.coords.latitude, longitude: pos.coords.longitude,
+                vitesse: pos.coords.speed || null,
+                precision: pos.coords.accuracy || null,
+                batterie: null, timestamp: new Date().toISOString(),
+              }),
+            });
+          } catch (_) { /* silent */ }
+        },
+        () => { /* GPS denied — skip this cycle */ },
+        { enableHighAccuracy: true, timeout: 8000 },
+      );
+    }, 30000); // Every 30 seconds
+  }, [equipeId, mission?.id]);
+
+  const stopGpsTracking = useCallback(() => {
+    if (trackingIntervalRef.current) {
+      clearInterval(trackingIntervalRef.current);
+      trackingIntervalRef.current = null;
+    }
+    setTrackingActive(false);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { if (trackingIntervalRef.current) clearInterval(trackingIntervalRef.current); };
+  }, []);
+
+  /* ═══ NEW: ARRIVÉE — Confirmer avec vérification GPS ═══ */
+  const handleArriveeSite = async () => {
+    if (!mission || !equipeId || !technicienId) return;
+    setArriveeLoading(true); setPointageMsg(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch('/api/tracking/arrivee', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              equipeId, missionId: mission.id, technicienId,
+              latitude: pos.coords.latitude, longitude: pos.coords.longitude,
+            }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            setPointageMsg({ type: 'success', text: data.message });
+            setEstArriveChantier(true);
+            setEstEnRoute(false);
+            setGpsInZone(true);
+            setGpsDistance(data.distance);
+            stopGpsTracking(); // Stop road tracking, we're on site
+            loadMission();
+          } else if (data.distance !== undefined) {
+            // Not in zone
+            setGpsInZone(false);
+            setGpsDistance(data.distance);
+            setPointageMsg({ type: 'error', text: data.message });
+          } else {
+            setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+          }
+        } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+        setArriveeLoading(false);
+      },
+      () => { setPointageMsg({ type: 'error', text: 'Activez la géolocalisation.' }); setArriveeLoading(false); },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  /* ═══ NEW: PAUSE / SHOP ═══ */
+  const handlePause = async (type: 'pause' | 'retour_shop') => {
+    if (!equipeId) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch('/api/tracking/pause', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipeId, missionId: mission?.id || null, action: 'debut', type }),
+      });
+      if (res.ok) {
+        setEnPause(true);
+        setPointageMsg({ type: 'success', text: type === 'pause' ? '☕ Pause enregistrée' : '🏪 Retour au shop enregistré' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur.' }); }
+    setPauseLoading(false);
+  };
+
+  const handleReprise = async () => {
+    if (!equipeId) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch('/api/tracking/pause', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipeId, missionId: mission?.id || null, action: 'fin' }),
+      });
+      if (res.ok) {
+        setEnPause(false);
+        setPointageMsg({ type: 'success', text: '✅ Reprise du travail' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur.' }); }
+    setPauseLoading(false);
+  };
+
+  /* ═══ NEW: TRANSFERT MÉCA → ÉLECTRIQUE ═══ */
+  const handleTransferer = async () => {
+    if (!mission) return;
+    if (!confirm('Terminer la phase mécanique et transférer à l\'équipe électrique ?')) return;
+    setTransferLoading(true);
+    try {
+      const res = await fetch('/api/tracking/transferer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ missionId: mission.id, equipeId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setPointageMsg({ type: 'success', text: data.message });
+        setPeutTransférer(false);
+        loadMission();
+      } else {
+        setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setTransferLoading(false);
   };
 
   /* ═══ CHECKLIST (simple, sans blocage frustrant) ═══ */
@@ -344,10 +521,21 @@ export default function MissionActivePage() {
   // ═══ STATE A: MISSION ACTIVE ═══
   const estArrive = pointages.some(p => p.type === 'arrivee');
   const estDepart = pointages.some(p => p.type === 'depart');
-  const peutArriver = !estArrive && mission?.statut === 'en_attente';
-  const peutPartir = estArrive && !estDepart;
   const aBloque = mission?.statut === 'bloque';
   const progression = checklist ? Math.round((checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100) : 0;
+
+  // New lifecycle states
+  const missionStatut = mission?.statut || '';
+  const isEnRoute = estEnRoute || missionStatut === 'en_route';
+  const isArrive = estArriveChantier || estArrive || missionStatut === 'en_cours';
+  const isEnCours = missionStatut === 'en_cours';
+  const isTermine = estDepart || missionStatut === 'termine';
+  const isMecanique = mission?.phase === 'mecanique';
+
+  // Can see work content? Only when arrived and in zone
+  const canSeeWork = isEnCours || isArrive;
+  // GPS lock: must be in zone to see work
+  const isGpsLocked = !isArrive && gpsInZone === false;
 
   return (
     <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }} syncDot={syncDot}>
@@ -589,52 +777,163 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ BOUTON POINTAGE ═══ */}
-      <div className="mx-4 mb-4">
-        {aBloque ? (
-          <div className="bg-gradient-to-r from-rose-50 to-red-50 rounded-3xl p-5 text-center border border-rose-200">
-            <AlertTriangle size={32} className="text-rose-400 mx-auto mb-2" />
-            <p className="font-bold text-stone-700">Mission Bloquée</p>
-            <p className="text-sm text-stone-400">En attente de résolution par El Ghani</p>
+      {/* ═══ PHASE 1: POINTAGE MATINAL ═══ */}
+      {!isEnRoute && !isArrive && !isTermine && !aBloque && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-3xl p-6 text-center shadow-lg shadow-blue-200">
+            <Sunrise size={40} className="text-white/80 mx-auto mb-3" />
+            <p className="text-white font-bold text-lg mb-1">Pointage Matinal</p>
+            <p className="text-white/70 text-sm mb-4">Enregistrez votre arrivée et démarrez la journée</p>
+            <button onClick={() => handlePointageJour('matinal')} disabled={gpsLoading}
+              className="w-full bg-white text-blue-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+              {gpsLoading ? <Loader2 size={22} className="animate-spin" /> : <Sunrise size={22} />}
+              🌅 Pointer mon arrivée
+            </button>
           </div>
-        ) : peutArriver ? (
-          <button onClick={() => handlePointage('arrivee')} disabled={gpsLoading}
-            className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-5 rounded-3xl text-lg font-black shadow-lg shadow-emerald-200 hover:shadow-xl hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
-            {gpsLoading ? <Loader2 size={22} className="animate-spin" /> : <Navigation size={22} />}
-            Pointer Arrivée (GPS)
+        </div>
+      )}
+
+      {/* ═══ GPS TRACKING BAR (en route) ═══ */}
+      {isEnRoute && !isArrive && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-5 shadow-lg shadow-amber-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Navigation size={20} className="text-white animate-pulse" />
+                <span className="text-white font-bold text-sm">🚗 En Route</span>
+              </div>
+              {trackingActive && (
+                <span className="flex items-center gap-1.5 text-white/80 text-[10px] font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                  GPS actif
+                </span>
+              )}
+            </div>
+            <p className="text-white/70 text-xs mb-3">
+              Le GPS suit votre position en temps réel. L'admin voit votre parcours.
+            </p>
+            {gpsDistance !== null && gpsInZone === false && (
+              <p className="text-white/90 text-xs font-semibold mb-2">
+                📍 Distance: {gpsDistance}m — Approchez-vous du chantier
+              </p>
+            )}
+            <button onClick={handleArriveeSite} disabled={arriveeLoading}
+              className="w-full bg-white text-orange-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+              {arriveeLoading ? <Loader2 size={22} className="animate-spin" /> : <CheckCircle size={22} />}
+              🏗️ Je suis arrivé sur site
+            </button>
+            {gpsInZone === false && gpsDistance !== null && (
+              <p className="text-white/60 text-[10px] text-center mt-2">
+                ⚠️ Vous devez être dans le rayon du chantier pour confirmer l'arrivée
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ GPS LOCK WARNING ═══ */}
+      {isGpsLocked && (
+        <div className="mx-4 mb-4 bg-rose-50 border border-rose-200 rounded-3xl p-4 text-center">
+          <AlertTriangle size={28} className="text-rose-400 mx-auto mb-2" />
+          <p className="font-bold text-rose-700 text-sm">📍 Hors zone géographique</p>
+          <p className="text-rose-500 text-xs mt-1">
+            Vous êtes à {gpsDistance}m du chantier. Rapprochez-vous pour accéder au contenu.
+          </p>
+        </div>
+      )}
+
+      {/* ═══ MISSION BLOQUÉE ═══ */}
+      {aBloque && (
+        <div className="mx-4 mb-4 bg-gradient-to-r from-rose-50 to-red-50 rounded-3xl p-5 text-center border border-rose-200">
+          <AlertTriangle size={32} className="text-rose-400 mx-auto mb-2" />
+          <p className="font-bold text-stone-700">Mission Bloquée</p>
+          <p className="text-sm text-stone-400">En attente de résolution par El Ghani</p>
+        </div>
+      )}
+
+      {/* ═══ EN PAUSE ═══ */}
+      {enPause && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-amber-100 to-orange-100 rounded-3xl p-5 text-center border border-amber-200">
+            <Coffee size={32} className="text-amber-500 mx-auto mb-2 animate-pulse" />
+            <p className="font-bold text-amber-700">⏸️ En pause</p>
+            <p className="text-sm text-amber-500 mb-3">Le timer est suspendu</p>
+            <button onClick={handleReprise} disabled={pauseLoading}
+              className="w-full bg-amber-500 text-white py-3 rounded-2xl font-bold hover:bg-amber-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+              {pauseLoading ? <Loader2 size={18} className="animate-spin" /> : <Wrench size={18} />}
+              Reprendre le travail
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ACTIONS EN COURS DE TRAVAIL ═══ */}
+      {isEnCours && !enPause && !isTermine && (
+        <div className="mx-4 mb-4 space-y-3">
+          {/* Pause / Shop buttons */}
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => handlePause('pause')} disabled={pauseLoading}
+              className="bg-white border-2 border-amber-200 text-amber-600 py-3.5 rounded-2xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2 shadow-sm">
+              {pauseLoading ? <Loader2 size={16} className="animate-spin" /> : <Coffee size={16} />}
+              ☕ Pause
+            </button>
+            <button onClick={() => handlePause('retour_shop')} disabled={pauseLoading}
+              className="bg-white border-2 border-blue-200 text-blue-600 py-3.5 rounded-2xl font-bold hover:bg-blue-50 transition-all flex items-center justify-center gap-2 shadow-sm">
+              {pauseLoading ? <Loader2 size={16} className="animate-spin" /> : <Store size={16} />}
+              🏪 Retour Shop
+            </button>
+          </div>
+          {/* Blocage / Retard */}
+          <button onClick={() => setShowBlocage(true)}
+            className="w-full bg-white border-2 border-rose-200 text-rose-500 py-3.5 rounded-2xl font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2">
+            <AlertTriangle size={16} /> Signaler un Blocage
           </button>
-        ) : peutPartir ? (
-          <button onClick={() => handlePointage('depart')} disabled={gpsLoading}
-            className="w-full bg-gradient-to-r from-rose-500 to-red-500 text-white py-5 rounded-3xl text-lg font-black shadow-lg shadow-rose-200 hover:shadow-xl hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
-            {gpsLoading ? <Loader2 size={22} className="animate-spin" /> : <LogOut size={22} />}
-            Pointer Départ (GPS)
+          <button onClick={() => setRetardModal(true)}
+            className="w-full bg-white border-2 border-amber-200 text-amber-600 py-3.5 rounded-2xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2">
+            <Timer size={16} /> Signaler un Retard
           </button>
-        ) : estDepart ? (
+        </div>
+      )}
+
+      {/* ═══ TRANSFERT MÉCA → ÉLECTRIQUE ═══ */}
+      {isEnCours && isMecanique && checklist?.complete && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-5 shadow-lg shadow-indigo-200">
+            <div className="flex items-center gap-3 mb-3">
+              <ArrowRightLeft size={24} className="text-white" />
+              <div>
+                <p className="font-bold text-white text-sm">Phase Mécanique Terminée !</p>
+                <p className="text-white/70 text-xs">Transférer à l'équipe électrique</p>
+              </div>
+            </div>
+            <button onClick={handleTransferer} disabled={transferLoading}
+              className="w-full bg-white text-indigo-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+              {transferLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
+              ⚡ Envoyer à l'Équipe Électrique
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FIN DE JOURNÉE ═══ */}
+      {isEnCours && !enPause && !isTermine && (
+        <div className="mx-4 mb-4">
+          <button onClick={() => handlePointageJour('fin_journee')} disabled={gpsLoading}
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-4 rounded-2xl font-bold shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {gpsLoading ? <Loader2 size={18} className="animate-spin" /> : <Sunset size={18} />}
+            🌙 Terminer la journée
+          </button>
+        </div>
+      )}
+
+      {/* ═══ MISSION TERMINÉE ═══ */}
+      {isTermine && (
+        <div className="mx-4 mb-4">
           <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-3xl p-5 text-center border border-emerald-200">
             <CheckCircle size={32} className="text-emerald-400 mx-auto mb-2" />
             <p className="font-bold text-emerald-700">Mission Terminée ✓</p>
             <p className="text-sm text-emerald-500">Bon retour ! 3 jours de repos vous attendent.</p>
           </div>
-        ) : (
-          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-3xl p-5 text-center border border-indigo-200">
-            <Clock size={32} className="text-indigo-400 mx-auto mb-2" />
-            <p className="font-bold text-indigo-700">Mission en cours</p>
-            <p className="text-sm text-indigo-500">Vous êtes pointé</p>
-          </div>
-        )}
-      </div>
-
-      {/* ═══ BOUTONS ACTION ═══ */}
-      {!aBloque && !estDepart && (
-        <div className="mx-4 mb-4 space-y-2.5">
-          <button onClick={() => setShowBlocage(true)}
-            className="w-full bg-white border-2 border-rose-200 text-rose-500 py-4 rounded-3xl font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2">
-            <AlertTriangle size={18} /> Signaler un Blocage / Pièce Manquante
-          </button>
-          <button onClick={() => setRetardModal(true)}
-            className="w-full bg-white border-2 border-amber-200 text-amber-600 py-4 rounded-3xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2">
-            <Timer size={18} /> Signaler un Retard à El Ghani
-          </button>
         </div>
       )}
 

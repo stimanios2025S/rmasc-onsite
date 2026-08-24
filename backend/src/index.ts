@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { ChantierRepository } from './repositories/chantier.repository';
 import { MissionRepository } from './repositories/mission.repository';
@@ -23,6 +24,7 @@ import { creerMissionRouter } from './api/mission.controller';
 import { creerEquipeRouter } from './api/equipe.controller';
 import { creerUploadRouter } from './api/upload.controller';
 import { creerGeofencingRouter } from './api/geofencing.controller';
+import { creerTrackingRouter } from './api/tracking.controller';
 import { SmsService } from './services/sms/sms.service';
 import { SmsWorker } from './services/sms/sms.worker';
 import path from 'path';
@@ -79,16 +81,63 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
   message: { erreur: 'Trop de requêtes. Réessayez plus tard.' },
-  keyGenerator: (req) => req.ip || 'unknown',
+  keyGenerator: (req: any) => req.ip || 'unknown',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/health' || req.path === '/api/auth/login', // ne pas bloquer health + login
+  skip: (req: any) => req.path === '/api/health' || req.path === '/api/auth/login', // ne pas bloquer health + login
 });
 app.use('/api', limiter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'rmasc-onsite', timestamp: new Date().toISOString() });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SSE — Server-Sent Events pour synchronisation temps réel
+// ═══════════════════════════════════════════════════════════════════════════
+import { eventBus } from './services/events/event-bus';
+
+app.get('/api/sync/events', (req, res) => {
+  // EventSource can't set headers, so accept token via query param
+  const token = (req.query.token as string) || req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    res.status(401).json({ erreur: 'Token manquant.' });
+    return;
+  }
+  let user;
+  try {
+    user = jwt.verify(token, process.env.JWT_SECRET || 'rmasc-onsite-secret-change-in-production');
+  } catch {
+    res.status(401).json({ erreur: 'Token invalide ou expiré.' });
+    return;
+  }
+  (req as any).user = user;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(':\n\n'); // initial keepalive
+
+  // Send heartbeat every 30s to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(':heartbeat\n\n');
+  }, 30000);
+
+  const unsubscribe = eventBus.subscribe((event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  });
+
+  logger.info('SSE client connecté', { total: eventBus.listenerCount });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+    logger.info('SSE client déconnecté', { total: eventBus.listenerCount });
+  });
 });
 
 // Routes d'authentification
@@ -108,6 +157,9 @@ app.use('/api/upload', creerUploadRouter(pool));
 
 // Routes géofencing (suivi position + alertes sortie zone + roadmap)
 app.use('/api/geofencing', creerGeofencingRouter(pool, logger));
+
+// Routes tracking (GPS en route, pointage jour, pause, transfert)
+app.use('/api/tracking', creerTrackingRouter(pool, logger));
 
 // Static files (uploads) — same dir as upload.controller.ts (backend/public/uploads)
 const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');

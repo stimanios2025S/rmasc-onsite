@@ -10,8 +10,8 @@ const UPLOADS_DIR = path.resolve(__dirname, '../../public/uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
+  destination: (_req: Request, _file: any, cb: any) => cb(null, UPLOADS_DIR),
+  filename: (_req: Request, file: any, cb: any) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, unique + path.extname(file.originalname));
   },
@@ -20,7 +20,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: any, cb: any) => {
     const allowed = ['.pdf', '.dxf', '.dwg', '.jpg', '.jpeg', '.png', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) cb(null, true);
@@ -32,7 +32,7 @@ export function creerUploadRouter(pool: Pool): Router {
   const router = Router();
 
   // POST /api/upload/single — upload un fichier
-  router.post('/single', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
+  router.post('/single', upload.single('file'), async (req: any, res: Response): Promise<void> => {
     try {
       const file = req.file;
       if (!file) { res.status(400).json({ erreur: 'Aucun fichier reçu.' }); return; }

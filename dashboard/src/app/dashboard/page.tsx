@@ -7,11 +7,12 @@ import {
   type StatsData, type DemandeData, type EquipeData, type ChantierData, type IncidentData,
 } from '@/lib/api';
 import {
-  HardHat, AlertTriangle, Users, MapPin, Bell, XCircle,
+  HardHat, AlertTriangle, Users, MapPin, XCircle,
   Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
   CheckCheck, Timer,
 } from 'lucide-react';
-import MapView from '@/components/MapView';
+import MapView, { type TeamPosition } from '@/components/MapView';
+import SyncNotifications from '@/components/SyncNotifications';
 
 const STATUT_BADGE: Record<string, string> = {
   DISPONIBLE: 'bg-emerald-50 text-emerald-600', EN_MISSION: 'bg-indigo-50 text-indigo-600',
@@ -42,6 +43,7 @@ export default function DashboardPage() {
   const [chantiers, setChantiers] = useState<ChantierData[]>([]);
   const [incidents, setIncidents] = useState<IncidentData[]>([]);
   const [retards, setRetards] = useState<any[]>([]);
+  const [teamPositions, setTeamPositions] = useState<TeamPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showEquipes, setShowEquipes] = useState(true);
@@ -63,17 +65,19 @@ export default function DashboardPage() {
   async function loadAll() {
     try {
       // Tout en parallèle, une seule passe (pas de doublon chantiers)
-      const [s, d, e, c, i, r] = await Promise.all([
+      const [s, d, e, c, i, r, tp] = await Promise.all([
         fetchStats().catch(() => null),
         fetchDemandes().catch(() => []),
         fetchEquipes().catch(() => []),
         fetchChantiers().catch(() => []),
         fetchIncidents().catch(() => []),
         apiFetch('/admin/retards').catch(() => []),
+        apiFetch('/tracking/equipes').catch(() => []),
       ]);
       if (s) setStats(s);
       setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
       setRetards(r as any[]);
+      setTeamPositions(tp as TeamPosition[]);
     } catch (_) { /* keep stale */ }
     finally { setLoading(false); }
   }
@@ -112,7 +116,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm text-stone-400">
-          <Bell size={16} />
+          <SyncNotifications onRefresh={loadAll} />
           <span className="hidden sm:inline">{user?.prenom} {user?.nom}</span>
         </div>
       </div>
@@ -155,7 +159,7 @@ export default function DashboardPage() {
 
       {/* ═══ CARTE DE COMMANDE — Full width ═══ */}
       <div className="mb-8">
-        <MapView chantiers={chantiers} />
+        <MapView chantiers={chantiers} teamPositions={teamPositions} />
       </div>
 
       {/* KPIs + Gauge */}
