@@ -3,8 +3,6 @@
 -- GPS en route, pointage matinal/soir, pause, transfert méca→élec
 -- ============================================================================
 
-BEGIN;
-
 -- ═══════════════════════════════════════════════════════════════════════
 -- 1. NOUVEAUX TYPES ÉNUMÉRÉS
 -- ═══════════════════════════════════════════════════════════════════════
@@ -39,7 +37,6 @@ CREATE TABLE IF NOT EXISTS pointages_jour (
 
 CREATE INDEX idx_pointages_jour_equipe ON pointages_jour (equipe_id, horodatage DESC);
 CREATE INDEX idx_pointages_jour_mission ON pointages_jour (mission_id, horodatage DESC);
-CREATE INDEX idx_pointages_jour_date ON pointages_jour (date_trunc('day', horodatage));
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 3. TABLE : gps_tracking (position en temps réel pendant trajet)
@@ -58,7 +55,6 @@ CREATE TABLE IF NOT EXISTS gps_tracking (
 );
 
 CREATE INDEX idx_gps_tracking_equipe ON gps_tracking (equipe_id, date_creation DESC);
-CREATE INDEX idx_gps_tracking_equipe_recent ON gps_tracking (equipe_id, date_creation DESC) WHERE date_creation > NOW() - INTERVAL '2 hours';
 CREATE INDEX idx_gps_tracking_mission ON gps_tracking (mission_id, date_creation DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -68,7 +64,7 @@ CREATE TABLE IF NOT EXISTS pauses_journee (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     equipe_id UUID NOT NULL REFERENCES equipes(id) ON DELETE CASCADE,
     mission_id UUID REFERENCES ordres_de_mission(id) ON DELETE SET NULL,
-    type_pause VARCHAR(30) NOT NULL DEFAULT 'pause', -- 'pause' ou 'retour_shop'
+    type_pause VARCHAR(30) NOT NULL DEFAULT 'pause',
     date_debut TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     date_fin TIMESTAMPTZ,
     motif TEXT,
@@ -159,5 +155,3 @@ DROP TRIGGER IF EXISTS trg_auto_en_route ON pointages_jour;
 CREATE TRIGGER trg_auto_en_route
     AFTER INSERT ON pointages_jour
     FOR EACH ROW EXECUTE FUNCTION auto_set_en_route();
-
-COMMIT;
