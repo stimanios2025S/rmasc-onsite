@@ -215,13 +215,14 @@ app.get('/api/chantiers', async (_req, res) => {
 // ─── DASHBOARD ALL-IN-ONE — 1 seule requête pour tout le dashboard ──────
 // Resilient: each sub-query is independent — if one fails, others still return data
 app.get('/api/dashboard/all', async (_req, res) => {
-  // Helper: run query and return { rows } or null on error (never throws)
-  const safe = (p: Promise<any>) => p.catch((e) => { console.error('[dashboard/all] query error:', e.message); return { rows: [] as any[] }; });
+  // Helper: run query and return { rows } on error (never throws)
+  const safe = (p: Promise<any>): Promise<{ rows: any[] }> =>
+    p.catch((e) => { console.error('[dashboard/all] query error:', e.message); return { rows: [] }; });
 
   try {
-    // Run all queries in parallel — each is independent
+    // Run all queries in parallel — EXACTLY 10 items, matched to destructuring below
     const results = await Promise.all([
-      // 1. Chantiers with mission counts (CTE)
+      // [0] Chantiers with mission counts (CTE)
       safe(pool.query(
         `WITH ms AS (
            SELECT chantier_id,
@@ -252,13 +253,16 @@ app.get('/api/dashboard/all', async (_req, res) => {
          LEFT JOIN am ON am.chantier_id=c.id
          ORDER BY c.date_creation DESC`
       )),
-      // 2-8: Individual stat queries (each independent)
-      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours, COUNT(*) FILTER (WHERE statut='bloque') AS bloques FROM chantiers`)),
-      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours FROM ordres_de_mission`)),
-      safe(pool.query(`SELECT COUNT(*) AS total FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'`)),
-      safe(pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='ouvert') AS ouverts FROM blocages_et_requisitions`)),
-      safe(pool.query(`SELECT COUNT(*) AS total FROM equipes WHERE statut_equipe='DISPONIBLE'`)),
-      // 9. Equipes list
+      // [1] Chantiers stats — use statut::text to avoid enum validation errors
+      safe(pool.query(`SELECT COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE statut::text='en_cours') AS en_cours,
+        COUNT(*) FILTER (WHERE statut::text IN ('suspendu','bloque')) AS bloques
+        FROM chantiers`)),
+      // [2] Missions stats
+      safe(pool.query(`SELECT COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours
+        FROM ordres_de_mission`)),
+      // [3] Equipes list
       safe(pool.query(
         `SELECT e.id, e.nom, e.type, e.statut_equipe,
                 (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
@@ -266,13 +270,13 @@ app.get('/api/dashboard/all', async (_req, res) => {
                   THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants
          FROM equipes e ORDER BY e.type, e.nom`
       )),
-      // 10. Demandes
+      // [4] Demandes (use reference_commande_erp, not reference_erp)
       safe(pool.query(
-        `SELECT di.id, di.reference_erp AS ref, di.client_nom, di.nom_chantier, di.statut,
+        `SELECT di.id, di.reference_commande_erp AS ref, di.client_nom, di.nom_chantier, di.statut,
                 TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI') AS cree
          FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION'`
       )),
-      // 11. Incidents
+      // [5] Incidents (blocages)
       safe(pool.query(
         `SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
                 TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
@@ -281,7 +285,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
          JOIN chantiers c ON c.id=om.chantier_id
          WHERE b.statut IN ('ouvert','en_cours') LIMIT 20`
       )),
-      // 12. Team positions (GPS tracking)
+      // [6] Team positions (GPS tracking)
       safe(pool.query(
         `WITH dp AS (
            SELECT DISTINCT ON (gt.equipe_id)
@@ -300,25 +304,26 @@ app.get('/api/dashboard/all', async (_req, res) => {
          JOIN equipes e ON e.id=dp.equipe_id
          LEFT JOIN equipes eqs ON eqs.id=dp.equipe_id`
       )),
-    ]) as { rows: any[] }[];
+    ]);
 
-    const [chantiersRes, cTotal, cEnCours, cBloques, mTotal, mEnCours, dAttente, bStats, eDispo, equipesRes, demandesRes, incidentsRes, teamsRes] = results;
+    // Destructure: EXACTLY matches the 7 queries above
+    const [chantiersRes, chantiersStat, missionsStat, equipesRes, demandesRes, incidentsRes, teamsRes] = results;
 
-    // Build stats safely — fallback to 0 if query failed
-    const num = (r: any, i = 0, col = 'total') => Number(r?.rows?.[i]?.[col] ?? 0);
+    // Safe number extraction
+    const num = (r: any, col = 'total') => Number(r?.rows?.[0]?.[col] ?? 0);
 
     res.json({
       chantiers: chantiersRes.rows || [],
       stats: {
-        chantiersTotal: num(cTotal),
-        chantiersActifs: num(cEnCours, 0, 'en_cours'),
-        chantiersBloques: num(cBloques, 0, 'bloques'),
-        missionsTotal: num(mTotal),
-        missionsEnCours: num(mEnCours, 0, 'en_cours'),
-        demandesEnAttente: num(dAttente),
-        blocagesOuverts: num(bStats, 0, 'ouverts'),
-        blocagesTotal: num(bStats),
-        equipesDisponibles: num(eDispo),
+        chantiersTotal: num(chantiersStat),
+        chantiersActifs: num(chantiersStat, 'en_cours'),
+        chantiersBloques: num(chantiersStat, 'bloques'),
+        missionsTotal: num(missionsStat),
+        missionsEnCours: num(missionsStat, 'en_cours'),
+        demandesEnAttente: demandesRes.rows?.length ?? 0,
+        blocagesOuverts: incidentsRes.rows?.length ?? 0,
+        blocagesTotal: incidentsRes.rows?.length ?? 0,
+        equipesDisponibles: equipesRes.rows?.filter((e: any) => e.statut_equipe === 'DISPONIBLE').length ?? 0,
       },
       equipes: equipesRes.rows || [],
       demandes: demandesRes.rows || [],

@@ -185,7 +185,7 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       `SELECT
          (SELECT COUNT(*) FROM chantiers) AS chantiers_total,
          (SELECT COUNT(*) FROM chantiers WHERE statut='en_cours') AS chantiers_actifs,
-         (SELECT COUNT(*) FROM chantiers WHERE statut='bloque') AS chantiers_bloques,
+         (SELECT COUNT(*) FROM chantiers WHERE statut::text IN ('suspendu','bloque')) AS chantiers_bloques,
          (SELECT COUNT(*) FROM ordres_de_mission) AS missions_total,
          (SELECT COUNT(*) FROM ordres_de_mission WHERE statut='en_cours') AS missions_en_cours,
          (SELECT COUNT(*) FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION') AS demandes_attente,
