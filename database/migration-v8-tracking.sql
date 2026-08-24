@@ -110,7 +110,7 @@ SELECT dp.*, e.nom AS equipe_nom, e.type AS equipe_type,
 FROM derniere_position dp
 JOIN equipes e ON e.id = dp.equipe_id
 LEFT JOIN equipes eqs ON eqs.id = dp.equipe_id
-WHERE dp.date_creation > NOW() - INTERVAL '2 hours';
+WHERE dp.last_update > NOW() - INTERVAL '2 hours';
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 7. FONCTION : Calcul distance pointage jour au chantier
