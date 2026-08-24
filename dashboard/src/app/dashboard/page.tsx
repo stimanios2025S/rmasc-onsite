@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getUtilisateur, apiFetch } from '@/lib/auth';
 import {
-  fetchStats, fetchDemandes, fetchEquipes, fetchChantiers, fetchIncidents,
   approuverDemande, refuserDemande,
   type StatsData, type DemandeData, type EquipeData, type ChantierData, type IncidentData,
 } from '@/lib/api';
@@ -49,35 +48,29 @@ export default function DashboardPage() {
   const [showEquipes, setShowEquipes] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
-  // Sync temps réel : polling 5s pour les positions GPS, 15s pour le reste
+  // Sync temps réel : 1 seule requête toutes les 8s
   useEffect(() => {
     loadAll();
     // Safety: force loading to false after 3s even if all APIs fail
     const safetyTimeout = setTimeout(() => setLoading(false), 3000);
-    // Polling 5s — sync temps réel admin ↔ technicien (rapide pour GPS)
+    // Polling 8s — 1 seule requête au lieu de 7
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
-    }, 5000);
+    }, 8000);
     return () => { clearInterval(i); clearTimeout(safetyTimeout); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAll() {
     try {
-      // Tout en parallèle, une seule passe (pas de doublon chantiers)
-      const [s, d, e, c, i, r, tp] = await Promise.all([
-        fetchStats().catch(() => null),
-        fetchDemandes().catch(() => []),
-        fetchEquipes().catch(() => []),
-        fetchChantiers().catch(() => []),
-        fetchIncidents().catch(() => []),
-        apiFetch('/admin/retards').catch(() => []),
-        apiFetch('/tracking/equipes').catch(() => []),
-      ]);
-      if (s) setStats(s);
-      setDemandes(d); setEquipes(e); setChantiers(c); setIncidents(i);
-      setRetards(r as any[]);
-      setTeamPositions(tp as TeamPosition[]);
+      // 1 seule requête au lieu de 7 !
+      const data = await apiFetch<any>('/dashboard/all');
+      if (data.stats) setStats(data.stats);
+      if (data.demandes) setDemandes(data.demandes);
+      if (data.equipes) setEquipes(data.equipes);
+      if (data.chantiers) setChantiers(data.chantiers);
+      if (data.incidents) setIncidents(data.incidents);
+      if (data.teamPositions) setTeamPositions(data.teamPositions);
     } catch (_) { /* keep stale */ }
     finally { setLoading(false); }
   }
