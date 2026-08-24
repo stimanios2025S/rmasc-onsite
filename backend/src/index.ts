@@ -166,26 +166,44 @@ const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');
 if (!require('fs').existsSync(UPLOADS_DIR)) require('fs').mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Route API chantiers (avec coordonnées pour la carte)
+// Route API chantiers (avec coordonnées pour la carte) — OPTIMISÉ: 1 query au lieu de 5+8
 app.get('/api/chantiers', async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
+      `WITH mission_stats AS (
+         SELECT chantier_id,
+                COUNT(*)::INT AS missions,
+                COUNT(*) FILTER (WHERE statut='en_cours')::INT AS en_cours,
+                COUNT(*) FILTER (WHERE statut='en_attente')::INT AS en_attente,
+                COUNT(*) FILTER (WHERE statut='bloque')::INT AS bloquee,
+                COUNT(*) FILTER (WHERE statut='termine')::INT AS terminee
+         FROM ordres_de_mission GROUP BY chantier_id
+       ),
+       active_mission AS (
+         SELECT DISTINCT ON (om.chantier_id)
+           om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
+         FROM ordres_de_mission om
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.statut IN ('en_cours','en_attente')
+         ORDER BY om.chantier_id, om.date_creation DESC
+       )
+       SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
               c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
               c.adresse,
               CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
               CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat,
-              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id) AS missions,
-              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_cours') AS en_cours,
-              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='en_attente') AS en_attente,
-              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='bloque') AS bloquee,
-              (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.chantier_id=c.id AND om.statut='termine') AS terminee,
-              (SELECT COALESCE(e.nom,'Aucune équipe') FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
-               WHERE om.chantier_id=c.id AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS equipe_actuelle,
-              (SELECT om.phase FROM ordres_de_mission om WHERE om.chantier_id=c.id
-               AND om.statut IN ('en_cours','en_attente') ORDER BY om.date_creation LIMIT 1) AS phase_actuelle,
+              COALESCE(ms.missions, 0) AS missions,
+              COALESCE(ms.en_cours, 0) AS en_cours,
+              COALESCE(ms.en_attente, 0) AS en_attente,
+              COALESCE(ms.bloquee, 0) AS bloquee,
+              COALESCE(ms.terminee, 0) AS terminee,
+              COALESCE(am.equipe_actuelle, 'Aucune équipe') AS equipe_actuelle,
+              am.phase_actuelle,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
-       FROM chantiers c ORDER BY c.date_creation DESC`
+       FROM chantiers c
+       LEFT JOIN mission_stats ms ON ms.chantier_id = c.id
+       LEFT JOIN active_mission am ON am.chantier_id = c.id
+       ORDER BY c.date_creation DESC`
     );
     res.json(rows);
   } catch (err: any) {

@@ -49,15 +49,15 @@ export default function DashboardPage() {
   const [showEquipes, setShowEquipes] = useState(true);
   const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
-  // Sync temps réel : polling 15s quand l'onglet est visible (performance)
+  // Sync temps réel : polling 5s pour les positions GPS, 15s pour le reste
   useEffect(() => {
     loadAll();
-    // Safety: force loading to false after 5s even if all APIs fail
-    const safetyTimeout = setTimeout(() => setLoading(false), 5000);
-    // Polling 10s — sync temps réel admin ↔ technicien
+    // Safety: force loading to false after 3s even if all APIs fail
+    const safetyTimeout = setTimeout(() => setLoading(false), 3000);
+    // Polling 5s — sync temps réel admin ↔ technicien (rapide pour GPS)
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
-    }, 10000);
+    }, 5000);
     return () => { clearInterval(i); clearTimeout(safetyTimeout); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

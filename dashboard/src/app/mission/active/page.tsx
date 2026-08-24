@@ -124,6 +124,14 @@ export default function MissionActivePage() {
   // Chargement initial : mission + checklist + pointages + détails
   useEffect(() => { loadMission(true); }, [loadMission]);
 
+  // ═══ ALWAYS-ON GPS TRACKING — Start immediately when app loads ═══
+  useEffect(() => {
+    if (!equipeId) return;
+    // Start tracking immediately — admin always sees worker position
+    startGpsTracking();
+    return () => stopGpsTracking();
+  }, [equipeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Polling : 10s, ne recharge que mission + statut équipe (léger)
   useEffect(() => {
     const iv = setInterval(() => {
@@ -202,11 +210,12 @@ export default function MissionActivePage() {
     );
   };
 
-  /* ═══ NEW: GPS CONTINUOUS TRACKING (pendant le trajet) ═══ */
+  /* ═══ NEW: GPS CONTINUOUS TRACKING (always-on, 15s interval) ═══ */
   const startGpsTracking = useCallback(() => {
     if (trackingIntervalRef.current) return; // Already tracking
     setTrackingActive(true);
-    trackingIntervalRef.current = setInterval(() => {
+
+    const sendPosition = () => {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
@@ -225,7 +234,12 @@ export default function MissionActivePage() {
         () => { /* GPS denied — skip this cycle */ },
         { enableHighAccuracy: true, timeout: 8000 },
       );
-    }, 30000); // Every 30 seconds
+    };
+
+    // Send position immediately
+    sendPosition();
+    // Then every 15 seconds
+    trackingIntervalRef.current = setInterval(sendPosition, 15000);
   }, [equipeId, mission?.id]);
 
   const stopGpsTracking = useCallback(() => {

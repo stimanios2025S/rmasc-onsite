@@ -44,7 +44,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService): Router {
     }
   });
 
-  // ─── 2. POINTAGE JOUR — Matinal / Fin journée ───────────────────
+  // ─── 2. POINTAGE JOUR — Matinal / Fin journée (avec validation GPS) ──
   router.post('/pointage-jour', async (req, res) => {
     try {
       const { equipeId, missionId, type, latitude, longitude, notes } = req.body;
@@ -54,15 +54,53 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService): Router {
       if (!['matinal', 'fin_journee'].includes(type)) {
         return res.status(400).json({ erreur: 'type doit être matinal ou fin_journee.' });
       }
+      if (!latitude || !longitude) {
+        return res.status(400).json({ erreur: 'Position GPS requise. Activez la géolocalisation.' });
+      }
+
+      // For fin_journee: validate GPS is at the chantier
+      if (type === 'fin_journee' && missionId) {
+        const chantierRes = await pool.query(
+          `SELECT c.nom_chantier,
+                  CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS chantier_lat,
+                  CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS chantier_lng,
+                  c.rayon_geofencing
+           FROM ordres_de_mission om JOIN chantiers c ON c.id = om.chantier_id
+           WHERE om.id = $1`,
+          [missionId]
+        );
+        if (chantierRes.rows.length > 0) {
+          const c = chantierRes.rows[0];
+          if (c.chantier_lat && c.chantier_lng) {
+            const R = 6371000;
+            const dLat = (latitude - c.chantier_lat) * Math.PI / 180;
+            const dLng = (longitude - c.chantier_lng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(c.chantier_lat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) *
+              Math.sin(dLng / 2) ** 2;
+            const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const rayon = parseFloat(c.rayon_geofencing) || 100;
+            if (distance > rayon) {
+              return res.status(403).json({
+                erreur: false,
+                autorise: false,
+                distance: Math.round(distance),
+                rayon: Math.round(rayon),
+                message: `Vous êtes à ${Math.round(distance)}m du chantier "${c.nom_chantier}". Vous devez être sur le site pour terminer la journée (rayon: ${rayon}m).`,
+              });
+            }
+          }
+        }
+      }
 
       const { rows } = await pool.query(
         `INSERT INTO pointages_jour (equipe_id, mission_id, type_pointage, latitude, longitude, notes)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, type_pointage AS "type", horodatage, distance_chantier_m AS distance, dans_rayon AS conforme`,
-        [equipeId, missionId || null, type, latitude || null, longitude || null, notes || null]
+        [equipeId, missionId || null, type, latitude, longitude, notes || null]
       );
 
-      logger.info(`Pointage jour ${type}`, { equipeId });
+      logger.info(`Pointage jour ${type}`, { equipeId, conforme: rows[0]?.conforme });
 
       // SSE broadcast
       if (type === 'matinal') {

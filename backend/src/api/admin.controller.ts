@@ -179,25 +179,31 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
     res.json(rows);
   });
 
-  // ─── STATS DASHBOARD ──────────────────────────────────────────────
+  // ─── STATS DASHBOARD — 1 seule requête au lieu de 5 ──────────────
   router.get('/stats', async (_req, res) => {
-    const [chantiers, missions, demandes, blocages, pointages] = await Promise.all([
-      pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours, COUNT(*) FILTER (WHERE statut='bloque') AS bloques FROM chantiers`),
-      pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours FROM ordres_de_mission`),
-      pool.query(`SELECT COUNT(*) AS total FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'`),
-      pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='ouvert') AS ouverts FROM blocages_et_requisitions`),
-      pool.query(`SELECT COUNT(*) AS total FROM equipes WHERE statut_equipe='DISPONIBLE'`),
-    ]);
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM chantiers) AS chantiers_total,
+         (SELECT COUNT(*) FROM chantiers WHERE statut='en_cours') AS chantiers_actifs,
+         (SELECT COUNT(*) FROM chantiers WHERE statut='bloque') AS chantiers_bloques,
+         (SELECT COUNT(*) FROM ordres_de_mission) AS missions_total,
+         (SELECT COUNT(*) FROM ordres_de_mission WHERE statut='en_cours') AS missions_en_cours,
+         (SELECT COUNT(*) FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION') AS demandes_attente,
+         (SELECT COUNT(*) FROM blocages_et_requisitions WHERE statut='ouvert') AS blocages_ouverts,
+         (SELECT COUNT(*) FROM blocages_et_requisitions) AS blocages_total,
+         (SELECT COUNT(*) FROM equipes WHERE statut_equipe='DISPONIBLE') AS equipes_dispo`
+    );
+    const r = rows[0];
     res.json({
-      chantiersActifs: chantiers.rows[0].en_cours,
-      chantiersBloques: chantiers.rows[0].bloques,
-      chantiersTotal: chantiers.rows[0].total,
-      missionsEnCours: missions.rows[0].en_cours,
-      missionsTotal: missions.rows[0].total,
-      demandesEnAttente: demandes.rows[0].total,
-      blocagesOuverts: blocages.rows[0].ouverts,
-      blocagesTotal: blocages.rows[0].total,
-      equipesDisponibles: pointages.rows[0].total,
+      chantiersActifs: Number(r.chantiers_actifs),
+      chantiersBloques: Number(r.chantiers_bloques),
+      chantiersTotal: Number(r.chantiers_total),
+      missionsEnCours: Number(r.missions_en_cours),
+      missionsTotal: Number(r.missions_total),
+      demandesEnAttente: Number(r.demandes_attente),
+      blocagesOuverts: Number(r.blocages_ouverts),
+      blocagesTotal: Number(r.blocages_total),
+      equipesDisponibles: Number(r.equipes_dispo),
     });
   });
 
