@@ -24,26 +24,42 @@ export class TwilioProvider implements SmsProvider {
     const to = this.mode === 'whatsapp' ? `whatsapp:${telephone}` : telephone;
     const from = this.mode === 'whatsapp' ? `whatsapp:${this.fromNumber}` : this.fromNumber;
 
-    // WhatsApp trial accounts REQUIRE Content Templates
-    const params: Record<string, string> = { To: to, From: from };
-
+    // Essayer d'abord avec Content Template, puis fallback vers Body
     if (this.mode === 'whatsapp' && this.contentSid) {
-      // Use Content Template with variables extracted from contenu
-      params.ContentSid = this.contentSid;
-      params.ContentVariables = JSON.stringify(this.extraireVariables(contenu));
-    } else {
-      params.Body = contenu.slice(0, 1600);
+      const templateResult = await this.envoyerAvecTemplate(url, to, from, contenu);
+      if (templateResult.ok) return templateResult;
+      // Si le template échoue (SID invalide), essayer avec Body
+      console.log(`[SMS] Template échoué, fallback vers Body: ${templateResult.erreur}`);
     }
 
-    const body = new URLSearchParams(params);
+    return this.envoyerAvecBody(url, to, from, contenu);
+  }
 
+  private async envoyerAvecTemplate(url: string, to: string, from: string, contenu: string): Promise<EnvoiSmsResultat> {
+    const params = new URLSearchParams({
+      To: to, From: from,
+      ContentSid: this.contentSid!,
+      ContentVariables: JSON.stringify(this.extraireVariables(contenu)),
+    });
+    return this.apercuFetch(url, params);
+  }
+
+  private async envoyerAvecBody(url: string, to: string, from: string, contenu: string): Promise<EnvoiSmsResultat> {
+    const params = new URLSearchParams({
+      To: to, From: from,
+      Body: contenu.slice(0, 1600),
+    });
+    return this.apercuFetch(url, params);
+  }
+
+  private async apercuFetch(url: string, params: URLSearchParams): Promise<EnvoiSmsResultat> {
     const reponse = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: 'Basic ' + Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body,
+      body: params,
     });
 
     if (!reponse.ok) {
