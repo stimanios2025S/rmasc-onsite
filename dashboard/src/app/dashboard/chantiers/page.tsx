@@ -4,7 +4,7 @@ import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, typ
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
-  User, Phone, Clock, AlertTriangle, HardHat, Send,
+  User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
 
@@ -243,18 +243,50 @@ export default function ChantiersPage() {
                 </div>
               </div>
 
+              {/* ═══ ÉQUIPE ASSIGNÉE ═══ */}
+              <div className="mb-3">
+                {c.equipe_actuelle && c.equipe_actuelle !== 'Aucune équipe' && c.equipe_actuelle !== 'Aucune' ? (
+                  <div className="flex items-center gap-2 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl px-3 py-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
+                      <Users size={14} className="text-indigo-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Équipe</span>
+                        <CircleDot size={8} className="text-emerald-400" />
+                      </div>
+                      <p className="text-xs font-bold text-indigo-800 truncate">{c.equipe_actuelle}</p>
+                    </div>
+                    {phase && (
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
+                        <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-stone-50 border border-dashed border-stone-200 rounded-xl px-3 py-2">
+                    <div className="w-7 h-7 rounded-lg bg-stone-100 flex items-center justify-center shrink-0">
+                      <Users size={14} className="text-stone-300" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-semibold text-stone-300 uppercase tracking-wider">Équipe</span>
+                      <p className="text-xs text-stone-400 italic">Non assignée</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2 text-xs text-stone-500 mb-3">
                 <span>{c.client_nom || 'Client inconnu'}</span>
-                <span className="text-stone-300">•</span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
-                  <Icon size={12} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
-                </span>
                 {c.complexite && (
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                    c.complexite === 'DIFFICILE' ? 'bg-rose-50 text-rose-600 border-rose-200'
-                    : c.complexite === 'FACILE' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                    : 'bg-amber-50 text-amber-600 border-amber-200'
-                  }`}>{c.complexite}</span>
+                  <>
+                    <span className="text-stone-300">•</span>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                      c.complexite === 'DIFFICILE' ? 'bg-rose-50 text-rose-600 border-rose-200'
+                      : c.complexite === 'FACILE' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                      : 'bg-amber-50 text-amber-600 border-amber-200'
+                    }`}>{c.complexite}</span>
+                  </>
                 )}
               </div>
 
@@ -275,9 +307,14 @@ export default function ChantiersPage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-xs text-stone-400">
-                <span>📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
-                {c.en_cours > 0 && <span className="text-emerald-600 font-medium">🔄 {c.en_cours} mission{c.en_cours > 1 ? 's' : ''}</span>}
+              <div className="flex items-center justify-between text-[10px] text-stone-400 mb-1">
+                <span className="flex items-center gap-1">📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
+                <span className="flex items-center gap-2 font-medium">
+                  {c.en_cours > 0 && <span className="text-indigo-600">🔄 {c.en_cours}</span>}
+                  {c.en_attente > 0 && <span className="text-amber-500">⏳ {c.en_attente}</span>}
+                  {c.bloquee > 0 && <span className="text-rose-500">🚫 {c.bloquee}</span>}
+                  {c.terminee > 0 && <span className="text-emerald-500">✅ {c.terminee}</span>}
+                </span>
               </div>
             </div>
           );
