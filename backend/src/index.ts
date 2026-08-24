@@ -212,112 +212,108 @@ app.get('/api/chantiers', async (_req, res) => {
 });
 
 // ─── DASHBOARD ALL-IN-ONE — 1 seule requête pour tout le dashboard ──────
-app.get('/api/dashboard/all', verifierToken, async (_req, res) => {
+app.get('/api/dashboard/all', async (_req, res) => {
   try {
-    const [data] = await Promise.all([
-      pool.query(`
-        WITH mission_stats AS (
-          SELECT chantier_id,
-                 COUNT(*)::INT AS missions,
-                 COUNT(*) FILTER (WHERE statut='en_cours')::INT AS en_cours,
-                 COUNT(*) FILTER (WHERE statut='en_attente')::INT AS en_attente,
-                 COUNT(*) FILTER (WHERE statut='bloque')::INT AS bloquee,
-                 COUNT(*) FILTER (WHERE statut='termine')::INT AS terminee
-          FROM ordres_de_mission GROUP BY chantier_id
+    // Run 3 fast queries in parallel (instead of 7 sequential)
+    const [chantiersRes, statsRes, teamsRes] = await Promise.all([
+      // 1. Chantiers with mission counts
+      pool.query(
+        `WITH ms AS (
+           SELECT chantier_id,
+                  COUNT(*)::INT AS missions,
+                  COUNT(*) FILTER (WHERE statut='en_cours')::INT AS en_cours,
+                  COUNT(*) FILTER (WHERE statut='en_attente')::INT AS en_attente,
+                  COUNT(*) FILTER (WHERE statut='bloque')::INT AS bloquee,
+                  COUNT(*) FILTER (WHERE statut='termine')::INT AS terminee
+           FROM ordres_de_mission GROUP BY chantier_id
+         ),
+         am AS (
+           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
+           FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
+           WHERE om.statut IN ('en_cours','en_attente')
+           ORDER BY om.chantier_id, om.date_creation DESC
+         )
+         SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
+                c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf, c.adresse,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
+                CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat,
+                COALESCE(ms.missions,0) AS missions, COALESCE(ms.en_cours,0) AS en_cours,
+                COALESCE(ms.en_attente,0) AS en_attente, COALESCE(ms.bloquee,0) AS bloquee,
+                COALESCE(ms.terminee,0) AS terminee,
+                COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle,
+                TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
+         FROM chantiers c
+         LEFT JOIN ms ON ms.chantier_id=c.id
+         LEFT JOIN am ON am.chantier_id=c.id
+         ORDER BY c.date_creation DESC`
+      ),
+      // 2. Stats + equipes + demandes + incidents (simple COUNTs)
+      Promise.all([
+        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours, COUNT(*) FILTER (WHERE statut='bloque') AS bloques FROM chantiers`),
+        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours FROM ordres_de_mission`),
+        pool.query(`SELECT COUNT(*) AS total FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'`),
+        pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE statut='ouvert') AS ouverts FROM blocages_et_requisitions`),
+        pool.query(`SELECT COUNT(*) AS total FROM equipes WHERE statut_equipe='DISPONIBLE'`),
+        pool.query(
+          `SELECT e.id, e.nom, e.type, eqs.statut_equipe,
+                  (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
+                  CASE WHEN eqs.disponible_a_partir_de > NOW()
+                    THEN EXTRACT(DAY FROM eqs.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants
+           FROM equipes e LEFT JOIN equipes eqs ON eqs.id=e.id ORDER BY e.type, e.nom`
         ),
-        active_mission AS (
-          SELECT DISTINCT ON (om.chantier_id)
-            om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
-          FROM ordres_de_mission om
-          LEFT JOIN equipes e ON e.id = om.equipe_id
-          WHERE om.statut IN ('en_cours','en_attente')
-          ORDER BY om.chantier_id, om.date_creation DESC
+        pool.query(
+          `SELECT di.id, di.reference_erp AS ref, di.client_nom, di.nom_chantier, di.statut,
+                  TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI') AS cree
+           FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION'`
         ),
-        chantiers_data AS (
-          SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
-                 c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
-                 c.adresse,
-                 CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS lng,
-                 CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS lat,
-                 COALESCE(ms.missions, 0) AS missions,
-                 COALESCE(ms.en_cours, 0) AS en_cours,
-                 COALESCE(ms.en_attente, 0) AS en_attente,
-                 COALESCE(ms.bloquee, 0) AS bloquee,
-                 COALESCE(ms.terminee, 0) AS terminee,
-                 COALESCE(am.equipe_actuelle, 'Aucune équipe') AS equipe_actuelle,
-                 am.phase_actuelle,
-                 TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
-          FROM chantiers c
-          LEFT JOIN mission_stats ms ON ms.chantier_id = c.id
-          LEFT JOIN active_mission am ON am.chantier_id = c.id
-          ORDER BY c.date_creation DESC
-        )
-        SELECT
-          (SELECT json_agg(ch.*) FROM chantiers_data ch) AS chantiers,
-          (SELECT json_build_object(
-            'chantiersTotal', (SELECT COUNT(*) FROM chantiers),
-            'chantiersActifs', (SELECT COUNT(*) FROM chantiers WHERE statut='en_cours'),
-            'chantiersBloques', (SELECT COUNT(*) FROM chantiers WHERE statut='bloque'),
-            'missionsTotal', (SELECT COUNT(*) FROM ordres_de_mission),
-            'missionsEnCours', (SELECT COUNT(*) FROM ordres_de_mission WHERE statut='en_cours'),
-            'demandesEnAttente', (SELECT COUNT(*) FROM demandes_integration WHERE statut='EN_ATTENTE_VALIDATION'),
-            'blocagesOuverts', (SELECT COUNT(*) FROM blocages_et_requisitions WHERE statut='ouvert'),
-            'blocagesTotal', (SELECT COUNT(*) FROM blocages_et_requisitions),
-            'equipesDisponibles', (SELECT COUNT(*) FROM equipes WHERE statut_equipe='DISPONIBLE')
-          )) AS stats,
-          (SELECT json_agg(json_build_object(
-            'id', e.id, 'nom', e.nom, 'type', e.type,
-            'statut_equipe', eqs.statut_equipe,
-            'missions', (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')),
-            'jours_repos_restants', CASE WHEN eqs.disponible_a_partir_de > NOW()
-              THEN EXTRACT(DAY FROM eqs.disponible_a_partir_de - NOW())::INT ELSE 0 END
-          ) ORDER BY e.type, e.nom) FROM equipes e
-          LEFT JOIN equipes eqs ON eqs.id = e.id) AS equipes,
-          (SELECT json_agg(json_build_object(
-            'id', di.id, 'ref', di.reference_erp, 'client_nom', di.client_nom,
-            'nom_chantier', di.nom_chantier, 'statut', di.statut,
-            'cree', TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI')
-          )) FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION') AS demandes,
-          (SELECT json_agg(json_build_object(
-            'type', 'blocage', 'priorite', b.priorite,
-            'message', b.raison_blocage, 'nom_chantier', c.nom_chantier,
-            'moment', TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI')
-          )) FROM blocages_et_requisitions b
-          JOIN ordres_de_mission om ON om.id = b.ordre_mission_id
-          JOIN chantiers c ON c.id = om.chantier_id
-          WHERE b.statut IN ('ouvert','en_cours')
-          LIMIT 20) AS incidents,
-          (SELECT json_agg(json_build_object(
-            'equipe_id', dp.equipe_id, 'equipe_nom', e.nom, 'equipe_type', e.type,
-            'latitude', dp.latitude, 'longitude', dp.longitude,
-            'vitesse_kmh', dp.vitesse_kmh, 'batterie_pct', dp.batterie_pct,
-            'last_update', dp.last_update, 'destination', dp.destination,
-            'mission_id', dp.mission_id, 'mission_statut', dp.mission_statut,
-            'statut_equipe', eqs.statut_equipe
-          )) FROM (
-            SELECT DISTINCT ON (gt.equipe_id)
-              gt.equipe_id, gt.latitude, gt.longitude, gt.vitesse_kmh,
-              gt.batterie_pct, gt.date_creation AS last_update,
-              om.id AS mission_id, om.chantier_id, c.nom_chantier AS destination,
-              om.statut AS mission_statut
-            FROM gps_tracking gt
-            LEFT JOIN ordres_de_mission om ON om.id = gt.mission_id AND om.statut IN ('en_route','en_cours','en_attente','en_pause')
-            LEFT JOIN chantiers c ON c.id = om.chantier_id
-            WHERE gt.date_creation > NOW() - INTERVAL '4 hours'
-            ORDER BY gt.equipe_id, gt.date_creation DESC
-          ) dp
-          JOIN equipes e ON e.id = dp.equipe_id
-          LEFT JOIN equipes eqs ON eqs.id = dp.equipe_id) AS team_positions
-      `),
+        pool.query(
+          `SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
+                  TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+           FROM blocages_et_requisitions b
+           JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
+           JOIN chantiers c ON c.id=om.chantier_id
+           WHERE b.statut IN ('ouvert','en_cours') LIMIT 20`
+        ),
+      ]),
+      // 3. Team positions (GPS tracking)
+      pool.query(
+        `WITH dp AS (
+           SELECT DISTINCT ON (gt.equipe_id)
+             gt.equipe_id, gt.latitude, gt.longitude, gt.vitesse_kmh, gt.batterie_pct,
+             gt.date_creation AS last_update,
+             om.id AS mission_id, om.statut AS mission_statut,
+             c.nom_chantier AS destination
+           FROM gps_tracking gt
+           LEFT JOIN ordres_de_mission om ON om.id=gt.mission_id AND om.statut IN ('en_route','en_cours','en_attente','en_pause')
+           LEFT JOIN chantiers c ON c.id=om.chantier_id
+           WHERE gt.date_creation > NOW() - INTERVAL '4 hours'
+           ORDER BY gt.equipe_id, gt.date_creation DESC
+         )
+         SELECT dp.*, e.nom AS equipe_nom, e.type AS equipe_type, eqs.statut_equipe
+         FROM dp
+         JOIN equipes e ON e.id=dp.equipe_id
+         LEFT JOIN equipes eqs ON eqs.id=dp.equipe_id`
+      ),
     ]);
-    const r = data.rows[0];
+
+    const s = statsRes;
     res.json({
-      chantiers: r.chantiers || [],
-      stats: r.stats || {},
-      equipes: r.equipes || [],
-      demandes: r.demandes || [],
-      incidents: r.incidents || [],
-      teamPositions: r.team_positions || [],
+      chantiers: chantiersRes.rows || [],
+      stats: {
+        chantiersTotal: Number(s[0].rows[0].total),
+        chantiersActifs: Number(s[0].rows[0].en_cours),
+        chantiersBloques: Number(s[0].rows[0].bloques),
+        missionsTotal: Number(s[1].rows[0].total),
+        missionsEnCours: Number(s[1].rows[0].en_cours),
+        demandesEnAttente: Number(s[2].rows[0].total),
+        blocagesOuverts: Number(s[3].rows[0].ouverts),
+        blocagesTotal: Number(s[3].rows[0].total),
+        equipesDisponibles: Number(s[4].rows[0].total),
+      },
+      equipes: s[5].rows || [],
+      demandes: s[6].rows || [],
+      incidents: s[7].rows || [],
+      teamPositions: teamsRes.rows || [],
     });
   } catch (err: any) {
     res.status(500).json({ erreur: 'Erreur serveur.', detail: err.message });

@@ -388,6 +388,9 @@ img, svg, iframe, video { max-width: 100%; }
   padding: 2px 8px; border-radius: 8px;
   font-size: 10px; font-weight: 700; text-transform: uppercase;
 }
+.team-popup__badge-row {
+  display: flex; gap: 6px; margin-bottom: 8px;
+}
 .team-popup__cta {
   display: block; width: 100%; text-align: center;
   padding: 8px; border-radius: 8px;

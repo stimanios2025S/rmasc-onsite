@@ -239,23 +239,35 @@ const LeafletMap = React.memo(function LeafletMap({
 
       // Popup info
       const timeSince = Math.round((Date.now() - new Date(tp.last_update).getTime()) / 60000);
+      const STATUS_LABELS: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
+        en_route: { label: 'En route', icon: '🚗', bg: '#fff7ed', fg: '#ea580c' },
+        en_cours: { label: 'En travail', icon: '🏗️', bg: '#ecfdf5', fg: '#059669' },
+        en_pause: { label: 'En pause', icon: '☕', bg: '#fefce8', fg: '#ca8a04' },
+        en_attente: { label: 'En attente', icon: '⏳', bg: '#f5f5f4', fg: '#78716c' },
+        termine: { label: 'Terminé', icon: '✅', bg: '#f0fdf4', fg: '#16a34a' },
+      };
+      const st = STATUS_LABELS[tp.mission_statut || ''] || { label: tp.mission_statut || tp.statut_equipe || '—', icon: '❓', bg: '#f5f5f4', fg: '#78716c' };
+      const batteryIcon = tp.batterie_pct !== null ? (tp.batterie_pct > 50 ? '🔋' : tp.batterie_pct > 20 ? '🪫' : '🔴') : '';
       const popup = `
         <div class="team-popup">
           <div class="team-popup__header" style="background: ${color}">
             <span style="font-size: 18px">${tp.equipe_type === 'electrique' ? '⚡' : tp.equipe_type === 'mecanique' ? '🔧' : '🛡️'}</span>
             <div>
               <div class="team-popup__nom">${tp.equipe_nom}</div>
-              <div class="team-popup__type">${tp.equipe_type}</div>
+              <div class="team-popup__type">${tp.equipe_type} · ${st.icon} ${st.label}</div>
             </div>
           </div>
           <div class="team-popup__body">
-            <div class="team-popup__row"><span>Statut</span><span class="team-popup__badge" style="background: ${color}22;color: ${color}">${tp.mission_statut || tp.statut_equipe || '—'}</span></div>
-            ${tp.destination ? `<div class="team-popup__row"><span>Destination</span><span>${tp.destination}</span></div>` : ''}
-            ${tp.vitesse_kmh ? `<div class="team-popup__row"><span>Vitesse</span><span>${tp.vitesse_kmh} km/h</span></div>` : ''}
-            ${tp.distance_destination_m ? `<div class="team-popup__row"><span>Distance</span><span>${tp.distance_destination_m}m</span></div>` : ''}
-            ${tp.batterie_pct !== null ? `<div class="team-popup__row"><span>Batterie</span><span>${tp.batterie_pct}%</span></div>` : ''}
-            <div class="team-popup__row"><span>Dernière MAJ</span><span>Il y a ${timeSince} min</span></div>
-            <a href="/dashboard/chantier/${tp.mission_id || ''}" class="team-popup__cta" style="background: ${color}">Voir chantier →</a>
+            <div class="team-popup__badge-row">
+              <span class="team-popup__badge" style="background: ${st.bg};color: ${st.fg}">${st.label}</span>
+              <span class="team-popup__badge" style="background: ${color}15;color: ${color}">${tp.equipe_type}</span>
+            </div>
+            ${tp.destination ? `<div class="team-popup__row"><span>📍 Destination</span><span style="font-weight:600">${tp.destination}</span></div>` : '<div class="team-popup__row"><span>📍 Destination</span><span style="color:#94a3b8">Aucune</span></div>'}
+            ${tp.vitesse_kmh ? `<div class="team-popup__row"><span>🚗 Vitesse</span><span>${tp.vitesse_kmh} km/h</span></div>` : ''}
+            ${tp.distance_destination_m ? `<div class="team-popup__row"><span>📐 Distance</span><span>${tp.distance_destination_m}m</span></div>` : ''}
+            ${tp.batterie_pct !== null ? `<div class="team-popup__row"><span>${batteryIcon} Batterie</span><span>${tp.batterie_pct}%</span></div>` : ''}
+            <div class="team-popup__row"><span>🕐 Dernière MAJ</span><span>${timeSince < 1 ? "À l'instant" : `Il y a ${timeSince} min`}</span></div>
+            ${tp.mission_id ? `<a href="/dashboard/chantier/${tp.mission_id}" class="team-popup__cta" style="background: ${color}">Voir chantier →</a>` : ''}
           </div>
         </div>
       `;
