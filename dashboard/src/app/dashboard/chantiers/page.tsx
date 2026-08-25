@@ -44,7 +44,7 @@ export default function ChantiersPage() {
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50 });
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '' });
   const [saving, setSaving] = useState(false);
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
@@ -128,6 +128,8 @@ export default function ChantiersPage() {
 
   function ouvrirEdition(c: ChantierData) {
     setEditChantier(c);
+    // Trouver l'equipe_id correspondant au nom de l'équipe actuelle
+    const currentEquipe = equipes.find(e => e.nom === c.equipe_actuelle);
     setEditForm({
       nom: c.nom,
       client_nom: c.client_nom || '',
@@ -136,6 +138,7 @@ export default function ChantiersPage() {
       longitude: c.lng?.toString() || '',
       complexite: c.complexite || 'MOYENNE',
       rayonGeofencing: 50,
+      equipe_id: currentEquipe?.id || '',
     });
   }
 
@@ -152,6 +155,19 @@ export default function ChantiersPage() {
         complexite: editForm.complexite,
         rayon_geofencing: editForm.rayonGeofencing || 50,
       });
+      // Si l'équipe a changé, réassigner
+      if (editForm.equipe_id && editForm.equipe_id !== equipes.find(e => e.nom === editChantier.equipe_actuelle)?.id) {
+        try {
+          await reassignerEquipe(editChantier.id, editForm.equipe_id);
+        } catch (smsErr: any) {
+          // Si le backend bloque (équipe sur site), afficher l'erreur mais ne pas empêcher la sauvegarde du chantier
+          setMessage({ type: 'error', text: smsErr.message || 'Chantier mis à jour, mais erreur réassignation.' });
+          setSaving(false);
+          setEditChantier(null);
+          await loadChantiers();
+          return;
+        }
+      }
       setMessage({ type: 'success', text: 'Chantier mis à jour.' });
       setEditChantier(null);
       await loadChantiers();
@@ -277,18 +293,11 @@ export default function ChantiersPage() {
                       </div>
                       <p className="text-xs font-bold text-indigo-800 truncate">{c.equipe_actuelle}</p>
                     </div>
-                    {/* Changer UNIQUEMENT si pas encore en travail (en_attente = mission assignée mais pas commencée) */}
-                    {(c.en_attente ?? 0) > 0 && (c.en_cours ?? 0) === 0 ? (
-                      <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
-                        title="Changer l'équipe (mission pas encore commencée)"
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 transition-all shrink-0">
-                        Changer
-                      </button>
-                    ) : (c.en_cours ?? 0) > 0 ? (
+                    {(c.en_cours ?? 0) > 0 && (
                       <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
                         <CircleDot size={8} /> Sur site
                       </span>
-                    ) : null}
+                    )}
                     {phase && (
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
                         <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
@@ -304,11 +313,6 @@ export default function ChantiersPage() {
                       <span className="text-[10px] font-semibold text-stone-300 uppercase tracking-wider">Équipe</span>
                       <p className="text-xs text-stone-400 italic">Non assignée</p>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
-                      title="Assigner une équipe"
-                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 transition-all shrink-0">
-                      Assigner
-                    </button>
                   </div>
                 )}
               </div>
@@ -637,6 +641,38 @@ export default function ChantiersPage() {
                 <input value={editForm.rayonGeofencing} onChange={e => setEditForm({ ...editForm, rayonGeofencing: parseInt(e.target.value) || 50 })}
                   type="number" min="10" max="500" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
+
+              {/* ═══ ÉQUIPE ASSIGNÉE — changement possible si pas encore sur site ═══ */}
+              <div className="border-t border-stone-100 pt-4 mt-2">
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
+                  <Users size={12} /> Équipe assignée
+                </label>
+                {(editChantier.en_attente ?? 0) > 0 && (editChantier.en_cours ?? 0) === 0 ? (
+                  <>
+                    <select
+                      value={editForm.equipe_id}
+                      onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
+                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
+                      {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-400 mt-1.5">💡 Mission pas encore commencée — vous pouvez changer l'équipe.</p>
+                  </>
+                ) : (editChantier.en_cours ?? 0) > 0 ? (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                    <CircleDot size={14} className="text-emerald-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800">{editChantier.equipe_actuelle || '—'}</p>
+                      <p className="text-[10px] text-emerald-600">L'équipe est sur site — modification impossible.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-400 italic">Aucune équipe assignée.</p>
+                )}
+              </div>
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setEditChantier(null)}
                   className="flex-1 bg-stone-100 text-stone-500 py-3 rounded-xl text-sm font-semibold hover:bg-stone-200 transition-all">Annuler</button>
@@ -765,59 +801,6 @@ export default function ChantiersPage() {
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ MODAL: RÉASSIGNER ÉQUIPE ═══ */}
-      {reassignChantier && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setReassignChantier(null); }}>
-          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
-              <div>
-                <h3 className="font-bold text-lg">Changer l'équipe</h3>
-                <p className="text-white/70 text-xs">{reassignChantier.nom}</p>
-              </div>
-              <button onClick={() => setReassignChantier(null)} className="p-2 hover:bg-white/10 rounded-xl"><X size={20} /></button>
-            </div>
-            <div className="p-6">
-              <p className="text-xs text-stone-400 mb-1">Équipe actuelle</p>
-              <p className="text-sm font-bold text-stone-800 mb-4">{reassignChantier.equipe_actuelle || 'Non assignée'}</p>
-              <p className="text-xs font-semibold text-stone-500 mb-3">Sélectionner une nouvelle équipe</p>
-              <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-                {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => {
-                  const isCurrent = e.nom === reassignChantier.equipe_actuelle;
-                  const TypeIcon = e.type === 'mecanique' ? Wrench : e.type === 'electrique' ? Zap : Shield;
-                  return (
-                    <button key={e.id} disabled={isCurrent || reassignLoading}
-                      onClick={() => handleReassigner(reassignChantier.id, e.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                        isCurrent
-                          ? 'border-indigo-200 bg-indigo-50 opacity-60 cursor-default'
-                          : 'border-stone-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'
-                      }`}>
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        e.type === 'mecanique' ? 'bg-blue-50 text-blue-600' : e.type === 'electrique' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
-                      }`}>
-                        <TypeIcon size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-800 truncate">{e.nom}</p>
-                        <p className="text-[10px] text-stone-400">
-                          {e.type} · {e.statut_equipe === 'DISPONIBLE' ? '✅ Disponible' : '🔄 En mission'} · {e.missions} mission(s)
-                        </p>
-                      </div>
-                      {isCurrent && <span className="text-[10px] font-bold text-indigo-500">ACTUELLE</span>}
-                      {reassignLoading && <Loader2 size={16} className="animate-spin text-indigo-500" />}
-                    </button>
-                  );
-                })}
-                {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').length === 0 && (
-                  <p className="text-center text-stone-400 text-sm py-4">Aucune équipe disponible.</p>
-                )}
-              </div>
             </div>
           </div>
         </div>
