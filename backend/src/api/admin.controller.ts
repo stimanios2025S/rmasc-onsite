@@ -307,5 +307,116 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
     }
   });
 
+  // ─── RÉASSIGNER UNE ÉQUIPE À UN CHANTIER ─────────────────────────
+  router.patch('/chantiers/:id/reassign', async (req: any, res) => {
+    try {
+      const { equipe_id } = req.body;
+      if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
+
+      // Vérifier que le chantier existe
+      const chantierRes = await pool.query(
+        `SELECT id, nom_chantier FROM chantiers WHERE id = $1`, [req.params.id]
+      );
+      if (chantierRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Chantier introuvable.' });
+      }
+      const chantier = chantierRes.rows[0];
+
+      // Vérifier que la nouvelle équipe existe
+      const equipeRes = await pool.query(
+        `SELECT id, nom, type FROM equipes WHERE id = $1 AND actif = TRUE`, [equipe_id]
+      );
+      if (equipeRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Équipe introuvable ou inactive.' });
+      }
+      const nouvelleEquipe = equipeRes.rows[0];
+
+      // Trouver la mission active (en_attente ou en_cours) pour ce chantier
+      const missionRes = await pool.query(
+        `SELECT om.id, om.equipe_id, om.phase, om.statut, e.nom AS ancienne_equipe_nom
+         FROM ordres_de_mission om
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.chantier_id = $1 AND om.statut IN ('en_attente', 'en_cours')
+         ORDER BY om.date_creation DESC LIMIT 1`,
+        [req.params.id]
+      );
+
+      if (missionRes.rows.length === 0) {
+        return res.status(400).json({ erreur: 'Aucune mission active à réassigner.' });
+      }
+      const mission = missionRes.rows[0];
+
+      // Réassigner la mission
+      await pool.query(
+        `UPDATE ordres_de_mission SET equipe_id = $1, notes = COALESCE(notes, '') || E'\nRéassigné par admin le ' || NOW()::TEXT || ' (ancienne équipe: ' || COALESCE($3, 'N/A') || ')'
+         WHERE id = $2`,
+        [equipe_id, mission.id, mission.ancienne_equipe_nom]
+      );
+
+      // Mettre à jour les statuts des équipes
+      // Ancienne équipe → DISPONIBLE (si plus aucune mission active)
+      if (mission.equipe_id) {
+        const otherMissions = await pool.query(
+          `SELECT 1 FROM ordres_de_mission WHERE equipe_id = $1 AND statut IN ('en_cours', 'en_attente') AND id != $2 LIMIT 1`,
+          [mission.equipe_id, mission.id]
+        );
+        if (otherMissions.rows.length === 0) {
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'DISPONIBLE' WHERE id = $1`,
+            [mission.equipe_id]
+          );
+        }
+      }
+
+      // Nouvelle équipe → EN_MISSION
+      await pool.query(
+        `UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`,
+        [equipe_id]
+      );
+
+      // 📲 SMS à la nouvelle équipe
+      try {
+        const telRes = await pool.query(
+          `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+             AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+          [equipe_id]
+        );
+        await smsService?.notifierNouvelleMission({
+          equipeId: nouvelleEquipe.id, equipeNom: nouvelleEquipe.nom,
+          telephone: telRes.rows[0]?.telephone || null,
+          phase: mission.phase || 'mecanique',
+          chantierNom: chantier.nom_chantier, adresse: null,
+          chantierId: chantier.id, missionId: mission.id,
+        });
+      } catch (smsErr) {
+        logger.error('Erreur SMS réassignation', { erreur: (smsErr as any).message });
+      }
+
+      logger.info('Équipe réassignée', {
+        chantierId: chantier.id, missionId: mission.id,
+        ancienneEquipe: mission.ancienne_equipe_nom, nouvelleEquipe: nouvelleEquipe.nom,
+      });
+
+      // SSE: Broadcast
+      eventBus.emit('mission_assignee', {
+        missionId: mission.id,
+        chantierId: chantier.id,
+        equipeId: nouvelleEquipe.id,
+        equipeNom: nouvelleEquipe.nom,
+        chantierNom: chantier.nom_chantier,
+        phase: mission.phase,
+      });
+
+      res.json({
+        message: `✅ Équipe changée : ${nouvelleEquipe.nom} assignée à "${chantier.nom_chantier}"`,
+        ancienneEquipe: mission.ancienne_equipe_nom,
+        nouvelleEquipe: nouvelleEquipe.nom,
+      });
+    } catch (err: any) {
+      logger.error('Erreur réassignation', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }

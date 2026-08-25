@@ -131,3 +131,11 @@ export async function fetchTelephones(): Promise<TelephoneData[]> {
 export async function sauvegarderTelephones(lignes: { utilisateur_id: string; telephone: string | null }[]) {
   return apiFetch('/admin/telephones', { method: 'PUT', body: JSON.stringify({ lignes }) });
 }
+
+// ─── RÉASSIGNATION D'ÉQUIPE ──────────────────────────────────────────
+export async function reassignerEquipe(chantierId: string, equipeId: string) {
+  return apiFetch(`/admin/chantiers/${chantierId}/reassign`, {
+    method: 'PATCH',
+    body: JSON.stringify({ equipe_id: equipeId }),
+  });
+}

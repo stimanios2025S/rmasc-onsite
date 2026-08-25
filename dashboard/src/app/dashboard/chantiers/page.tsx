@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, type ChantierData } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
@@ -46,12 +46,32 @@ export default function ChantiersPage() {
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
   const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50 });
   const [saving, setSaving] = useState(false);
+  const [equipes, setEquipes] = useState<EquipeData[]>([]);
+  const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
+  const [reassignLoading, setReassignLoading] = useState(false);
 
-  useEffect(() => { loadChantiers(); }, []);
+  useEffect(() => { loadChantiers(); loadEquipes(); }, []);
 
   async function loadChantiers() {
     try { setChantiers(await fetchChantiers()); } catch (_) { }
     setLoading(false);
+  }
+
+  async function loadEquipes() {
+    try { setEquipes(await fetchEquipes()); } catch (_) { }
+  }
+
+  async function handleReassigner(chantierId: string, nouvelleEquipeId: string) {
+    setReassignLoading(true);
+    try {
+      const res = await reassignerEquipe(chantierId, nouvelleEquipeId);
+      setMessage({ type: 'success', text: res.message || 'Équipe réassignée.' });
+      setReassignChantier(null);
+      await loadChantiers();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur de réassignation.' });
+    }
+    setReassignLoading(false);
   }
 
   async function uploadFile(file: File, type: string): Promise<string> {
@@ -257,6 +277,11 @@ export default function ChantiersPage() {
                       </div>
                       <p className="text-xs font-bold text-indigo-800 truncate">{c.equipe_actuelle}</p>
                     </div>
+                    <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
+                      title="Changer l'équipe"
+                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 transition-all shrink-0">
+                      Changer
+                    </button>
                     {phase && (
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
                         <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
@@ -268,10 +293,15 @@ export default function ChantiersPage() {
                     <div className="w-7 h-7 rounded-lg bg-stone-100 flex items-center justify-center shrink-0">
                       <Users size={14} className="text-stone-300" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <span className="text-[10px] font-semibold text-stone-300 uppercase tracking-wider">Équipe</span>
                       <p className="text-xs text-stone-400 italic">Non assignée</p>
                     </div>
+                    <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
+                      title="Assigner une équipe"
+                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 transition-all shrink-0">
+                      Assigner
+                    </button>
                   </div>
                 )}
               </div>
@@ -728,6 +758,59 @@ export default function ChantiersPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: RÉASSIGNER ÉQUIPE ═══ */}
+      {reassignChantier && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setReassignChantier(null); }}>
+          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+              <div>
+                <h3 className="font-bold text-lg">Changer l'équipe</h3>
+                <p className="text-white/70 text-xs">{reassignChantier.nom}</p>
+              </div>
+              <button onClick={() => setReassignChantier(null)} className="p-2 hover:bg-white/10 rounded-xl"><X size={20} /></button>
+            </div>
+            <div className="p-6">
+              <p className="text-xs text-stone-400 mb-1">Équipe actuelle</p>
+              <p className="text-sm font-bold text-stone-800 mb-4">{reassignChantier.equipe_actuelle || 'Non assignée'}</p>
+              <p className="text-xs font-semibold text-stone-500 mb-3">Sélectionner une nouvelle équipe</p>
+              <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => {
+                  const isCurrent = e.nom === reassignChantier.equipe_actuelle;
+                  const TypeIcon = e.type === 'mecanique' ? Wrench : e.type === 'electrique' ? Zap : Shield;
+                  return (
+                    <button key={e.id} disabled={isCurrent || reassignLoading}
+                      onClick={() => handleReassigner(reassignChantier.id, e.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                        isCurrent
+                          ? 'border-indigo-200 bg-indigo-50 opacity-60 cursor-default'
+                          : 'border-stone-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'
+                      }`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        e.type === 'mecanique' ? 'bg-blue-50 text-blue-600' : e.type === 'electrique' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        <TypeIcon size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-stone-800 truncate">{e.nom}</p>
+                        <p className="text-[10px] text-stone-400">
+                          {e.type} · {e.statut_equipe === 'DISPONIBLE' ? '✅ Disponible' : '🔄 En mission'} · {e.missions} mission(s)
+                        </p>
+                      </div>
+                      {isCurrent && <span className="text-[10px] font-bold text-indigo-500">ACTUELLE</span>}
+                      {reassignLoading && <Loader2 size={16} className="animate-spin text-indigo-500" />}
+                    </button>
+                  );
+                })}
+                {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').length === 0 && (
+                  <p className="text-center text-stone-400 text-sm py-4">Aucune équipe disponible.</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
