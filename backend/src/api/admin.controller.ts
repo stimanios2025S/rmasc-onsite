@@ -346,6 +346,11 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       }
       const mission = missionRes.rows[0];
 
+      // Bloquer la réassignation si l'équipe est déjà sur site (en_cours)
+      if (mission.statut === 'en_cours') {
+        return res.status(400).json({ erreur: 'Impossible de changer — l\'équipe est déjà sur site en train de travailler.' });
+      }
+
       // Réassigner la mission
       await pool.query(
         `UPDATE ordres_de_mission SET equipe_id = $1, notes = COALESCE(notes, '') || E'\nRéassigné par admin le ' || NOW()::TEXT || ' (ancienne équipe: ' || COALESCE($3, 'N/A') || ')'

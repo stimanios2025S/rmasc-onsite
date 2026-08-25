@@ -277,11 +277,18 @@ export default function ChantiersPage() {
                       </div>
                       <p className="text-xs font-bold text-indigo-800 truncate">{c.equipe_actuelle}</p>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
-                      title="Changer l'équipe"
-                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 transition-all shrink-0">
-                      Changer
-                    </button>
+                    {/* Changer UNIQUEMENT si pas encore en travail (en_attente = mission assignée mais pas commencée) */}
+                    {(c.en_attente ?? 0) > 0 && (c.en_cours ?? 0) === 0 ? (
+                      <button onClick={(e) => { e.stopPropagation(); setReassignChantier(c); }}
+                        title="Changer l'équipe (mission pas encore commencée)"
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 transition-all shrink-0">
+                        Changer
+                      </button>
+                    ) : (c.en_cours ?? 0) > 0 ? (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
+                        <CircleDot size={8} /> Sur site
+                      </span>
+                    ) : null}
                     {phase && (
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
                         <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
