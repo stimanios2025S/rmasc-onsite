@@ -2,12 +2,20 @@ import { apiFetch } from './auth';
 
 // NOTE: apiFetch() already prefixes /api — DON'T include /api in path
 
+export interface ChecklistEtape {
+  label: string;
+  done: boolean;
+  subtasks?: { label: string; done: boolean }[];
+}
+
 export interface ChantierData {
   id: string; ref: string; nom: string; statut: string; client_nom: string;
   lat?: number | null; lng?: number | null; missions: number; en_cours: number; date_creation: string;
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
   equipe_actuelle?: string; phase_actuelle?: string; adresse?: string;
+  checklist_etapes?: ChecklistEtape[] | string | null;
+  checklist_complete?: boolean | null;
 }
 export interface DemandeData {
   id: string; ref: string; client_nom: string; nom_chantier: string; statut: string; cree: string;

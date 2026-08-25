@@ -8,7 +8,7 @@ import {
 import {
   HardHat, AlertTriangle, Users, MapPin, XCircle,
   Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
-  CheckCheck, Timer,
+  CheckCheck, Timer, CheckCircle,
 } from 'lucide-react';
 import MapView, { type TeamPosition } from '@/components/MapView';
 import SyncNotifications from '@/components/SyncNotifications';
@@ -264,61 +264,135 @@ export default function DashboardPage() {
         <div className="divide-y divide-stone-50">
           {chantiers.length === 0 ? (
             <p className="py-12 text-center text-stone-400 text-sm">Aucun chantier actif.</p>
-          ) : chantiers.map(c => (
-            <div key={c.id} className="px-6 py-4 hover:bg-stone-50/50 transition-colors">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-stone-800 text-sm">{c.nom}</span>
-                    <span className="text-[10px] font-mono text-stone-400">{c.ref}</span>
-                    {c.equipe_actuelle && (
-                      <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                        👥 {c.equipe_actuelle}
-                      </span>
+          ) : chantiers.map(c => {
+            // Parse checklist etapes
+            let etapes: { label: string; done: boolean; subtasks?: { label: string; done: boolean }[] }[] = [];
+            if (c.checklist_etapes) {
+              try {
+                const raw = typeof c.checklist_etapes === 'string' ? JSON.parse(c.checklist_etapes) : c.checklist_etapes;
+                if (Array.isArray(raw)) etapes = raw;
+              } catch {}
+            }
+            const totalEtapes = etapes.length;
+            const doneEtapes = etapes.filter(e => e.done).length;
+            const progression = totalEtapes > 0 ? Math.round((doneEtapes / totalEtapes) * 100) : 0;
+
+            // Find current step (first incomplete)
+            let etapeActuelle = '';
+            let etapeActuelleIdx = -1;
+            for (let i = 0; i < etapes.length; i++) {
+              const e = etapes[i];
+              const complete = e.done && (!e.subtasks || e.subtasks.every(s => s.done));
+              if (!complete) {
+                etapeActuelle = e.label;
+                etapeActuelleIdx = i;
+                break;
+              }
+            }
+            const allDone = totalEtapes > 0 && doneEtapes === totalEtapes;
+
+            // Phase icon/label
+            const phaseInfo = c.phase_actuelle === 'mecanique' ? { icon: '🔧', label: 'Mécanique', color: 'blue' }
+              : c.phase_actuelle === 'electrique' ? { icon: '⚡', label: 'Électrique', color: 'orange' }
+              : c.phase_actuelle === 'verification' ? { icon: '🛡️', label: 'Vérification', color: 'emerald' }
+              : null;
+
+            return (
+              <div key={c.id} className="px-6 py-4 hover:bg-stone-50/50 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    {/* Header: name + ref + badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-stone-800 text-sm">{c.nom}</span>
+                      <span className="text-[10px] font-mono text-stone-400">{c.ref}</span>
+                      {c.equipe_actuelle && c.equipe_actuelle !== 'Aucune' && (
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                          👥 {c.equipe_actuelle}
+                        </span>
+                      )}
+                      {phaseInfo && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          phaseInfo.color === 'blue' ? 'bg-blue-50 text-blue-600' :
+                          phaseInfo.color === 'orange' ? 'bg-orange-50 text-orange-600' :
+                          'bg-emerald-50 text-emerald-600'
+                        }`}>
+                          {phaseInfo.icon} {phaseInfo.label}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Current step display */}
+                    {totalEtapes > 0 && (
+                      <div className="mt-2.5">
+                        {allDone ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
+                            <CheckCircle size={13} />
+                            <span>Toutes les étapes complétées</span>
+                          </div>
+                        ) : etapeActuelle ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-stone-500">
+                              Étape {etapeActuelleIdx + 1}/{totalEtapes} :
+                            </span>
+                            <span className="text-[11px] font-semibold text-stone-700">{etapeActuelle}</span>
+                          </div>
+                        ) : null}
+
+                        {/* Progress bar */}
+                        <div className="flex items-center gap-2.5 mt-1.5">
+                          <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-700 ease-out ${
+                                progression === 100 ? 'bg-emerald-500' :
+                                progression >= 60 ? 'bg-blue-500' :
+                                progression >= 30 ? 'bg-amber-500' :
+                                'bg-stone-300'
+                              }`}
+                              style={{ width: `${Math.max(progression, 2)}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-stone-400 w-8 text-right">{progression}%</span>
+                        </div>
+                      </div>
                     )}
-                    {c.phase_actuelle && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        c.phase_actuelle === 'mecanique' ? 'bg-blue-50 text-blue-600'
-                        : c.phase_actuelle === 'electrique' ? 'bg-orange-50 text-orange-600'
-                        : 'bg-emerald-50 text-emerald-600'
-                      }`}>
-                        {c.phase_actuelle === 'mecanique' ? '🔧 Méca' : c.phase_actuelle === 'electrique' ? '⚡ Élec' : '🛡️ Vérif'}
+
+                    {/* Mission counts */}
+                    <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${(c.en_cours ?? 0) > 0 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
+                        {c.en_cours ?? 0} en cours
                       </span>
-                    )}
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${(c.en_attente ?? 0) > 0 ? 'bg-indigo-400' : 'bg-stone-200'}`} />
+                        {c.en_attente ?? 0} en attente
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${(c.bloquee ?? 0) > 0 ? 'bg-rose-400' : 'bg-stone-200'}`} />
+                        {c.bloquee ?? 0} bloquées
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${(c.terminee ?? 0) > 0 ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                        {c.terminee ?? 0} terminées
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
-                    <span className="flex items-center gap-1">
-                      <span className={`w-1.5 h-1.5 rounded-full ${(c.en_cours ?? 0) > 0 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
-                      {c.en_cours ?? 0} en cours
+
+                  {/* Status badge */}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                      c.statut === 'en_cours' ? 'bg-emerald-50 text-emerald-600'
+                      : c.statut === 'bloque' ? 'bg-rose-50 text-rose-600'
+                      : c.statut === 'termine' || c.statut === 'reception_officielle' ? 'bg-stone-100 text-stone-500'
+                      : 'bg-indigo-50 text-indigo-600'
+                    }`}>
+                      {c.statut === 'en_cours' ? 'En cours' : c.statut === 'bloque' ? 'Bloqué' : c.statut === 'termine' ? 'Terminé' : c.statut === 'reception_officielle' ? 'Réceptionné' : 'Planifié'}
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className={`w-1.5 h-1.5 rounded-full ${(c.en_attente ?? 0) > 0 ? 'bg-indigo-400' : 'bg-stone-200'}`} />
-                      {c.en_attente ?? 0} en attente
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className={`w-1.5 h-1.5 rounded-full ${(c.bloquee ?? 0) > 0 ? 'bg-rose-400' : 'bg-stone-200'}`} />
-                      {c.bloquee ?? 0} bloquées
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className={`w-1.5 h-1.5 rounded-full ${(c.terminee ?? 0) > 0 ? 'bg-stone-300' : 'bg-stone-200'}`} />
-                      {c.terminee ?? 0} terminées
-                    </span>
+                    <span className="text-[9px] text-stone-300">{c.date_creation}</span>
                   </div>
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                    c.statut === 'en_cours' ? 'bg-emerald-50 text-emerald-600'
-                    : c.statut === 'bloque' ? 'bg-rose-50 text-rose-600'
-                    : c.statut === 'termine' || c.statut === 'reception_officielle' ? 'bg-stone-100 text-stone-500'
-                    : 'bg-indigo-50 text-indigo-600'
-                  }`}>
-                    {c.statut === 'en_cours' ? 'En cours' : c.statut === 'bloque' ? 'Bloqué' : c.statut === 'termine' ? 'Terminé' : c.statut === 'reception_officielle' ? 'Réceptionné' : 'Planifié'}
-                  </span>
-                  <span className="text-[9px] text-stone-300">{c.date_creation}</span>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

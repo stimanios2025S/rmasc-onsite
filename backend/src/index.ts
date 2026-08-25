@@ -235,10 +235,16 @@ app.get('/api/dashboard/all', async (_req, res) => {
            FROM ordres_de_mission GROUP BY chantier_id
          ),
          am AS (
-           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
+           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.id AS mission_id
            FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
            WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
            ORDER BY om.chantier_id, om.date_creation DESC
+         ),
+         cl AS (
+           SELECT DISTINCT ON (am.chantier_id) am.chantier_id, cp.etapes, cp.complete
+           FROM am
+           JOIN checklists_phases cp ON cp.mission_id = am.mission_id
+           ORDER BY am.chantier_id, cp.date_mise_a_jour DESC
          )
          SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
                 c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf, c.adresse,
@@ -248,10 +254,12 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 COALESCE(ms.en_attente,0) AS en_attente, COALESCE(ms.bloquee,0) AS bloquee,
                 COALESCE(ms.terminee,0) AS terminee,
                 COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle,
+                cl.etapes AS checklist_etapes, cl.complete AS checklist_complete,
                 TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
          FROM chantiers c
          LEFT JOIN ms ON ms.chantier_id=c.id
          LEFT JOIN am ON am.chantier_id=c.id
+         LEFT JOIN cl ON cl.chantier_id=c.id
          ORDER BY c.date_creation DESC`
       )),
       // [1] Chantiers stats — use statut::text to avoid enum validation errors
