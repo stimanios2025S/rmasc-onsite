@@ -147,3 +147,49 @@ export async function reassignerEquipe(chantierId: string, equipeId: string): Pr
     body: JSON.stringify({ equipe_id: equipeId }),
   });
 }
+
+// ─── DEMANDES MATÉRIEL / SIGNALEMENTS ──────────────────────────────
+export interface DemandeMateriel {
+  id: string; items: any[]; description: string | null; photo_url: string | null;
+  type_demande: 'materiel' | 'retard'; statut: string; pdf_url: string | null;
+  date_creation: string; equipe_nom: string; equipe_type: string;
+  chantier_nom: string; chantier_ref: string | null;
+}
+
+export async function fetchDemandesMateriel(type?: string, statut?: string): Promise<DemandeMateriel[]> {
+  const params = new URLSearchParams();
+  if (type) params.set('type', type);
+  if (statut) params.set('statut', statut);
+  const q = params.toString();
+  return apiFetch(`/materiel${q ? '?' + q : ''}`);
+}
+
+export async function modifierStatutDemande(id: string, statut: string) {
+  return apiFetch(`/materiel/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ statut }),
+  });
+}
+
+// ─── WORKER: Demande matériel ─────────────────────────────────────
+export async function soumettreDemandeMateriel(data: {
+  equipeId: string; chantierId: string; missionId?: string;
+  items: { nom: string; quantite: number; categorie: string }[];
+  description?: string; photoUrl?: string;
+}): Promise<{ id: string; message: string; pdfUrl: string }> {
+  return apiFetch('/materiel/demande', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── WORKER: Signaler problème ────────────────────────────────────
+export async function signalerProbleme(data: {
+  equipeId: string; chantierId: string; missionId?: string;
+  description: string; photoUrl?: string; motif?: string;
+}): Promise<{ id: string; message: string; pdfUrl: string }> {
+  return apiFetch('/materiel/signaler', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}

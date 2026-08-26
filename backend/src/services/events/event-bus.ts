@@ -6,7 +6,7 @@
 export interface SyncEvent {
   type: 'demande_recue' | 'chantier_cree' | 'mission_assignee' | 'mission_terminee' | 'blocage_signale' | 'equipe_disponible' | 'data_changed'
     | 'equipe_position' | 'equipe_en_route' | 'equipe_arrivee' | 'equipe_en_pause' | 'equipe_reprise' | 'equipe_terminee'
-    | 'mission_transferee' | 'pointage_jour';
+    | 'mission_transferee' | 'pointage_jour' | 'demande_materiel' | 'signalement_probleme';
   payload: Record<string, any>;
   timestamp: string;
 }

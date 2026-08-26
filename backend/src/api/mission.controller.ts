@@ -18,7 +18,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
 
       const { rows } = await pool.query(
-        `SELECT om.id, c.nom_chantier AS chantier, c.adresse, c.client_nom, c.client_telephone,
+        `SELECT om.id, c.id AS chantier_id, c.nom_chantier AS chantier, c.adresse, c.client_nom, c.client_telephone,
                 c.reference_commande_erp AS ref_erp, om.phase, om.statut, om.equipe_id, e.nom AS equipe_nom,
                 CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS latitude,
                 CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS longitude,

@@ -12,7 +12,7 @@ import TechnicianMap from '@/components/TechnicianMap';
 
 /* ─── TYPES ────────────────────────────────────────────────────────── */
 interface MissionInfo {
-  id: string; chantier: string; adresse: string; client_nom: string; client_telephone: string;
+  id: string; chantier_id: string; chantier: string; adresse: string; client_nom: string; client_telephone: string;
   ref_erp: string; phase: string; statut: string; equipe_id: string; equipe_nom: string;
   latitude: number; longitude: number; rayon_geofencing: number; duree_estimee: number;
   date_declenchement: string; date_debut: string | null;
@@ -62,6 +62,17 @@ export default function MissionActivePage() {
   const [retardPhoto, setRetardPhoto] = useState<File | null>(null);
   const [retardLoading, setRetardLoading] = useState(false);
   const [syncDot, setSyncDot] = useState(false); // indicateur sync temps réel
+
+  // ─── Demande matériel ───
+  const [demandeItems, setDemandeItems] = useState<{ nom: string; quantite: number; categorie: string }[]>([]);
+  const [demandeItemNom, setDemandeItemNom] = useState('');
+  const [demandeItemQte, setDemandeItemQte] = useState(1);
+  const [demandeItemCat, setDemandeItemCat] = useState('OUTILLAGE');
+  const [demandeDesc, setDemandeDesc] = useState('');
+  const [demandePhoto, setDemandePhoto] = useState<File | null>(null);
+  const [demandePhotoPreview, setDemandePhotoPreview] = useState<string | null>(null);
+  const [demandeLoading, setDemandeLoading] = useState(false);
+  const [demandeModal, setDemandeModal] = useState(false);
 
   // ─── NEW: Tracking & lifecycle states ───
   const [gpsInZone, setGpsInZone] = useState<boolean | null>(null);
@@ -440,12 +451,12 @@ export default function MissionActivePage() {
     setEquipementsLoading(true);
     try {
       const eqRes = await fetch(`/api/equipe/${equipeId}/equipements`);
-      const ecRes = await fetch(`/api/equipe/${equipeId}/equipements_chantier?chantier_id=${missionDetail.id}`);
+      const ecRes = await fetch(`/api/equipe/${equipeId}/equipements_chantier?chantier_id=${mission?.chantier_id || missionDetail?.id}`);
       setEquipementsEquipe(eqRes.ok ? await eqRes.json() : []);
       setEquipementsChantier(ecRes.ok ? await ecRes.json() : []);
     } catch (_) { /* ignore */ }
     setEquipementsLoading(false);
-  }, [equipeId, missionDetail?.id]);
+  }, [equipeId, missionDetail?.id, mission?.chantier_id]);
   const verifierEquipementLocal = async (eqId: string) => {
     if (!equipeId) return;
     try { await fetch(`/api/equipe/${equipeId}/equipements_chantier/${eqId}`, { method: 'PATCH' }); await loadEquipements(); } catch (_) {}
@@ -453,7 +464,7 @@ export default function MissionActivePage() {
 
   /* ═══ RETARD ═══ */
   const notifierRetard = async () => {
-    if (!mission || !retardForm.motif) return;
+    if (!mission || !retardForm.motif || !equipeId) return;
     setRetardLoading(true);
     try {
       let photoUrl: string | null = null;
@@ -462,15 +473,57 @@ export default function MissionActivePage() {
         const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
         if (upRes.ok) photoUrl = (await upRes.json()).url;
       }
-      await fetch('/api/mission/retard', {
+      // Use the new materiel/signaler endpoint so it appears in admin Demandes page
+      await fetch('/api/materiel/signaler', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ missionId: mission.id, motif: retardForm.motif, etapeId: retardForm.etapeId || null, photoUrl }),
+        body: JSON.stringify({
+          equipeId, chantierId: mission.chantier_id || mission.id, missionId: mission.id,
+          description: retardForm.motif, photoUrl, motif: retardForm.motif,
+        }),
       });
       setRetardModal(false); setRetardForm({ motif: '', etapeId: '' }); setRetardPhoto(null);
       setPointageMsg({ type: 'success', text: '✅ Retard notifié à El Ghani.' });
     } catch { setPointageMsg({ type: 'error', text: 'Erreur.' }); }
     setRetardLoading(false);
   };
+
+  /* ═══ DEMANDE MATÉRIEL ═══ */
+  const ajouterItem = () => {
+    if (!demandeItemNom.trim()) return;
+    setDemandeItems([...demandeItems, { nom: demandeItemNom.trim(), quantite: demandeItemQte, categorie: demandeItemCat }]);
+    setDemandeItemNom(''); setDemandeItemQte(1);
+  };
+  const supprimerItem = (idx: number) => {
+    setDemandeItems(demandeItems.filter((_, i) => i !== idx));
+  };
+  const soumettreDemande = async () => {
+    if (!mission || !equipeId || demandeItems.length === 0) return;
+    setDemandeLoading(true);
+    try {
+      let photoUrl: string | null = null;
+      if (demandePhoto) {
+        const fd = new FormData(); fd.append('file', demandePhoto); fd.append('type', 'photo_demande');
+        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+        if (upRes.ok) photoUrl = (await upRes.json()).url;
+      }
+      const res = await fetch('/api/materiel/demande', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipeId, chantierId: mission.chantier_id || mission.id, missionId: mission.id,
+          items: demandeItems, description: demandeDesc || null, photoUrl,
+        }),
+      });
+      if (res.ok) {
+        setDemandeModal(false); setDemandeItems([]); setDemandeDesc(''); setDemandePhoto(null); setDemandePhotoPreview(null);
+        setPointageMsg({ type: 'success', text: '✅ Demande de matériel envoyée à El Ghani.' });
+      } else {
+        const d = await res.json();
+        setPointageMsg({ type: 'error', text: d.erreur || 'Erreur' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setDemandeLoading(false);
+  };
+
   function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) { setBlocagePhoto(file); const reader = new FileReader(); reader.onloadend = () => setBlocagePhotoPreview(reader.result as string); reader.readAsDataURL(file); }
@@ -662,6 +715,106 @@ export default function MissionActivePage() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* ─── DEMANDER DU MATÉRIEL ─── */}
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+                <Package size={18} className="text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-800">Demander du Matériel</h3>
+                <p className="text-xs text-stone-400">Ajoutez les articles dont vous avez besoin</p>
+              </div>
+            </div>
+
+            {/* Liste des items ajoutés */}
+            {demandeItems.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {demandeItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
+                    <span className="text-xs text-amber-600 font-mono">#{i + 1}</span>
+                    <span className="text-sm font-medium text-stone-700 flex-1">{item.nom}</span>
+                    <span className="text-xs text-stone-400">×{item.quantite}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded">{item.categorie}</span>
+                    <button onClick={() => supprimerItem(i)} className="text-stone-300 hover:text-rose-500">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Formulaire d'ajout */}
+            <div className="space-y-2.5">
+              <input
+                type="text"
+                value={demandeItemNom}
+                onChange={e => setDemandeItemNom(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && ajouterItem()}
+                placeholder="Nom de l'article (ex: Guide-rails, Câble..."
+                className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-amber-400"
+                style={{ fontSize: '16px' }}
+              />
+              <div className="flex gap-2">
+                <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2">
+                  <button onClick={() => setDemandeItemQte(Math.max(1, demandeItemQte - 1))} className="text-stone-400 hover:text-stone-600 w-6 h-6 flex items-center justify-center">−</button>
+                  <span className="text-sm font-bold text-stone-700 w-6 text-center">{demandeItemQte}</span>
+                  <button onClick={() => setDemandeItemQte(demandeItemQte + 1)} className="text-stone-400 hover:text-stone-600 w-6 h-6 flex items-center justify-center">+</button>
+                </div>
+                <select value={demandeItemCat} onChange={e => setDemandeItemCat(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 outline-none">
+                  <option value="OUTILLAGE">🔧 Outillage</option>
+                  <option value="MATERIEL">📦 Matériel</option>
+                  <option value="PIECE">⚙️ Pièce</option>
+                  <option value="CONSOMMABLE">🧰 Consommable</option>
+                  <option value="SECURITE">🦺 Sécurité</option>
+                </select>
+                <button onClick={ajouterItem}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-all">
+                  + Ajouter
+                </button>
+              </div>
+            </div>
+
+            {/* Description */}
+            <textarea
+              value={demandeDesc}
+              onChange={e => setDemandeDesc(e.target.value)}
+              placeholder="Description ou remarques (optionnel)..."
+              className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none min-h-[60px] resize-none mt-2"
+              style={{ fontSize: '16px' }}
+            />
+
+            {/* Photo */}
+            <div className="mt-2">
+              {demandePhotoPreview ? (
+                <div className="relative rounded-xl overflow-hidden border-2 border-amber-200">
+                  <img src={demandePhotoPreview} alt="Photo" className="w-full max-h-32 object-cover" />
+                  <button onClick={() => { setDemandePhoto(null); setDemandePhotoPreview(null); }}
+                    className="absolute top-1.5 right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <label className="block border-2 border-dashed border-stone-200 bg-stone-50 rounded-xl p-3 text-center cursor-pointer hover:border-amber-300 transition-all">
+                  <Camera size={20} className="text-stone-300 mx-auto mb-0.5" />
+                  <p className="text-[10px] text-stone-400">Photo (optionnel)</p>
+                  <input type="file" accept="image/*" capture="environment" onChange={e => {
+                    const f = e.target.files?.[0]; if (f) { setDemandePhoto(f); const r = new FileReader(); r.onloadend = () => setDemandePhotoPreview(r.result as string); r.readAsDataURL(f); }
+                  }} className="hidden" />
+                </label>
+              )}
+            </div>
+
+            {/* Submit */}
+            <button onClick={soumettreDemande}
+              disabled={demandeItems.length === 0 || demandeLoading}
+              className="w-full mt-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-3.5 rounded-2xl font-bold shadow-md hover:shadow-lg disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+              {demandeLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+              Envoyer la demande ({demandeItems.length} article{demandeItems.length > 1 ? 's' : ''})
+            </button>
           </div>
         </div>
       ) : (
