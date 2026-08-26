@@ -2,12 +2,13 @@ import { Request, Response, Router } from 'express';
 import { Pool } from 'pg';
 import { validerCoordonnees } from '../services/geocalcul/calculs-geo';
 import { LoggerService } from '../services/notifications/logger.service';
+import { SmsService } from '../services/sms/sms.service';
 import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
 import { eventBus } from '../services/events/event-bus';
 
-export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
+export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
 
   // GET /api/mission/active?equipe_id=
@@ -66,25 +67,28 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
 
       logger.info(`Pointage ${type} enregistré`, { missionId, technicienId });
 
-      // Si départ, terminer la mission
+      // Si départ, terminer la mission → DB trigger auto-crée la phase suivante
       if (type === 'depart') {
-        await pool.query(
-          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
-          [missionId]
-        );
-        logger.info('Mission terminée', { missionId });
-
-        // 📡 SSE: Broadcast mission completion
-        const missionInfo = await pool.query(
-          `SELECT om.id, om.chantier_id, om.equipe_id, e.nom AS equipe_nom, c.nom_chantier
+        // Get mission info BEFORE terminating (for SMS + SSE)
+        const missionInfoBefore = await pool.query(
+          `SELECT om.id, om.chantier_id, om.equipe_id, om.phase, e.nom AS equipe_nom, c.nom_chantier
            FROM ordres_de_mission om
            JOIN equipes e ON e.id = om.equipe_id
            JOIN chantiers c ON c.id = om.chantier_id
            WHERE om.id = $1`,
           [missionId]
         );
-        if (missionInfo.rows.length > 0) {
-          const m = missionInfo.rows[0];
+
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+          [missionId]
+        );
+        logger.info('Mission terminée', { missionId });
+
+        if (missionInfoBefore.rows.length > 0) {
+          const m = missionInfoBefore.rows[0];
+
+          // 📡 SSE: Broadcast mission completion
           eventBus.emit('mission_terminee', {
             missionId: m.id,
             chantierId: m.chantier_id,
@@ -92,6 +96,39 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService): Router {
             equipeNom: m.equipe_nom,
             chantierNom: m.nom_chantier,
           });
+
+          // 📲 DB trigger created next phase — find it and send SMS
+          if (m.phase === 'mecanique' || m.phase === 'electrique') {
+            try {
+              await new Promise(r => setTimeout(r, 500)); // Wait for trigger to complete
+              const nextPhase = m.phase === 'mecanique' ? 'electrique' : 'verification';
+              const nextMission = await pool.query(
+                `SELECT om.id, e.nom AS equipe_nom, e.id AS equipe_id
+                 FROM ordres_de_mission om
+                 LEFT JOIN equipes e ON e.id = om.equipe_id
+                 WHERE om.chantier_id = $1 AND om.phase = $2
+                 ORDER BY om.date_creation DESC LIMIT 1`,
+                [m.chantier_id, nextPhase]
+              );
+              if (nextMission.rows.length > 0 && nextMission.rows[0].equipe_id) {
+                const nm = nextMission.rows[0];
+                const telRes = await pool.query(
+                  `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+                     AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+                  [nm.equipe_id]
+                );
+                await smsService?.notifierNouvelleMission({
+                  equipeId: nm.equipe_id, equipeNom: nm.equipe_nom,
+                  telephone: telRes.rows[0]?.telephone || null,
+                  phase: nextPhase, chantierNom: m.nom_chantier, adresse: null,
+                  chantierId: m.chantier_id, missionId: nm.id,
+                });
+                logger.info('SMS phase suivante envoyé', { phase: nextPhase, equipe: nm.equipe_nom });
+              }
+            } catch (smsErr) {
+              logger.error('Erreur SMS phase suivante', { erreur: (smsErr as any).message });
+            }
+          }
         }
       }
 

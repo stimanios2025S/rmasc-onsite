@@ -1,6 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { Pool } from 'pg';
 import { LoggerService } from '../services/notifications/logger.service';
+import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
 
 /**
@@ -15,7 +16,7 @@ import { eventBus } from '../services/events/event-bus';
  *   GET  /api/tracking/equipes       — Positions temps réel (admin carte)
  *   GET  /api/tracking/journee       — Résumé journée d'une équipe
  */
-export function creerTrackingRouter(pool: Pool, logger: LoggerService): Router {
+export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
 
   // ─── 1. GPS TRACKING — Position continue pendant trajet ──────────
@@ -289,57 +290,97 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService): Router {
         return res.status(400).json({ erreur: 'Seule la phase mécanique peut être transférée à l\'électrique.' });
       }
 
-      // Mark current mission as termine
+      // Mark current mission as termine — this fires the DB trigger trg_mission_phase_suivante
+      // which auto-creates the electrical mission + checklist. We just need to find it and send SMS.
       await pool.query(
         `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
         [missionId]
       );
 
-      // Create electrical mission
-      const equipeElecRes = await pool.query(
-        `SELECT e.id, e.nom FROM equipes e
-         WHERE e.type = 'electrique' AND e.actif = TRUE
-           AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
-         ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
-         LIMIT 1`
-      );
-
+      // The DB trigger may have already created the electrical mission. Check first.
       let missionElecId: string | null = null;
       let equipeElecNom = 'Aucune';
 
-      if (equipeElecRes.rows.length > 0) {
-        const eq = equipeElecRes.rows[0];
-        equipeElecNom = eq.nom;
-        await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [eq.id]);
+      const existingElec = await pool.query(
+        `SELECT om.id, e.nom AS equipe_nom
+         FROM ordres_de_mission om
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.chantier_id = $1 AND om.phase = 'electrique'
+         ORDER BY om.date_creation DESC LIMIT 1`,
+        [m.chantier_id]
+      );
 
-        const result = await pool.query(
-          `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-           VALUES ($1, $2, 'electrique', 'en_attente', NOW(), $3)
-           RETURNING id`,
-          [m.chantier_id, eq.id, `Transfert depuis mécanique (${m.equipe_nom})`]
-        );
-        missionElecId = result.rows[0].id;
-
-        // Create checklist
-        await pool.query(
-          `INSERT INTO checklists_phases (mission_id, phase, etapes)
-           VALUES ($1, 'electrique', generer_checklist('electrique'))`,
-          [missionElecId]
-        );
+      if (existingElec.rows.length > 0) {
+        // Trigger already created it
+        missionElecId = existingElec.rows[0].id;
+        equipeElecNom = existingElec.rows[0].equipe_nom || 'Aucune';
+        logger.info('Transfert: mission élec créée par trigger', { missionElecId, equipeElecNom });
       } else {
-        // No team available
-        const result = await pool.query(
-          `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-           VALUES ($1, NULL, 'electrique', 'en_attente', NOW(), $2)
-           RETURNING id`,
-          [m.chantier_id, `Transfert depuis mécanique (${m.equipe_nom}) — assignation manuelle requise`]
+        // Trigger didn't create it (no team available or trigger missing) — create manually
+        const equipeElecRes = await pool.query(
+          `SELECT e.id, e.nom FROM equipes e
+           WHERE e.type = 'electrique' AND e.actif = TRUE
+             AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
+           ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
+           LIMIT 1`
         );
-        missionElecId = result.rows[0].id;
+
+        if (equipeElecRes.rows.length > 0) {
+          const eq = equipeElecRes.rows[0];
+          equipeElecNom = eq.nom;
+          await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [eq.id]);
+
+          const result = await pool.query(
+            `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
+             VALUES ($1, $2, 'electrique', 'en_attente', NOW(), $3)
+             RETURNING id`,
+            [m.chantier_id, eq.id, `Transfert depuis mécanique (${m.equipe_nom})`]
+          );
+          missionElecId = result.rows[0].id;
+
+          await pool.query(
+            `INSERT INTO checklists_phases (mission_id, phase, etapes)
+             VALUES ($1, 'electrique', generer_checklist('electrique'))`,
+            [missionElecId]
+          );
+        } else {
+          const result = await pool.query(
+            `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
+             VALUES ($1, NULL, 'electrique', 'en_attente', NOW(), $2)
+             RETURNING id`,
+            [m.chantier_id, `Transfert depuis mécanique (${m.equipe_nom}) — assignation manuelle requise`]
+          );
+          missionElecId = result.rows[0].id;
+        }
       }
 
       logger.info('Transfert méca → élec', {
         chantier: m.nom_chantier, missionMeca: missionId, missionElec: missionElecId,
       });
+
+      // 📲 SMS à l'équipe électrique assignée
+      if (equipeElecNom !== 'Aucune' && missionElecId) {
+        try {
+          const elecTeamRes = await pool.query(
+            `SELECT e.id FROM equipes e WHERE e.nom = $1 LIMIT 1`, [equipeElecNom]
+          );
+          if (elecTeamRes.rows.length > 0) {
+            const telRes = await pool.query(
+              `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+                 AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+              [elecTeamRes.rows[0].id]
+            );
+            await smsService?.notifierNouvelleMission({
+              equipeId: elecTeamRes.rows[0].id, equipeNom: equipeElecNom,
+              telephone: telRes.rows[0]?.telephone || null,
+              phase: 'electrique', chantierNom: m.nom_chantier, adresse: null,
+              chantierId: m.chantier_id, missionId: missionElecId,
+            });
+          }
+        } catch (smsErr) {
+          logger.error('Erreur SMS transfert', { erreur: (smsErr as any).message });
+        }
+      }
 
       // SSE broadcast
       eventBus.emit('mission_transferee', {

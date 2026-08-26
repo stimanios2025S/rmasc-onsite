@@ -149,7 +149,7 @@ app.use('/api/auth', creerAuthRouter(pool, logger));
 app.use('/api/admin', creerAdminRouter(pool, logger, smsService));
 
 // Routes mission (technicien mobile)
-app.use('/api/mission', creerMissionRouter(pool, logger));
+app.use('/api/mission', creerMissionRouter(pool, logger, smsService));
 
 // Routes équipe (statut, repos)
 app.use('/api/equipe', creerEquipeRouter(pool));
@@ -161,7 +161,7 @@ app.use('/api/upload', creerUploadRouter(pool));
 app.use('/api/geofencing', creerGeofencingRouter(pool, logger));
 
 // Routes tracking (GPS en route, pointage jour, pause, transfert)
-app.use('/api/tracking', creerTrackingRouter(pool, logger));
+app.use('/api/tracking', creerTrackingRouter(pool, logger, smsService));
 
 // Static files (uploads) — same dir as upload.controller.ts (backend/public/uploads)
 const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');
