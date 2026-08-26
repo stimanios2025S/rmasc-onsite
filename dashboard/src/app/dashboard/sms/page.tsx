@@ -226,8 +226,12 @@ export default function PageSms() {
                           value={m.telephone ?? ''}
                           onChange={e => m.utilisateur_id && changerTel(m.utilisateur_id, e.target.value)}
                           placeholder="+213 5XX XX XX XX"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
                           disabled={!m.utilisateur_id}
-                          className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-40"
+                          className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white text-base text-stone-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-40"
+                          style={{ fontSize: '16px' }}
                         />
                       </div>
                     </div>
