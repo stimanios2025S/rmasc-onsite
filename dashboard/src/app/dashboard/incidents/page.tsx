@@ -37,7 +37,7 @@ export default function IncidentsPage() {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-stone-100 shadow-sm p-5">
           <p className="text-[11px] font-semibold text-stone-400 uppercase mb-1">Blocages Actifs</p>
           <p className="text-2xl font-bold text-rose-500">{blocages.length}</p>
@@ -68,7 +68,7 @@ export default function IncidentsPage() {
         {filtered.length === 0 ? (
           <p className="py-16 text-center text-stone-400 text-sm">Aucun incident à signaler.</p>
         ) : filtered.map((inc, i) => (
-          <div key={i} className="px-6 py-4 hover:bg-stone-50/50 transition-colors">
+          <div key={i} className="px-4 sm:px-6 py-4 hover:bg-stone-50/50 transition-colors">
             <div className="flex items-start gap-3">
               <div className={`w-2 h-2 mt-2 rounded-full shrink-0 ${inc.type === 'blocage' ? 'bg-rose-400' : 'bg-indigo-400'}`} />
               <div className="flex-1 min-w-0">

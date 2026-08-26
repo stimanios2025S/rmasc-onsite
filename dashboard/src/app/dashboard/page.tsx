@@ -124,16 +124,14 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Top bar */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-stone-100 p-1 flex">
-            {["Aujourd'hui", 'Cette semaine', 'Ce mois'].map((t) => (
-              <button key={t} onClick={() => setFiltreTemps(t)}
-                className={`px-4 py-1.5 rounded-xl text-xs font-medium transition-all ${filtreTemps === t ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}>
-                {t}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-2 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-stone-100 p-1 w-full sm:w-auto overflow-x-auto">
+          {["Aujourd'hui", 'Cette semaine', 'Ce mois'].map((t) => (
+            <button key={t} onClick={() => setFiltreTemps(t)}
+              className={`px-3 sm:px-4 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${filtreTemps === t ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}>
+              {t}
+            </button>
+          ))}
         </div>
         <div className="flex items-center gap-3 text-sm text-stone-400">
           <SyncNotifications onRefresh={loadAll} />
@@ -153,21 +151,21 @@ export default function DashboardPage() {
           </div>
           <div className="divide-y divide-stone-100">
             {demandes.map((d) => (
-              <div key={d.id} className="px-6 py-4 flex items-center justify-between hover:bg-rose-50/30 transition-colors">
+              <div key={d.id} className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-rose-50/30 transition-colors">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{d.ref}</span>
-                    <span className="font-semibold text-stone-800">{d.nom_chantier}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{d.ref}</span>
+                    <span className="font-semibold text-sm sm:text-base text-stone-800">{d.nom_chantier}</span>
                   </div>
-                  <p className="text-[13px] text-stone-400 mt-1">Client: {d.client_nom} • {timeAgo(d.cree)}</p>
+                  <p className="text-xs text-stone-400 mt-1">Client: {d.client_nom} • {timeAgo(d.cree)}</p>
                 </div>
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex items-center gap-2 sm:ml-4">
                   <button onClick={() => handleApprouver(d.id)} disabled={actionLoading === d.id}
-                    className="flex items-center gap-1.5 bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50 shadow-sm">
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50 shadow-sm">
                     {actionLoading === d.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCheck size={15} />}Valider
                   </button>
                   <button onClick={() => handleRefuser(d.id)} disabled={actionLoading === d.id}
-                    className="flex items-center gap-1.5 bg-white text-rose-500 px-4 py-2 rounded-xl text-sm font-semibold border border-rose-200 hover:bg-rose-50">
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-white text-rose-500 px-4 py-2 rounded-xl text-sm font-semibold border border-rose-200 hover:bg-rose-50">
                     <XCircle size={15} /> Refuser
                   </button>
                 </div>
@@ -183,21 +181,11 @@ export default function DashboardPage() {
       </div>
 
       {/* KPIs + Gauge */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <KpiCard titre="Chantiers Actifs" valeur={stats?.chantiersActifs ?? 0} couleur="emerald" icon={<HardHat size={20} />} />
-          <KpiCard titre="Bloqués" valeur={stats?.chantiersBloques ?? 0} couleur="rose" icon={<AlertTriangle size={20} />} badge />
-          <KpiCard titre="Équipes Dispo" valeur={stats?.equipesDisponibles ?? 0} couleur="indigo" icon={<Users size={20} />} />
-          <KpiCard titre="Blocages" valeur={stats?.blocagesOuverts ?? 0} couleur="amber" icon={<AlertTriangle size={20} />} />
-        </div>
-        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 flex flex-col items-center justify-center">
-          <div className="relative w-24 h-12 overflow-hidden mb-2">
-            <div className="absolute inset-0 rounded-t-full border-8 border-stone-100" />
-            <div className="absolute inset-0 rounded-t-full border-8 border-transparent border-t-emerald-400 border-r-emerald-400" style={{ rotate: `${pct * 1.8 - 180}deg` }} />
-          </div>
-          <p className="text-2xl font-bold text-stone-800">{pct}%</p>
-          <p className="text-[10px] text-stone-400 uppercase tracking-wider">Objectif Mensuel</p>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+        <KpiCard titre="Chantiers Actifs" valeur={stats?.chantiersActifs ?? 0} couleur="emerald" icon={<HardHat size={20} />} />
+        <KpiCard titre="Bloqués" valeur={stats?.chantiersBloques ?? 0} couleur="rose" icon={<AlertTriangle size={20} />} badge />
+        <KpiCard titre="Équipes Dispo" valeur={stats?.equipesDisponibles ?? 0} couleur="indigo" icon={<Users size={20} />} />
+        <KpiCard titre="Blocages" valeur={stats?.blocagesOuverts ?? 0} couleur="amber" icon={<AlertTriangle size={20} />} />
       </div>
 
       {/* Incidents */}
@@ -208,20 +196,20 @@ export default function DashboardPage() {
       {/* ═══ RETARDS SIGNALÉS (sync technicien → admin) ═══ */}
       {retards.length > 0 && (
         <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-amber-200 shadow-sm mb-8 overflow-hidden">
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-4 border-b border-amber-100 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-4 sm:px-6 py-4 border-b border-amber-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
                 <Timer size={18} className="text-amber-600" />
               </div>
               <div>
-                <h2 className="font-bold text-stone-800">⏰ Retards Signalés <span className="text-stone-400 font-normal">({retards.length})</span></h2>
-                <p className="text-xs text-stone-400">Signalés par les équipes en temps réel</p>
+                <h2 className="font-bold text-sm sm:text-base text-stone-800">⏰ Retards Signalés <span className="text-stone-400 font-normal">({retards.length})</span></h2>
+                <p className="text-[10px] sm:text-xs text-stone-400">Signalés par les équipes en temps réel</p>
               </div>
             </div>
           </div>
           <div className="divide-y divide-stone-100">
             {retards.slice(0, 8).map((r, i) => (
-              <div key={i} className="px-6 py-4 hover:bg-amber-50/30 transition-colors">
+              <div key={i} className="px-4 sm:px-6 py-4 hover:bg-amber-50/30 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -250,14 +238,14 @@ export default function DashboardPage() {
 
       {/* ═══ ROADMAP DES CHANTIERS (état réel + équipe) ═══ */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8 overflow-hidden">
-        <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
               <MapPin size={18} className="text-emerald-600" />
             </div>
             <div>
-              <h2 className="font-bold text-stone-800">Roadmap des Chantiers</h2>
-              <p className="text-xs text-stone-400">État réel des phases et équipes assignées</p>
+              <h2 className="font-bold text-sm sm:text-base text-stone-800">Roadmap des Chantiers</h2>
+              <p className="text-[10px] sm:text-xs text-stone-400">État réel des phases et équipes assignées</p>
             </div>
           </div>
         </div>
@@ -298,7 +286,7 @@ export default function DashboardPage() {
               : null;
 
             return (
-              <div key={c.id} className="px-6 py-4 hover:bg-stone-50/50 transition-colors">
+              <div key={c.id} className="px-4 sm:px-6 py-4 hover:bg-stone-50/50 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     {/* Header: name + ref + badges */}
@@ -399,10 +387,10 @@ export default function DashboardPage() {
       {/* Team Matrix */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8">
         <button onClick={() => setShowEquipes(!showEquipes)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-stone-50 rounded-t-3xl transition-colors">
+          className="w-full px-4 sm:px-6 py-4 flex items-center justify-between hover:bg-stone-50 rounded-t-3xl transition-colors">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><Users size={18} className="text-indigo-600" /></div>
-            <h2 className="font-bold text-stone-800">Matrice des Équipes <span className="text-stone-400 font-normal">({equipes.length})</span></h2>
+            <h2 className="font-bold text-sm sm:text-base text-stone-800">Matrice des Équipes <span className="text-stone-400 font-normal">({equipes.length})</span></h2>
           </div>
           {showEquipes ? <ChevronDown size={18} className="text-stone-400" /> : <ChevronRight size={18} className="text-stone-400" />}
         </button>
@@ -443,10 +431,10 @@ export default function DashboardPage() {
 function KpiCard({ titre, valeur, couleur, icon, badge }: { titre: string; valeur: number; couleur: string; icon: React.ReactNode; badge?: boolean }) {
   const cm: Record<string, string> = { emerald: 'bg-emerald-50 text-emerald-500', rose: 'bg-rose-50 text-rose-500', indigo: 'bg-indigo-50 text-indigo-500', amber: 'bg-amber-50 text-amber-500' };
   return (
-    <div className="relative bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 flex items-start gap-4 hover:shadow-md transition-all">
+    <div className="relative bg-white/90 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-stone-100 shadow-sm p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-all">
       {badge && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" /></span>}
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cm[couleur]}`}>{icon}</div>
-      <div><p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-0.5">{titre}</p><span className="text-2xl font-bold text-stone-800">{valeur}</span></div>
+      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${cm[couleur]}`}>{icon}</div>
+      <div><p className="text-[9px] sm:text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-0.5">{titre}</p><span className="text-lg sm:text-2xl font-bold text-stone-800">{valeur}</span></div>
     </div>
   );
 }
@@ -456,7 +444,7 @@ function IncidentsWidget({ incidents }: { incidents: IncidentData[] }) {
   const pointages = incidents.filter(i => i.type === 'pointage');
   return (
     <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm h-full">
-      <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+      <div className="px-4 sm:px-5 py-4 border-b border-stone-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={15} className="text-rose-500" /></div>
           <h3 className="text-sm font-bold text-stone-800">Blocages</h3>

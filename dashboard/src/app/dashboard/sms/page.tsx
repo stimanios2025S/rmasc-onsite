@@ -116,7 +116,7 @@ export default function PageSms() {
 
       {/* ─── Journal SMS ─────────────────────────────────────────── */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-stone-100 flex flex-wrap items-center gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <Clock size={16} className="text-indigo-500" />
             <h2 className="font-bold text-stone-800">Journal des SMS</h2>
@@ -148,7 +148,7 @@ export default function PageSms() {
             {smsFiltres.map(s => {
               const badge = BADGES_STATUT[s.statut] ?? { label: s.statut, cls: 'bg-stone-50 text-stone-600 border-stone-200' };
               return (
-                <div key={s.id} className="px-6 py-3.5 flex items-start gap-4 hover:bg-stone-50/50 transition-colors">
+                <div key={s.id} className="px-4 sm:px-6 py-3.5 flex items-start gap-4 hover:bg-stone-50/50 transition-colors">
                   <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 mt-0.5">
                     <MessageSquareText size={16} className="text-indigo-500" />
                   </div>
@@ -184,7 +184,7 @@ export default function PageSms() {
 
       {/* ─── Annuaire téléphones ─────────────────────────────────── */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Phone size={16} className="text-indigo-500" />
             <h2 className="font-bold text-stone-800">Numéros des équipes</h2>
@@ -199,7 +199,7 @@ export default function PageSms() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-6 max-h-[520px] overflow-y-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4 sm:p-6 max-h-[520px] overflow-y-auto">
           {Object.entries(parEquipe).map(([equipeId, membres]) => {
             const eq = membres[0];
             const couleur = eq.type === 'mecanique' ? 'from-blue-500 to-indigo-500'
@@ -245,7 +245,7 @@ export default function PageSms() {
           })}
         </div>
 
-        <div className="px-6 py-4 border-t border-stone-100 bg-stone-50/50 flex items-start gap-3">
+        <div className="px-4 sm:px-6 py-4 border-t border-stone-100 bg-stone-50/50 flex items-start gap-3">
           <CheckCircle2 size={16} className="text-emerald-500 mt-0.5 shrink-0" />
           <p className="text-xs text-stone-500 leading-relaxed">
             <b>Comment ça marche :</b> quand une équipe termine sa phase, le système envoie automatiquement un SMS au
