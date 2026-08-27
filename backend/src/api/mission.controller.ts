@@ -100,13 +100,13 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
           // 📲 DB trigger created next phase — find it and send SMS
           if (m.phase === 'mecanique' || m.phase === 'electrique') {
             try {
-              await new Promise(r => setTimeout(r, 500)); // Wait for trigger to complete
               const nextPhase = m.phase === 'mecanique' ? 'electrique' : 'verification';
               const nextMission = await pool.query(
                 `SELECT om.id, e.nom AS equipe_nom, e.id AS equipe_id
                  FROM ordres_de_mission om
                  LEFT JOIN equipes e ON e.id = om.equipe_id
                  WHERE om.chantier_id = $1 AND om.phase = $2
+                   AND om.statut NOT IN ('termine', 'annule')
                  ORDER BY om.date_creation DESC LIMIT 1`,
                 [m.chantier_id, nextPhase]
               );
