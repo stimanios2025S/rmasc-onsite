@@ -235,7 +235,7 @@ export async function fetchMissionsReassign(): Promise<MissionReassign[]> {
   return apiFetch('/admin/teams/missions');
 }
 export async function reassignMission(missionId: string, equipeId: string) {
-  return apiFetch(`/admin/teams/missions/${missionId}/reassign`, {
+  return apiFetch<{ ok: boolean; message: string }>(`/admin/teams/missions/${missionId}/reassign`, {
     method: 'PATCH', body: JSON.stringify({ equipe_id: equipeId }),
   });
 }
