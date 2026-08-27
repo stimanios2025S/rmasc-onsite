@@ -83,7 +83,7 @@ BEGIN
             SELECT 1 FROM ordres_de_mission om
             WHERE om.chantier_id = NEW.chantier_id
               AND om.phase = v_prochaine_phase
-              AND om.statut NOT IN ('termine', 'annule')
+              AND om.statut NOT IN ('termine')
         ) THEN
             RETURN NEW;
         END IF;

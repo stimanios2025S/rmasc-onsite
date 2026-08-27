@@ -306,7 +306,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
          WHERE om.chantier_id = $1 AND om.phase = 'electrique'
-           AND om.statut NOT IN ('termine', 'annule')
+           AND om.statut != 'termine'
          ORDER BY om.date_creation DESC LIMIT 1`,
         [m.chantier_id]
       );
