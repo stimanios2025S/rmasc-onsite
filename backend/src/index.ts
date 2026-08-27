@@ -26,6 +26,7 @@ import { creerUploadRouter } from './api/upload.controller';
 import { creerGeofencingRouter } from './api/geofencing.controller';
 import { creerTrackingRouter } from './api/tracking.controller';
 import { creerMaterielRouter } from './api/materiel.controller';
+import { creerTeamManagementRouter } from './api/team-management.controller';
 import { SmsService } from './services/sms/sms.service';
 import { SmsWorker } from './services/sms/sms.worker';
 import path from 'path';
@@ -166,6 +167,9 @@ app.use('/api/tracking', creerTrackingRouter(pool, logger, smsService));
 
 // Routes demandes matériel / signalements
 app.use('/api/materiel', creerMaterielRouter(pool, logger, smsService));
+
+// Routes team management (admin)
+app.use('/api/admin/teams', creerTeamManagementRouter(pool, logger));
 
 // Static files (uploads) — same dir as upload.controller.ts (backend/public/uploads)
 const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');

@@ -193,3 +193,49 @@ export async function signalerProbleme(data: {
     body: JSON.stringify(data),
   });
 }
+
+// ─── TEAM MANAGEMENT (Admin) ───────────────────────────────────────────
+export interface TeamMember {
+  id: string; equipe_id: string; prenom: string; nom: string;
+  role: string; telephone: string | null; actif: boolean;
+}
+export interface TeamData {
+  id: string; nom: string; type: string; couleur_hex: string | null;
+  actif: boolean; statut_equipe: string; disponible_a_partir_de: string;
+  date_creation: string; missions_actives: number; jours_repos_restants: number;
+  membres: TeamMember[];
+}
+export interface MissionReassign {
+  id: string; phase: string; statut: string;
+  nom_chantier: string; ref_erp: string;
+  equipe_nom: string | null; equipe_id: string | null; equipe_type: string | null;
+  checklist_complete: boolean | null;
+  date_declenchement: string; date_debut_effectif: string | null;
+}
+export interface SystemConfig {
+  [cle: string]: { valeur: string; description: string };
+}
+
+export async function fetchTeamsManagement(): Promise<TeamData[]> {
+  return apiFetch('/admin/teams');
+}
+export async function updateTeam(id: string, data: { nom?: string; type?: string; couleur_hex?: string; actif?: boolean }) {
+  return apiFetch(`/admin/teams/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+export async function updateTeamMembers(id: string, membres: { id: string; prenom: string; nom: string; telephone?: string | null }[]) {
+  return apiFetch(`/admin/teams/${id}/members`, { method: 'PUT', body: JSON.stringify({ membres }) });
+}
+export async function fetchSystemConfig(): Promise<SystemConfig> {
+  return apiFetch('/admin/teams/config');
+}
+export async function updateSystemConfig(parametres: Record<string, string>) {
+  return apiFetch('/admin/teams/config', { method: 'PATCH', body: JSON.stringify({ parametres }) });
+}
+export async function fetchMissionsReassign(): Promise<MissionReassign[]> {
+  return apiFetch('/admin/teams/missions');
+}
+export async function reassignMission(missionId: string, equipeId: string) {
+  return apiFetch(`/admin/teams/missions/${missionId}/reassign`, {
+    method: 'PATCH', body: JSON.stringify({ equipe_id: equipeId }),
+  });
+}

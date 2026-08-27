@@ -2,7 +2,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, MapPin, Users, AlertTriangle, Settings, LogOut,
-  HardHat, Bell, MessageSquareText, Package,
+  HardHat, Bell, MessageSquareText, Package, ShieldCheck,
 } from 'lucide-react';
 import { getUtilisateur } from '@/lib/auth';
 import { useState } from 'react';
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: MapPin, label: 'Chantiers', href: '/dashboard/chantiers' },
   { icon: Users, label: 'Équipes', href: '/dashboard/equipes' },
+  { icon: ShieldCheck, label: 'Team Management', href: '/dashboard/team-management' },
   { icon: MessageSquareText, label: 'SMS Auto', href: '/dashboard/sms' },
   { icon: AlertTriangle, label: 'Incidents', href: '/dashboard/incidents' },
   { icon: Package, label: 'Demandes', href: '/dashboard/demandes' },
