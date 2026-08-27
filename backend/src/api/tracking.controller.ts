@@ -266,7 +266,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
     }
   });
 
-  // ─── 5. TRANSFERT MÉCA → ÉLECTRIQUE ─────────────────────────────
+  // ─── 5. TRANSFERT PHASE (Méca→Élec ou Élec→Vérification) ────────
   router.post('/transferer', async (req, res) => {
     try {
       const { missionId, equipeId } = req.body;
@@ -286,96 +286,102 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
       }
       const m = missionRes.rows[0];
 
-      if (m.phase !== 'mecanique') {
-        return res.status(400).json({ erreur: 'Seule la phase mécanique peut être transférée à l\'électrique.' });
+      // Allow transfer from mecanique or electrique
+      if (m.phase !== 'mecanique' && m.phase !== 'electrique') {
+        return res.status(400).json({ erreur: 'Seules les phases mécanique et électrique peuvent être transférées.' });
       }
 
+      // Determine next phase
+      const nextPhase = m.phase === 'mecanique' ? 'electrique' : 'verification';
+      const nextTeamType = nextPhase === 'electrique' ? 'electrique' : 'mixte';
+
       // Mark current mission as termine — this fires the DB trigger trg_mission_phase_suivante
-      // which auto-creates the electrical mission + checklist. We just need to find it and send SMS.
+      // which auto-creates the next phase mission + checklist. We just need to find it and send SMS.
       await pool.query(
         `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
         [missionId]
       );
 
-      // The DB trigger may have already created the electrical mission. Check first.
-      let missionElecId: string | null = null;
-      let equipeElecNom = 'Aucune';
+      // The DB trigger may have already created the next phase mission. Check first.
+      let missionNextId: string | null = null;
+      let equipeNextNom = 'Aucune';
 
-      const existingElec = await pool.query(
+      const existingNext = await pool.query(
         `SELECT om.id, e.nom AS equipe_nom
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.chantier_id = $1 AND om.phase = 'electrique'
+         WHERE om.chantier_id = $1 AND om.phase = $2
            AND om.statut != 'termine'
          ORDER BY om.date_creation DESC LIMIT 1`,
-        [m.chantier_id]
+        [m.chantier_id, nextPhase]
       );
 
-      if (existingElec.rows.length > 0) {
+      if (existingNext.rows.length > 0) {
         // Trigger already created it
-        missionElecId = existingElec.rows[0].id;
-        equipeElecNom = existingElec.rows[0].equipe_nom || 'Aucune';
-        logger.info('Transfert: mission élec créée par trigger', { missionElecId, equipeElecNom });
+        missionNextId = existingNext.rows[0].id;
+        equipeNextNom = existingNext.rows[0].equipe_nom || 'Aucune';
+        logger.info(`Transfert: mission ${nextPhase} créée par trigger`, { missionNextId, equipeNextNom });
       } else {
         // Trigger didn't create it (no team available or trigger missing) — create manually
-        const equipeElecRes = await pool.query(
+        const equipeNextRes = await pool.query(
           `SELECT e.id, e.nom FROM equipes e
-           WHERE e.type = 'electrique' AND e.actif = TRUE
+           WHERE e.type::text = $1 AND e.actif = TRUE
              AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
            ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
-           LIMIT 1`
+           LIMIT 1`,
+          [nextTeamType]
         );
 
-        if (equipeElecRes.rows.length > 0) {
-          const eq = equipeElecRes.rows[0];
-          equipeElecNom = eq.nom;
+        if (equipeNextRes.rows.length > 0) {
+          const eq = equipeNextRes.rows[0];
+          equipeNextNom = eq.nom;
           await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [eq.id]);
 
           const result = await pool.query(
             `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-             VALUES ($1, $2, 'electrique', 'en_attente', NOW(), $3)
+             VALUES ($1, $2, $3::phase_mission, 'en_attente', NOW(), $4)
              RETURNING id`,
-            [m.chantier_id, eq.id, `Transfert depuis mécanique (${m.equipe_nom})`]
+            [m.chantier_id, eq.id, nextPhase, `Transfert depuis ${m.phase} (${m.equipe_nom})`]
           );
-          missionElecId = result.rows[0].id;
+          missionNextId = result.rows[0].id;
 
           await pool.query(
             `INSERT INTO checklists_phases (mission_id, phase, etapes)
-             VALUES ($1, 'electrique', generer_checklist('electrique'))`,
-            [missionElecId]
+             VALUES ($1, $2::phase_mission, generer_checklist($2))`,
+            [missionNextId, nextPhase]
           );
         } else {
           const result = await pool.query(
             `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-             VALUES ($1, NULL, 'electrique', 'en_attente', NOW(), $2)
+             VALUES ($1, NULL, $2::phase_mission, 'en_attente', NOW(), $3)
              RETURNING id`,
-            [m.chantier_id, `Transfert depuis mécanique (${m.equipe_nom}) — assignation manuelle requise`]
+            [m.chantier_id, nextPhase, `Transfert depuis ${m.phase} (${m.equipe_nom}) — assignation manuelle requise`]
           );
-          missionElecId = result.rows[0].id;
+          missionNextId = result.rows[0].id;
         }
       }
 
-      logger.info('Transfert méca → élec', {
-        chantier: m.nom_chantier, missionMeca: missionId, missionElec: missionElecId,
+      logger.info(`Transfert ${m.phase} → ${nextPhase}`, {
+        chantier: m.nom_chantier, missionSrc: missionId, missionNext: missionNextId,
       });
 
-      // 📲 SMS à l'équipe électrique assignée
-      if (equipeElecNom !== 'Aucune' && missionElecId) {
+      // 📲 SMS à l'équipe de la phase suivante
+      if (equipeNextNom !== 'Aucune' && missionNextId) {
         try {
-          const elecTeamRes = await pool.query(
-            `SELECT e.id FROM equipes e WHERE e.nom = $1 LIMIT 1`, [equipeElecNom]
+          const nextTeamRes = await pool.query(
+            `SELECT e.id FROM equipes e WHERE e.nom = $1 LIMIT 1`, [equipeNextNom]
           );
-          if (elecTeamRes.rows.length > 0) {
+          if (nextTeamRes.rows.length > 0) {
             const telRes = await pool.query(
               `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
                  AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
-              [elecTeamRes.rows[0].id]
+              [nextTeamRes.rows[0].id]
             );
             await smsService?.notifierNouvelleMission({
-              equipeId: elecTeamRes.rows[0].id, equipeNom: equipeElecNom,
+              equipeId: nextTeamRes.rows[0].id, equipeNom: equipeNextNom,
               telephone: telRes.rows[0]?.telephone || null,
-              phase: 'electrique', chantierNom: m.nom_chantier, adresse: null,
-              chantierId: m.chantier_id, missionId: missionElecId,
+              phase: nextPhase, chantierNom: m.nom_chantier, adresse: null,
+              chantierId: m.chantier_id, missionId: missionNextId,
             });
           }
         } catch (smsErr) {
@@ -386,18 +392,19 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
       // SSE broadcast
       eventBus.emit('mission_transferee', {
         missionMeca: missionId,
-        missionElecId,
+        missionElecId: missionNextId,
         equipeMecaNom: m.equipe_nom,
-        equipeElecNom,
+        equipeElecNom: equipeNextNom,
         chantierNom: m.nom_chantier,
         chantierId: m.chantier_id,
       });
 
+      const nextLabel = nextPhase === 'electrique' ? 'Électrique' : 'Vérification';
       res.json({
         ok: true,
-        missionElecId,
-        equipeElecNom,
-        message: `✅ Phase mécanique terminée. Mission électrique assignée à ${equipeElecNom}.`,
+        missionElecId: missionNextId,
+        equipeElecNom: equipeNextNom,
+        message: `✅ Phase ${m.phase} terminée. Mission ${nextLabel} assignée à ${equipeNextNom}.`,
       });
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });

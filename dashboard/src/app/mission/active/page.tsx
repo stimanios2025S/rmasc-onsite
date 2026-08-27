@@ -338,10 +338,14 @@ export default function MissionActivePage() {
     setPauseLoading(false);
   };
 
-  /* ═══ NEW: TRANSFERT MÉCA → ÉLECTRIQUE ═══ */
+  /* ═══ NEW: TRANSFERT PHASE (Méca→Élec ou Élec→Vérification) ═══ */
   const handleTransferer = async () => {
     if (!mission) return;
-    if (!confirm('Terminer la phase mécanique et transférer à l\'équipe électrique ?')) return;
+    const isM = mission.phase === 'mecanique';
+    const confirmMsg = isM
+      ? 'Terminer la phase mécanique et transférer à l\'équipe électrique ?'
+      : 'Terminer la phase électrique et transférer à l\'équipe de vérification ?';
+    if (!confirm(confirmMsg)) return;
     setTransferLoading(true);
     try {
       const res = await fetch('/api/tracking/transferer', {
@@ -598,6 +602,7 @@ export default function MissionActivePage() {
   const isEnCours = missionStatut === 'en_cours';
   const isTermine = estDepart || missionStatut === 'termine';
   const isMecanique = mission?.phase === 'mecanique';
+  const isElectrique = mission?.phase === 'electrique';
 
   // Can see work content? Only when arrived and in zone
   const canSeeWork = isEnCours || isArrive;
@@ -826,8 +831,8 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ PROGRESSION GLOBALE ═══ */}
-      {checklist && (
+      {/* ═══ PROGRESSION GLOBALE (only after arrival) ═══ */}
+      {checklist && (isArrive || isEnCours) && (
         <div className="mx-4 mb-4 bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-stone-400 uppercase">Progression phase</p>
@@ -898,8 +903,8 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ CHECKLIST ═══ */}
-      {checklist && (
+      {/* ═══ CHECKLIST (only after arrival confirmed) ═══ */}
+      {checklist && (isArrive || isEnCours) && (
         <div className="mx-4 mb-4 bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-stone-400 uppercase">📋 {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
@@ -1034,8 +1039,8 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ ACTIONS EN COURS DE TRAVAIL ═══ */}
-      {isEnCours && !enPause && !isTermine && (
+      {/* ═══ ACTIONS EN COURS DE TRAVAIL (both phases, after arrival) ═══ */}
+      {(isEnCours || isArrive) && !enPause && !isTermine && !aBloque && (
         <div className="mx-4 mb-4 space-y-3">
           {/* Pause / Shop buttons */}
           <div className="grid grid-cols-2 gap-3">
@@ -1062,28 +1067,32 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ TRANSFERT MÉCA → ÉLECTRIQUE ═══ */}
-      {isEnCours && isMecanique && checklist?.complete && (
+      {/* ═══ TRANSFERT PHASE (Méca→Élec ou Élec→Vérification) ═══ */}
+      {(isEnCours || isArrive) && (isMecanique || isElectrique) && checklist?.complete && (
         <div className="mx-4 mb-4">
           <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-5 shadow-lg shadow-indigo-200">
             <div className="flex items-center gap-3 mb-3">
               <ArrowRightLeft size={24} className="text-white" />
               <div>
-                <p className="font-bold text-white text-sm">Phase Mécanique Terminée !</p>
-                <p className="text-white/70 text-xs">Transférer à l'équipe électrique</p>
+                <p className="font-bold text-white text-sm">
+                  {isMecanique ? 'Phase Mécanique Terminée !' : 'Phase Électrique Terminée !'}
+                </p>
+                <p className="text-white/70 text-xs">
+                  {isMecanique ? 'Transférer à l\'équipe électrique' : 'Transférer à l\'équipe de vérification'}
+                </p>
               </div>
             </div>
             <button onClick={handleTransferer} disabled={transferLoading}
               className="w-full bg-white text-indigo-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
               {transferLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
-              ⚡ Envoyer à l'Équipe Électrique
+              {isMecanique ? '⚡ Envoyer à l\'Équipe Électrique' : '🛡️ Envoyer à l\'Équipe Vérification'}
             </button>
           </div>
         </div>
       )}
 
-      {/* ═══ FIN DE JOURNÉE ═══ */}
-      {isEnCours && !enPause && !isTermine && (
+      {/* ═══ FIN DE JOURNÉE (both phases, after arrival) ═══ */}
+      {(isEnCours || isArrive) && !enPause && !isTermine && !aBloque && (
         <div className="mx-4 mb-4">
           <button onClick={() => handlePointageJour('fin_journee')} disabled={gpsLoading}
             className="w-full bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-4 rounded-2xl font-bold shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
