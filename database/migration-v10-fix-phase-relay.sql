@@ -1,20 +1,42 @@
 -- ============================================================================
--- RMASC OnSite v10 — FIX PHASE RELAY (electrical team not assigned)
--- Fixes 3 critical bugs:
---   1. Trigger skips creating next phase if a stale/termine mission exists
---   2. NOT NULL constraint on equipe_id crashes trigger when no team available
---   3. Backend fallback also crashes on NOT NULL when inserting without team
+-- RMASC OnSite v10.1 — FIX PHASE RELAY (electrical team not assigned)
+-- Fixes 4 critical bugs:
+--   1. UNIQUE (chantier_id, phase) constraint blocks new missions after old ones are termine
+--   2. Trigger skips creating next phase if a stale/termine mission exists
+--   3. NOT NULL constraint on equipe_id crashes trigger when no team available
+--   4. Backend fallback also crashes on NOT NULL when inserting without team
 -- ============================================================================
 
-BEGIN;
+-- ═══ USE SINGLE-STATEMENT TRANSACTION per fix (no BEGIN/COMMIT wrapper) ═══
+-- Each statement auto-commits so failures don't block other fixes
 
 -- ═══════════════════════════════════════════════════════════════════════
--- FIX 1: Ensure equipe_id allows NULL (for unassigned missions)
+-- FIX 1: Drop the UNIQUE (chantier_id, phase) constraint
+--   This constraint prevents creating a NEW electrical mission when
+--   an old termine one exists. We only need ONE ACTIVE mission per phase,
+--   not one total. The trigger's logic handles deduplication.
+-- ═══════════════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_mission_unique_phase_chantier'
+          AND conrelid = 'ordres_de_mission'::regclass
+    ) THEN
+        ALTER TABLE ordres_de_mission DROP CONSTRAINT uq_mission_unique_phase_chantier;
+        RAISE NOTICE 'Dropped constraint uq_mission_unique_phase_chantier';
+    ELSE
+        RAISE NOTICE 'Constraint uq_mission_unique_phase_chantier already dropped';
+    END IF;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- FIX 2: Ensure equipe_id allows NULL (for unassigned missions)
 -- ═══════════════════════════════════════════════════════════════════════
 ALTER TABLE ordres_de_mission ALTER COLUMN equipe_id DROP NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════════════════
--- FIX 2: Replace the trigger function with a fixed version
+-- FIX 3: Replace the trigger function with a fixed version
 --   Key change: duplicate check now EXCLUDES termine missions
 --   so stale/completed missions don't block new ones
 -- ═══════════════════════════════════════════════════════════════════════
@@ -193,5 +215,3 @@ BEGIN
         RAISE NOTICE 'Re-created electrical mission for chantier % (%)', r.nom_chantier, r.chantier_id;
     END LOOP;
 END $$;
-
-COMMIT;
