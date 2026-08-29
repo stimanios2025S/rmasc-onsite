@@ -229,7 +229,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
     p.catch((e) => { console.error('[dashboard/all] query error:', e.message); return { rows: [] }; });
 
   try {
-    // Run all queries in parallel — EXACTLY 10 items, matched to destructuring below
+    // Run all queries in parallel — EXACTLY 8 items, matched to destructuring below
     const results = await Promise.all([
       // [0] Chantiers with mission counts (CTE)
       safe(pool.query(
@@ -308,8 +308,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
          ORDER BY dm.date_creation DESC LIMIT 20`
       )),
       // [5] Incidents (blocages + pauses récentes)
-      safe(pool.query(
-        (`
+      safe(pool.query(`
          SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
                  e.nom AS equipe_nom, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
           FROM blocages_et_requisitions b
