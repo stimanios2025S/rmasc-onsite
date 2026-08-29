@@ -26,7 +26,9 @@ const STATUT_META: Record<string, { label: string; color: string; bg: string }> 
 const PHASE_LABEL: Record<string, string> = { mecanique: 'Mécanique', electrique: 'Électrique', verification: 'Vérification' };
 const STATUT_MISSION: Record<string, string> = {
   en_attente: 'bg-amber-50 text-amber-600 ring-amber-200',
+  en_route: 'bg-sky-50 text-sky-600 ring-sky-200',
   en_cours: 'bg-indigo-50 text-indigo-600 ring-indigo-200',
+  en_pause: 'bg-orange-50 text-orange-600 ring-orange-200',
   bloque: 'bg-rose-50 text-rose-600 ring-rose-200',
 };
 const COLORS_PRESET = ['#2196F3', '#1976D2', '#FF9800', '#E65100', '#4CAF50', '#009688', '#9C27B0', '#F44336', '#607D8B'];
@@ -60,16 +62,26 @@ export default function TeamManagementPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    const errors: string[] = [];
     try {
-      const [t, m, c] = await Promise.all([
+      const [teamsResult, missionsResult, configResult] = await Promise.allSettled([
         fetchTeamsManagement(),
         fetchMissionsReassign(),
         fetchSystemConfig(),
       ]);
-      setTeams(t);
-      setMissions(m);
-      setConfig(c);
-    } catch {}
+      if (teamsResult.status === 'fulfilled') setTeams(teamsResult.value);
+      else { errors.push('équipes'); console.error('Teams fetch error:', teamsResult.reason); }
+      if (missionsResult.status === 'fulfilled') setMissions(missionsResult.value);
+      else { errors.push('missions'); console.error('Missions fetch error:', missionsResult.reason); }
+      if (configResult.status === 'fulfilled') setConfig(configResult.value);
+      else { errors.push('config'); console.error('Config fetch error:', configResult.reason); }
+      if (errors.length > 0) {
+        showToast('error', `⚠️ Erreur chargement: ${errors.join(', ')}`);
+      }
+    } catch (e: any) {
+      console.error('loadAll fatal error:', e);
+      showToast('error', `❌ Erreur fatale: ${e.message || 'Inconnue'}`);
+    }
     setLoading(false);
   }, []);
 
@@ -160,6 +172,19 @@ export default function TeamManagementPage() {
       <Loader2 size={36} className="animate-spin text-indigo-500" />
     </div>
   );
+
+  if (teams.length === 0 && missions.length === 0 && Object.keys(config).length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <AlertTriangle size={40} className="text-amber-400" />
+        <p className="text-sm text-stone-500 text-center">Aucune donnée chargée. Vérifiez la connexion au serveur.</p>
+        <button onClick={loadAll}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-500 text-white rounded-xl text-sm font-bold hover:bg-indigo-600 transition-all">
+          <RefreshCw size={15} /> Réessayer
+        </button>
+      </div>
+    );
+  }
 
   const reposJours = config.jours_repos?.valeur || '3';
 
@@ -474,7 +499,7 @@ export default function TeamManagementPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-mono font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{m.ref_erp}</span>
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ring-1 ${STATUT_MISSION[m.statut] || 'bg-stone-50 text-stone-500 ring-stone-200'}`}>
-                          {m.statut === 'en_attente' ? 'En attente' : m.statut === 'en_cours' ? 'En cours' : m.statut === 'bloque' ? 'Bloquée' : m.statut}
+                          {m.statut === 'en_attente' ? 'En attente' : m.statut === 'en_route' ? 'En route' : m.statut === 'en_cours' ? 'En cours' : m.statut === 'en_pause' ? 'En pause' : m.statut === 'bloque' ? 'Bloquée' : m.statut}
                         </span>
                         <span className="text-[9px] font-semibold text-stone-400 px-2 py-0.5 bg-stone-50 rounded-full">
                           {PHASE_LABEL[m.phase] || m.phase}

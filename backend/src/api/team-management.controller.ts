@@ -114,20 +114,16 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
           om.date_declenchement, om.date_debut_effectif,
           c.nom_chantier, c.reference_commande_erp AS ref_erp,
           e.nom AS equipe_nom, e.id AS equipe_id, e.type::text AS equipe_type,
-          cl_complete.complete AS checklist_complete
+          cl.complete AS checklist_complete
         FROM ordres_de_mission om
         JOIN chantiers c ON c.id = om.chantier_id
         LEFT JOIN equipes e ON e.id = om.equipe_id
         LEFT JOIN (
-          SELECT mission_id, BOOL_AND(
-            CASE WHEN subtasks IS NULL THEN done
-                 ELSE done AND (SELECT BOOL_AND(st.done) FROM jsonb_array_elements(subtasks) AS st)
-            END
-          ) AS complete
-          FROM checklists_phases, jsonb_array_elements(etapes) AS etape
-          GROUP BY mission_id
-        ) cl_complete ON cl_complete.mission_id = om.id
-        WHERE om.statut IN ('en_attente', 'en_cours', 'bloque')
+          SELECT DISTINCT ON (mission_id) mission_id, complete
+          FROM checklists_phases
+          ORDER BY mission_id, date_mise_a_jour DESC
+        ) cl ON cl.mission_id = om.id
+        WHERE om.statut IN ('en_attente', 'en_route', 'en_cours', 'en_pause', 'bloque')
         ORDER BY om.date_declenchement DESC
       `);
       res.json(rows);
