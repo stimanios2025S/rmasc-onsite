@@ -13,7 +13,7 @@ export interface ChantierData {
   lat?: number | null; lng?: number | null; missions: number; en_cours: number; date_creation: string;
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
-  equipe_actuelle?: string; phase_actuelle?: string; adresse?: string;
+  equipe_actuelle?: string; phase_actuelle?: string; mission_statut?: string; adresse?: string;
   checklist_etapes?: ChecklistEtape[] | string | null;
   checklist_complete?: boolean | null;
 }
@@ -22,6 +22,7 @@ export interface DemandeData {
 }
 export interface EquipeData {
   id: string; nom: string; type: string; statut_equipe: string; dispo: string; missions: number; jours_repos_restants: number;
+  membres_noms?: string;
 }
 export interface StatsData {
   chantiersActifs: number; chantiersBloques: number; chantiersTotal: number;
@@ -29,7 +30,7 @@ export interface StatsData {
   blocagesOuverts: number; blocagesTotal: number; equipesDisponibles: number;
 }
 export interface IncidentData {
-  type: string; priorite: string; message: string; nom_chantier: string; moment: string;
+  type: string; priorite: string; message: string; nom_chantier: string; moment: string; equipe_nom?: string;
 }
 
 export async function fetchChantiers(): Promise<ChantierData[]> {

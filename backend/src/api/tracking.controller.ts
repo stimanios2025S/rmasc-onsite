@@ -103,6 +103,20 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
 
       logger.info(`Pointage jour ${type}`, { equipeId, conforme: rows[0]?.conforme });
 
+      // Matinal: set mission to en_route so it persists across re-login
+      if (type === 'matinal' && missionId) {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'en_route', date_declenchement = COALESCE(date_declenchement, NOW())
+           WHERE id = $1 AND statut = 'en_attente'`,
+          [missionId]
+        );
+        // Also set team to EN_MISSION
+        await pool.query(
+          `UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1 AND statut_equipe = 'DISPONIBLE'`,
+          [equipeId]
+        );
+      }
+
       // SSE broadcast
       if (type === 'matinal') {
         eventBus.emit('equipe_en_route', {

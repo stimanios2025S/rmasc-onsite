@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [chantiers, setChantiers] = useState<ChantierData[]>([]);
   const [incidents, setIncidents] = useState<IncidentData[]>([]);
   const [retards, setRetards] = useState<any[]>([]);
+  const [demandesMateriel, setDemandesMateriel] = useState<any[]>([]);
   const [teamPositions, setTeamPositions] = useState<TeamPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +72,7 @@ export default function DashboardPage() {
       if (data.equipes) setEquipes(data.equipes);
       if (data.chantiers) setChantiers(data.chantiers);
       if (data.incidents) setIncidents(data.incidents);
+      if (data.demandesMateriel) setDemandesMateriel(data.demandesMateriel);
       if (data.teamPositions) setTeamPositions(data.teamPositions);
       setError(null); // Clear any previous error on success
     } catch (e: any) {
@@ -375,6 +377,18 @@ export default function DashboardPage() {
                     }`}>
                       {c.statut === 'en_cours' ? 'En cours' : c.statut === 'bloque' ? 'Bloqué' : c.statut === 'termine' ? 'Terminé' : c.statut === 'reception_officielle' ? 'Réceptionné' : 'Planifié'}
                     </span>
+                    {c.mission_statut && c.mission_statut !== c.statut && (
+                      <span className={`text-[9px] font-medium px-2 py-0.5 rounded-full ${
+                        c.mission_statut === 'en_pause' ? 'bg-amber-50 text-amber-600'
+                        : c.mission_statut === 'en_route' ? 'bg-sky-50 text-sky-600'
+                        : 'bg-stone-50 text-stone-500'
+                      }`}>
+                        {c.mission_statut === 'en_pause' ? '⏸ En pause'
+                         : c.mission_statut === 'en_route' ? '🚗 En route'
+                         : c.mission_statut === 'en_attente' ? '⏳ En attente'
+                         : ''}
+                      </span>
+                    )}
                     <span className="text-[9px] text-stone-300">{c.date_creation}</span>
                   </div>
                 </div>
@@ -383,6 +397,52 @@ export default function DashboardPage() {
           })}
         </div>
       </div>
+
+      {/* ═══ DEMANDES MATÉRIEL (from workers) ═══ */}
+      {demandesMateriel.length > 0 && (
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8 overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
+                <Package size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <h2 className="font-bold text-sm sm:text-base text-stone-800">Demandes Matériel</h2>
+                <p className="text-[11px] text-stone-400">{demandesMateriel.length} en attente</p>
+              </div>
+            </div>
+            <a href="/dashboard/demandes" className="text-[11px] font-semibold text-indigo-500 hover:text-indigo-700">
+              Tout voir →
+            </a>
+          </div>
+          <div className="divide-y divide-stone-50">
+            {demandesMateriel.slice(0, 5).map((dm: any) => (
+              <div key={dm.id} className="px-4 sm:px-6 py-3.5 hover:bg-amber-50/20 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                        dm.type_demande === 'retard' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                      }`}>
+                        {dm.type_demande === 'retard' ? '⏰ Retard' : '📦 Matériel'}
+                      </span>
+                      <span className="text-sm font-semibold text-stone-700">{dm.equipe_nom || 'Équipe'}</span>
+                      {dm.chantier_nom && <span className="text-[10px] text-stone-400">• {dm.chantier_nom}</span>}
+                    </div>
+                    {dm.description && <p className="text-xs text-stone-500 mt-1 truncate">{dm.description}</p>}
+                    {dm.items && Array.isArray(dm.items) && dm.items.length > 0 && (
+                      <p className="text-[10px] text-stone-400 mt-0.5">
+                        {dm.items.map((it: any) => it.nom).join(', ')}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-stone-400 whitespace-nowrap">{dm.cree}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Team Matrix */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8">
@@ -412,6 +472,12 @@ export default function DashboardPage() {
                           <span className="text-sm font-semibold text-stone-700">{eq.nom}</span>
                           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUT_BADGE[eq.statut_equipe]}`}>{STATUT_LABEL[eq.statut_equipe]}</span>
                         </div>
+                        {/* Member names */}
+                        {eq.membres_noms && (
+                          <p className="text-[10px] text-stone-500 font-medium mb-1 truncate" title={eq.membres_noms}>
+                            👤 {eq.membres_noms}
+                          </p>
+                        )}
                         {eq.statut_equipe === 'EN_REPOS' && eq.jours_repos_restants > 0 && <p className="text-[11px] text-amber-600 font-medium">⏳ {eq.jours_repos_restants}j restants</p>}
                         {eq.statut_equipe === 'EN_MISSION' && <p className="text-[11px] text-indigo-600 font-medium">🔧 {eq.missions} mission{eq.missions > 1 ? 's' : ''}</p>}
                         {eq.statut_equipe === 'DISPONIBLE' && <p className="text-[11px] text-emerald-600 font-medium">✅ Prêt</p>}
@@ -441,18 +507,19 @@ function KpiCard({ titre, valeur, couleur, icon, badge }: { titre: string; valeu
 
 function IncidentsWidget({ incidents }: { incidents: IncidentData[] }) {
   const blocages = incidents.filter(i => i.type === 'blocage');
+  const pauses = incidents.filter(i => i.type === 'pause');
   const pointages = incidents.filter(i => i.type === 'pointage');
   return (
     <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm h-full">
       <div className="px-4 sm:px-5 py-4 border-b border-stone-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={15} className="text-rose-500" /></div>
-          <h3 className="text-sm font-bold text-stone-800">Blocages</h3>
+          <h3 className="text-sm font-bold text-stone-800">Alertes & Blocages</h3>
         </div>
-        <span className="text-[11px] text-stone-400">{blocages.length + pointages.length} récents</span>
+        <span className="text-[11px] text-stone-400">{blocages.length + pauses.length + pointages.length} récents</span>
       </div>
       <div className="divide-y divide-stone-50 max-h-[520px] overflow-y-auto">
-        {blocages.length === 0 && pointages.length === 0 ? <p className="py-10 text-center text-stone-400 text-sm">Tout est sous contrôle ✓</p> : (
+        {blocages.length === 0 && pauses.length === 0 && pointages.length === 0 ? <p className="py-10 text-center text-stone-400 text-sm">Tout est sous contrôle ✓</p> : (
           <>
             {blocages.slice(0, 6).map((inc, i) => (
               <div key={`b-${i}`} className="px-5 py-3.5 hover:bg-rose-50/20 transition-colors">
@@ -461,6 +528,12 @@ function IncidentsWidget({ incidents }: { incidents: IncidentData[] }) {
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRIORITE_COULEUR[inc.priorite] || 'bg-stone-100 text-stone-500'}`}>{inc.priorite?.toUpperCase()}</span>
                 </div>
                 <p className="text-[12px] text-stone-400 mt-1">{inc.nom_chantier} • {timeAgo(inc.moment)}</p>
+              </div>
+            ))}
+            {pauses.slice(0, 4).map((inc, i) => (
+              <div key={`ps-${i}`} className="px-5 py-3.5 hover:bg-amber-50/20 transition-colors">
+                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400" /><p className="text-sm font-medium text-stone-600">⏸️ {inc.message}</p></div>
+                <p className="text-[11px] text-stone-400 mt-0.5 ml-[14px]">{inc.equipe_nom || 'Équipe'} • {inc.nom_chantier} • {timeAgo(inc.moment)}</p>
               </div>
             ))}
             {pointages.slice(0, 4).map((inc, i) => (

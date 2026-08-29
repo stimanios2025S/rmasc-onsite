@@ -243,7 +243,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
            FROM ordres_de_mission GROUP BY chantier_id
          ),
          am AS (
-           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.id AS mission_id
+           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.id AS mission_id, om.statut AS mission_statut
            FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
            WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
            ORDER BY om.chantier_id, om.date_creation DESC
@@ -261,7 +261,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 COALESCE(ms.missions,0) AS missions, COALESCE(ms.en_cours,0) AS en_cours,
                 COALESCE(ms.en_attente,0) AS en_attente, COALESCE(ms.bloquee,0) AS bloquee,
                 COALESCE(ms.terminee,0) AS terminee,
-                COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle,
+                COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle, am.mission_statut,
                 cl.etapes AS checklist_etapes, cl.complete AS checklist_complete,
                 TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
          FROM chantiers c
@@ -279,12 +279,14 @@ app.get('/api/dashboard/all', async (_req, res) => {
       safe(pool.query(`SELECT COUNT(*) AS total,
         COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours
         FROM ordres_de_mission`)),
-      // [3] Equipes list
+      // [3] Equipes list (with member names)
       safe(pool.query(
         `SELECT e.id, e.nom, e.type, e.statut_equipe,
                 (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
                 CASE WHEN e.disponible_a_partir_de > NOW()
-                  THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants
+                  THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants,
+                (SELECT STRING_AGG(u.prenom || ' ' || u.nom, ', ' ORDER BY u.nom)
+                 FROM utilisateurs u WHERE u.equipe_id = e.id AND u.actif = TRUE) AS membres_noms
          FROM equipes e ORDER BY e.type, e.nom`
       )),
       // [4] Demandes (use reference_commande_erp, not reference_erp)
@@ -293,14 +295,41 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 TO_CHAR(di.date_creation,'YYYY-MM-DD HH24:MI') AS cree
          FROM demandes_integration di WHERE di.statut='EN_ATTENTE_VALIDATION'`
       )),
-      // [5] Incidents (blocages)
+      // [4b] Demandes matériel (from worker portal)
       safe(pool.query(
-        `SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
-                TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
-         FROM blocages_et_requisitions b
-         JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
-         JOIN chantiers c ON c.id=om.chantier_id
-         WHERE b.statut IN ('ouvert','en_cours') LIMIT 20`
+        `SELECT dm.id, dm.type_demande, dm.statut, dm.description, dm.items,
+                dm.pdf_url, e.nom AS equipe_nom, e.type AS equipe_type,
+                c.nom_chantier AS chantier_nom,
+                TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS cree
+         FROM demandes_materiel dm
+         LEFT JOIN equipes e ON e.id = dm.equipe_id
+         LEFT JOIN chantiers c ON c.id = dm.chantier_id
+         WHERE dm.statut = 'EN_ATTENTE'
+         ORDER BY dm.date_creation DESC LIMIT 20`
+      )),
+      // [5] Incidents (blocages + pauses récentes)
+      safe(pool.query(
+        (`
+         SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
+                 e.nom AS equipe_nom, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+          FROM blocages_et_requisitions b
+          JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
+          JOIN chantiers c ON c.id=om.chantier_id
+          LEFT JOIN equipes e ON e.id=om.equipe_id
+          WHERE b.statut IN ('ouvert','en_cours')
+         UNION ALL
+         SELECT 'pause' AS type, 'info' AS priorite,
+                 p.type_pause || ' — ' || COALESCE(e2.nom, 'Équipe') AS message,
+                 COALESCE(c2.nom_chantier, 'N/A') AS nom_chantier,
+                 e2.nom AS equipe_nom,
+                 TO_CHAR(p.date_debut,'YYYY-MM-DD HH24:MI') AS moment
+          FROM pauses_journee p
+          LEFT JOIN equipes e2 ON e2.id = p.equipe_id
+          LEFT JOIN ordres_de_mission om2 ON om2.id = p.mission_id
+          LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
+          WHERE p.date_debut > NOW() - INTERVAL '24 hours'
+          ORDER BY moment DESC LIMIT 25
+        `
       )),
       // [6] Team positions (GPS tracking)
       safe(pool.query(
@@ -323,8 +352,8 @@ app.get('/api/dashboard/all', async (_req, res) => {
       )),
     ]);
 
-    // Destructure: EXACTLY matches the 7 queries above
-    const [chantiersRes, chantiersStat, missionsStat, equipesRes, demandesRes, incidentsRes, teamsRes] = results;
+    // Destructure: matches the 8 queries above
+    const [chantiersRes, chantiersStat, missionsStat, equipesRes, demandesRes, materielRes, incidentsRes, teamsRes] = results;
 
     // Safe number extraction
     const num = (r: any, col = 'total') => Number(r?.rows?.[0]?.[col] ?? 0);
@@ -337,12 +366,13 @@ app.get('/api/dashboard/all', async (_req, res) => {
         chantiersBloques: num(chantiersStat, 'bloques'),
         missionsTotal: num(missionsStat),
         missionsEnCours: num(missionsStat, 'en_cours'),
-        demandesEnAttente: demandesRes.rows?.length ?? 0,
+        demandesEnAttente: (demandesRes.rows?.length ?? 0) + (materielRes.rows?.length ?? 0),
         blocagesOuverts: incidentsRes.rows?.length ?? 0,
         blocagesTotal: incidentsRes.rows?.length ?? 0,
         equipesDisponibles: equipesRes.rows?.filter((e: any) => e.statut_equipe === 'DISPONIBLE').length ?? 0,
       },
       equipes: equipesRes.rows || [],
+      demandesMateriel: materielRes.rows || [],
       demandes: demandesRes.rows || [],
       incidents: incidentsRes.rows || [],
       teamPositions: teamsRes.rows || [],

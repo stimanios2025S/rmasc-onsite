@@ -598,11 +598,12 @@ export default function MissionActivePage() {
   // New lifecycle states
   const missionStatut = mission?.statut || '';
   const isEnRoute = estEnRoute || missionStatut === 'en_route';
-  const isArrive = estArriveChantier || estArrive || missionStatut === 'en_cours';
-  const isEnCours = missionStatut === 'en_cours';
+  const isArrive = estArriveChantier || estArrive || missionStatut === 'en_cours' || missionStatut === 'en_pause';
+  const isEnCours = missionStatut === 'en_cours' || missionStatut === 'en_pause';
   const isTermine = estDepart || missionStatut === 'termine';
   const isMecanique = mission?.phase === 'mecanique';
   const isElectrique = mission?.phase === 'electrique';
+  const isPaused = enPause || missionStatut === 'en_pause';
 
   // Can see work content? Only when arrived and in zone
   const canSeeWork = isEnCours || isArrive;
@@ -1024,7 +1025,7 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ EN PAUSE ═══ */}
-      {enPause && (
+      {isPaused && (
         <div className="mx-4 mb-4">
           <div className="bg-gradient-to-r from-amber-100 to-orange-100 rounded-3xl p-5 text-center border border-amber-200">
             <Coffee size={32} className="text-amber-500 mx-auto mb-2 animate-pulse" />
@@ -1040,7 +1041,7 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ ACTIONS EN COURS DE TRAVAIL (both phases, after arrival) ═══ */}
-      {(isEnCours || isArrive) && !enPause && !isTermine && !aBloque && (
+      {(isEnCours || isArrive) && !isPaused && !isTermine && !aBloque && (
         <div className="mx-4 mb-4 space-y-3">
           {/* Pause / Shop buttons */}
           <div className="grid grid-cols-2 gap-3">
@@ -1092,7 +1093,7 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ FIN DE JOURNÉE (both phases, after arrival) ═══ */}
-      {(isEnCours || isArrive) && !enPause && !isTermine && !aBloque && (
+      {(isEnCours || isArrive) && !isPaused && !isTermine && !aBloque && (
         <div className="mx-4 mb-4">
           <button onClick={() => handlePointageJour('fin_journee')} disabled={gpsLoading}
             className="w-full bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-4 rounded-2xl font-bold shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
