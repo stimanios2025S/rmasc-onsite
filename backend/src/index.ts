@@ -556,8 +556,8 @@ app.put('/api/chantiers/:id', async (req, res) => {
     if (!nom) return res.status(400).json({ erreur: 'nom requis.' });
 
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
-    const lat = latitude !== undefined ? latitude : null;
-    const lng = longitude !== undefined ? longitude : null;
+    const lat = (latitude !== undefined && latitude !== null && !isNaN(latitude)) ? Number(latitude) : null;
+    const lng = (longitude !== undefined && longitude !== null && !isNaN(longitude)) ? Number(longitude) : null;
 
     await pool.query(
       `UPDATE chantiers SET
@@ -565,7 +565,7 @@ app.put('/api/chantiers/:id', async (req, res) => {
          rayon_geofencing = $4, complexite = $5,
          dxf_url = COALESCE($6, dxf_url), pdf_url = COALESCE($7, pdf_url),
          fiche_technique = COALESCE($8, fiche_technique),
-         coordonnees = CASE WHEN $9 IS NOT NULL AND $10 IS NOT NULL
+         coordonnees = CASE WHEN $9::float8 IS NOT NULL AND $10::float8 IS NOT NULL
                             THEN ST_SetSRID(ST_MakePoint($10, $9), 4326)
                             ELSE coordonnees END,
          date_modification = NOW()
