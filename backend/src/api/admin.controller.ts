@@ -331,12 +331,12 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       }
       const nouvelleEquipe = equipeRes.rows[0];
 
-      // Trouver la mission active (en_attente ou en_cours) pour ce chantier
+      // Trouver la mission active pour ce chantier (tous statuts actifs)
       const missionRes = await pool.query(
         `SELECT om.id, om.equipe_id, om.phase, om.statut, e.nom AS ancienne_equipe_nom
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.chantier_id = $1 AND om.statut IN ('en_attente', 'en_cours')
+         WHERE om.chantier_id = $1 AND om.statut IN ('en_attente', 'en_route', 'en_cours', 'en_pause', 'bloque')
          ORDER BY om.date_creation DESC LIMIT 1`,
         [req.params.id]
       );
@@ -345,11 +345,6 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
         return res.status(400).json({ erreur: 'Aucune mission active à réassigner.' });
       }
       const mission = missionRes.rows[0];
-
-      // Bloquer la réassignation si l'équipe est déjà sur site (en_cours)
-      if (mission.statut === 'en_cours') {
-        return res.status(400).json({ erreur: 'Impossible de changer — l\'équipe est déjà sur site en train de travailler.' });
-      }
 
       // Réassigner la mission
       await pool.query(
@@ -362,7 +357,7 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       // Ancienne équipe → DISPONIBLE (si plus aucune mission active)
       if (mission.equipe_id) {
         const otherMissions = await pool.query(
-          `SELECT 1 FROM ordres_de_mission WHERE equipe_id = $1 AND statut IN ('en_cours', 'en_attente') AND id != $2 LIMIT 1`,
+          `SELECT 1 FROM ordres_de_mission WHERE equipe_id = $1 AND statut IN ('en_cours', 'en_attente', 'en_route', 'en_pause', 'bloque') AND id != $2 LIMIT 1`,
           [mission.equipe_id, mission.id]
         );
         if (otherMissions.rows.length === 0) {

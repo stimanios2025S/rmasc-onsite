@@ -298,6 +298,16 @@ export default function ChantiersPage() {
                         <CircleDot size={8} /> Sur site
                       </span>
                     )}
+                    {(c as any).mission_statut === 'en_route' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-sky-600 bg-sky-50 border border-sky-200 shrink-0 flex items-center gap-1">
+                        🚗 En route
+                      </span>
+                    )}
+                    {(c as any).mission_statut === 'en_pause' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 shrink-0 flex items-center gap-1">
+                        ⏸ Pause
+                      </span>
+                    )}
                     {phase && (
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
                         <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
@@ -644,12 +654,12 @@ export default function ChantiersPage() {
                   type="number" min="10" max="500" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
 
-              {/* ═══ ÉQUIPE ASSIGNÉE — changement possible si pas encore sur site ═══ */}
+              {/* ═══ ÉQUIPE ASSIGNÉE — admin peut toujours changer ═══ */}
               <div className="border-t border-stone-100 pt-4 mt-2">
                 <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
                   <Users size={12} /> Équipe assignée
                 </label>
-                {(editChantier.en_attente ?? 0) > 0 && (editChantier.en_cours ?? 0) === 0 ? (
+                {editChantier.equipe_actuelle && editChantier.equipe_actuelle !== 'Aucune équipe' && editChantier.equipe_actuelle !== 'Aucune' ? (
                   <>
                     <select
                       value={editForm.equipe_id}
@@ -661,18 +671,23 @@ export default function ChantiersPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="text-[10px] text-stone-400 mt-1.5">💡 Mission pas encore commencée — vous pouvez changer l'équipe.</p>
+                    <p className="text-[10px] text-stone-400 mt-1.5">💡 Vous pouvez changer l'équipe assignée à tout moment.</p>
                   </>
-                ) : (editChantier.en_cours ?? 0) > 0 ? (
-                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                    <CircleDot size={14} className="text-emerald-600" />
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-800">{editChantier.equipe_actuelle || '—'}</p>
-                      <p className="text-[10px] text-emerald-600">L'équipe est sur site — modification impossible.</p>
-                    </div>
-                  </div>
                 ) : (
-                  <p className="text-xs text-stone-400 italic">Aucune équipe assignée.</p>
+                  <>
+                    <select
+                      value={editForm.equipe_id}
+                      onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
+                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
+                      <option value="">— Aucune équipe —</option>
+                      {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-400 mt-1.5">Aucune équipe assignée — sélectionnez une équipe.</p>
+                  </>
                 )}
               </div>
               <div className="flex gap-3 pt-4">
