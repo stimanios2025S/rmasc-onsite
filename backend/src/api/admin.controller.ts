@@ -346,6 +346,11 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       }
       const mission = missionRes.rows[0];
 
+      // Bloquer la réassignation si le travail a déjà commencé (sur site ou en pause)
+      if (mission.statut === 'en_cours' || mission.statut === 'en_pause') {
+        return res.status(400).json({ erreur: 'Impossible de changer — le travail a déjà commencé sur ce chantier. Attendez la fin de mission ou le transfert.' });
+      }
+
       // Réassigner la mission
       await pool.query(
         `UPDATE ordres_de_mission SET equipe_id = $1, notes = COALESCE(notes, '') || E'\nRéassigné par admin le ' || NOW()::TEXT || ' (ancienne équipe: ' || COALESCE($3, 'N/A') || ')'

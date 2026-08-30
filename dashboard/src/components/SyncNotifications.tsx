@@ -19,6 +19,7 @@ export default function SyncNotifications({ onRefresh }: SyncNotificationsProps)
     handleChantier,
     handleMission,
     handleBlocage,
+    handleEquipe,
   } = useSyncNotifications();
 
   const { connected } = useSyncEvents({
@@ -26,8 +27,14 @@ export default function SyncNotifications({ onRefresh }: SyncNotificationsProps)
     onChantierCree: (p) => { handleChantier(p); onRefresh?.(); },
     onMissionAssignee: (p) => { handleMission(p); onRefresh?.(); },
     onBlocageSignale: (p) => { handleBlocage(p); onRefresh?.(); },
-    onEquipeEnRoute: () => { onRefresh?.(); },
-    onEquipeArrivee: () => { onRefresh?.(); },
+    onEquipeEnRoute: (p) => {
+      handleEquipe(p, '🚗 Équipe en route', p.message || `${p.equipeNom || 'Équipe'} en route vers le chantier`);
+      onRefresh?.();
+    },
+    onEquipeArrivee: (p) => {
+      handleEquipe(p, '✅ Arrivée confirmée', `${p.chantierNom || 'Chantier'} — équipe arrivée${p.distance ? ` (${p.distance}m)` : ''}`);
+      onRefresh?.();
+    },
     onMissionTransferee: () => { onRefresh?.(); },
     onDataChanged: () => { onRefresh?.(); },
   });
@@ -49,6 +56,7 @@ export default function SyncNotifications({ onRefresh }: SyncNotificationsProps)
       case 'chantier': return '🏗️';
       case 'mission': return '👷';
       case 'blocage': return '🚫';
+      case 'equipe': return '📍';
     }
   };
 
@@ -58,6 +66,7 @@ export default function SyncNotifications({ onRefresh }: SyncNotificationsProps)
       case 'chantier': return '#10b981';
       case 'mission': return '#3b82f6';
       case 'blocage': return '#ef4444';
+      case 'equipe': return '#6366f1';
     }
   };
 

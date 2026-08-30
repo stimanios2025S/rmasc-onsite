@@ -157,7 +157,7 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
 
 export interface SyncNotification {
   id: string;
-  type: 'demande' | 'chantier' | 'mission' | 'blocage';
+  type: 'demande' | 'chantier' | 'mission' | 'blocage' | 'equipe';
   title: string;
   message: string;
   timestamp: string;
@@ -225,6 +225,18 @@ export function useSyncNotifications(maxNotifications = 20) {
     setNotifications(prev => [notif, ...prev].slice(0, maxNotifications));
   }, [maxNotifications]);
 
+  const handleEquipe = useCallback((payload: Record<string, any>, title: string, message: string) => {
+    const notif: SyncNotification = {
+      id: `equipe-${payload.equipeId || payload.missionId || ''}-${Date.now()}`,
+      type: 'equipe',
+      title,
+      message,
+      timestamp: new Date().toISOString(),
+      read: false,
+    };
+    setNotifications(prev => [notif, ...prev].slice(0, maxNotifications));
+  }, [maxNotifications]);
+
   return {
     notifications,
     unreadCount,
@@ -234,5 +246,6 @@ export function useSyncNotifications(maxNotifications = 20) {
     handleChantier,
     handleMission,
     handleBlocage,
+    handleEquipe,
   };
 }

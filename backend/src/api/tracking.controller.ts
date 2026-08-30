@@ -119,9 +119,28 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
 
       // SSE broadcast
       if (type === 'matinal') {
+        // Look up team name and chantier for the notification
+        let equipeNom = 'Équipe';
+        let chantierNom = '';
+        if (missionId) {
+          try {
+            const infoRes = await pool.query(
+              `SELECT e.nom AS equipe_nom, c.nom_chantier
+               FROM ordres_de_mission om
+               LEFT JOIN equipes e ON e.id = om.equipe_id
+               LEFT JOIN chantiers c ON c.id = om.chantier_id
+               WHERE om.id = $1`, [missionId]
+            );
+            if (infoRes.rows.length > 0) {
+              equipeNom = infoRes.rows[0].equipe_nom || 'Équipe';
+              chantierNom = infoRes.rows[0].nom_chantier || '';
+            }
+          } catch {}
+        }
         eventBus.emit('equipe_en_route', {
-          equipeId, missionId, position: { latitude, longitude },
-          message: 'Équipe en route vers le chantier',
+          equipeId, missionId, equipeNom, chantierNom,
+          position: { latitude, longitude },
+          message: `${equipeNom} en route${chantierNom ? ' vers ' + chantierNom : ''}`,
         });
       } else {
         eventBus.emit('equipe_terminee', {

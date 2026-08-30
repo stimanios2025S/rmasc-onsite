@@ -654,25 +654,46 @@ export default function ChantiersPage() {
                   type="number" min="10" max="500" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
 
-              {/* ═══ ÉQUIPE ASSIGNÉE — admin peut toujours changer ═══ */}
+              {/* ═══ ÉQUIPE ASSIGNÉE ═══ */}
               <div className="border-t border-stone-100 pt-4 mt-2">
                 <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
                   <Users size={12} /> Équipe assignée
                 </label>
                 {editChantier.equipe_actuelle && editChantier.equipe_actuelle !== 'Aucune équipe' && editChantier.equipe_actuelle !== 'Aucune' ? (
-                  <>
-                    <select
-                      value={editForm.equipe_id}
-                      onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
-                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
-                      {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
-                        <option key={e.id} value={e.id}>
-                          {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-stone-400 mt-1.5">💡 Vous pouvez changer l'équipe assignée à tout moment.</p>
-                  </>
+                  (() => {
+                    const missionStatut = (editChantier as any).mission_statut;
+                    const canReassign = missionStatut === 'en_attente' || missionStatut === 'en_route' || !missionStatut;
+                    if (canReassign) {
+                      return (
+                        <>
+                          <select
+                            value={editForm.equipe_id}
+                            onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
+                            {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
+                              <option key={e.id} value={e.id}>
+                                {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-stone-400 mt-1.5">💡 Travail pas encore commencé — vous pouvez changer l'équipe.</p>
+                        </>
+                      );
+                    }
+                    return (
+                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                        <CircleDot size={14} className="text-emerald-600" />
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-800">{editChantier.equipe_actuelle}</p>
+                          <p className="text-[10px] text-emerald-600">
+                            {missionStatut === 'en_cours' ? '🔧 Travail en cours — modification impossible.' :
+                             missionStatut === 'en_pause' ? '⏸ En pause — modification impossible.' :
+                             'L\'équipe est sur site — modification impossible.'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()
                 ) : (
                   <>
                     <select
