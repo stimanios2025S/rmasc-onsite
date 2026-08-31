@@ -7,6 +7,7 @@ import {
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
   ChevronRight, Phone, Package, FileText, ClipboardList, Timer,
   Radio, User, Hammer, Coffee, Store, Sunrise, Sunset, ArrowRightLeft,
+  Ban,
 } from 'lucide-react';
 import TechnicianMap from '@/components/TechnicianMap';
 
@@ -372,6 +373,27 @@ export default function MissionActivePage() {
     setTransferLoading(false);
   };
 
+  /* ═══ TERMINER MISSION (Verification phase) ═══ */
+  const handleTerminerMission = async () => {
+    if (!mission) return;
+    if (!confirm('Terminer la vérification et envoyer le rapport final à El Ghani ?')) return;
+    setTransferLoading(true);
+    try {
+      const res = await fetch(`/api/mission/${mission.id}/terminer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipeId }),
+      });
+      const data = await res.json();
+      if (data.ok || data.message) {
+        setPointageMsg({ type: 'success', text: data.message || '✅ Mission terminée ! Rapport envoyé à El Ghani.' });
+        loadMission();
+      } else {
+        setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setTransferLoading(false);
+  };
+
   /* ═══ CHECKLIST (simple, sans blocage frustrant) ═══ */
   // Toutes les étapes sont cochables librement
   // Les sous-tâches suivent l'étape parente
@@ -436,10 +458,12 @@ export default function MissionActivePage() {
         const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
         if (upRes.ok) photoUrl = (await upRes.json()).url;
       }
+      // Auto-fill raison from motifRetard if raison is empty
+      const raisonFinale = blocageForm.raison || blocageForm.motifRetard || 'Non spécifié';
       const res = await fetch('/api/mission/blocage', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          missionId: mission.id, declarePar: technicienId, raison: blocageForm.raison,
+          missionId: mission.id, declarePar: technicienId, raison: raisonFinale,
           idPieceERP: blocageForm.pieceERP || null, priorite: blocageForm.priorite,
           stepId: blocageForm.stepId || null, motifRetard: blocageForm.motifRetard || null, photoProofUrl: photoUrl,
         }),
@@ -1050,9 +1074,10 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ ACTIONS EN COURS DE TRAVAIL (both phases, after arrival) ═══ */}
-      {(isEnCours || isArrive) && !isPaused && !isTermine && !aBloque && (
+      {(isEnCours || isArrive) && !isTermine && !aBloque && (
         <div className="mx-4 mb-4 space-y-3">
-          {/* Pause / Shop buttons */}
+          {/* Pause / Shop buttons — only when NOT paused */}
+          {!isPaused && (
           <div className="grid grid-cols-2 gap-3">
             <button onClick={() => handlePause('pause')} disabled={pauseLoading}
               className="bg-white border-2 border-amber-200 text-amber-600 py-3.5 rounded-2xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2 shadow-sm">
@@ -1065,7 +1090,8 @@ export default function MissionActivePage() {
               🏪 Retour Shop
             </button>
           </div>
-          {/* Blocage / Retard */}
+          )}
+          {/* Blocage / Retard — ALWAYS visible when mission is active (even during pause) */}
           <button onClick={() => setShowBlocage(true)}
             className="w-full bg-white border-2 border-rose-200 text-rose-500 py-3.5 rounded-2xl font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2">
             <AlertTriangle size={16} /> Signaler un Blocage
@@ -1074,6 +1100,22 @@ export default function MissionActivePage() {
             className="w-full bg-white border-2 border-amber-200 text-amber-600 py-3.5 rounded-2xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2">
             <Timer size={16} /> Signaler un Retard
           </button>
+        </div>
+      )}
+
+      {/* ═══ MISSION BLOQUÉE — waiting for admin ═══ */}
+      {aBloque && (isEnCours || isArrive) && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-rose-500 to-red-500 rounded-3xl p-5 shadow-lg shadow-rose-200">
+            <div className="flex items-center gap-3 mb-3">
+              <Ban size={24} className="text-white" />
+              <div>
+                <p className="font-bold text-white text-sm">⛔ Mission Bloquée</p>
+                <p className="text-white/70 text-xs">En attente d'El Ghani pour annuler le blocage</p>
+              </div>
+            </div>
+            <p className="text-white/60 text-xs mb-3">Vous ne pouvez pas continuer tant que le blocage n'est pas annulé par l'administrateur.</p>
+          </div>
         </div>
       )}
 
@@ -1096,6 +1138,26 @@ export default function MissionActivePage() {
               className="w-full bg-white text-indigo-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
               {transferLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
               {isMecanique ? '⚡ Envoyer à l\'Équipe Électrique' : '🛡️ Envoyer à l\'Équipe Vérification'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TERMINER LA MISSION (Verification phase — fin de chantier) ═══ */}
+      {(isEnCours || isArrive) && mission?.phase === 'verification' && checklist?.complete && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-3xl p-5 shadow-lg shadow-emerald-200">
+            <div className="flex items-center gap-3 mb-3">
+              <CheckCircle size={24} className="text-white" />
+              <div>
+                <p className="font-bold text-white text-sm">✅ Vérification Terminée !</p>
+                <p className="text-white/70 text-xs">Toutes les étapes sont complétées. Envoyer le rapport final à El Ghani.</p>
+              </div>
+            </div>
+            <button onClick={handleTerminerMission} disabled={transferLoading}
+              className="w-full bg-white text-emerald-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+              {transferLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
+              🏁 Terminer & Envoyer le Rapport
             </button>
           </div>
         </div>
@@ -1212,7 +1274,7 @@ export default function MissionActivePage() {
                   ))}
                 </div>
               </div>
-              <button onClick={handleBlocage} disabled={!blocageForm.raison || blocageLoading}
+              <button onClick={handleBlocage} disabled={(!blocageForm.raison && !blocageForm.motifRetard) || blocageLoading}
                 className="w-full bg-rose-500 text-white py-4 rounded-2xl font-bold hover:bg-rose-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
                 {blocageLoading ? <Loader2 size={18} className="animate-spin" /> : <AlertTriangle size={18} />}
                 Envoyer le Signalement

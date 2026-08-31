@@ -351,6 +351,51 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     }
   });
 
+  // POST /api/mission/:id/terminer — Terminer la mission (vérification phase)
+  router.post('/:id/terminer', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { equipeId } = req.body;
+
+      const missionRes = await pool.query(
+        `SELECT om.*, c.nom_chantier, e.nom AS equipe_nom
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.id = $1`, [id]
+      );
+      if (missionRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Mission introuvable.' });
+      }
+      const m = missionRes.rows[0];
+
+      // Mark mission as termine
+      await pool.query(
+        `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1 AND statut != 'termine'`,
+        [id]
+      );
+
+      // Notify admin
+      await pool.query(
+        `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, lue)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [m.chantier_id, id, m.equipe_id,
+         `🏁 Vérification TERMINÉE sur "${m.nom_chantier}" — équipe ${m.equipe_nom} — Tout est en ordre !`]
+      );
+
+      // SSE broadcast
+      try {
+        const { eventBus } = await import('../services/events/event-bus');
+        eventBus.emit('mission_terminee', { missionId: id, chantierId: m.chantier_id, equipeId: m.equipe_id });
+      } catch (_) { /* non-critical */ }
+
+      logger.info('Mission vérification terminée', { missionId: id, chantier: m.nom_chantier });
+      res.json({ ok: true, message: `✅ Mission terminée ! Rapport envoyé à El Ghani.` });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // POST /api/mission/blocage/:id/cancel — Annuler un blocage (admin)
   router.post('/blocage/:id/cancel', async (req, res) => {
     try {
