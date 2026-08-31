@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { getToken } from './auth';
 
 export interface SyncEvent {
-  type: 'demande_recue' | 'chantier_cree' | 'mission_assignee' | 'mission_terminee' | 'blocage_signale' | 'equipe_disponible' | 'data_changed'
+  type: 'demande_recue' | 'chantier_cree' | 'mission_assignee' | 'mission_terminee' | 'blocage_signale' | 'blocage_annule' | 'equipe_disponible' | 'data_changed'
     | 'equipe_position' | 'equipe_en_route' | 'equipe_arrivee' | 'equipe_en_pause' | 'equipe_reprise' | 'equipe_terminee'
     | 'mission_transferee' | 'pointage_jour';
   payload: Record<string, any>;
@@ -94,6 +94,9 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
             break;
           case 'blocage_signale':
             opts.onBlocageSignale?.(event.payload);
+            break;
+          case 'blocage_annule':
+            opts.onDataChanged?.(event.payload);
             break;
           case 'equipe_position':
             opts.onEquipePosition?.(event.payload);

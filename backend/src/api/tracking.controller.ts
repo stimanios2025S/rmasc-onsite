@@ -173,9 +173,9 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           [equipeId, missionId || null, type || 'pause', motif || null]
         );
 
-        // Set mission to en_pause
+        // Set mission to en_pause — accept from en_cours OR en_route (worker might pause en route)
         if (missionId) {
-          await pool.query(`UPDATE ordres_de_mission SET statut = 'en_pause' WHERE id = $1 AND statut = 'en_cours'`, [missionId]);
+          await pool.query(`UPDATE ordres_de_mission SET statut = 'en_pause' WHERE id = $1 AND statut IN ('en_cours', 'en_route')`, [missionId]);
         }
 
         eventBus.emit('equipe_en_pause', {
@@ -194,9 +194,15 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           [equipeId]
         );
 
-        // Restore mission to en_cours
+        // Restore mission to en_cours (or en_route if that was the previous state)
         if (missionId && rows.length > 0) {
-          await pool.query(`UPDATE ordres_de_mission SET statut = 'en_cours' WHERE id = $1 AND statut = 'en_pause'`, [missionId]);
+          // Check if the team had already arrived at the chantier before pausing
+          const hasArrivee = await pool.query(
+            `SELECT 1 FROM journal_pointage_gps WHERE ordre_mission_id = $1 AND type_pointage = 'arrivee' LIMIT 1`,
+            [missionId]
+          );
+          const nextStatut = hasArrivee.rows.length > 0 ? 'en_cours' : 'en_route';
+          await pool.query(`UPDATE ordres_de_mission SET statut = $2 WHERE id = $1 AND statut = 'en_pause'`, [missionId, nextStatut]);
         }
 
         eventBus.emit('equipe_reprise', {

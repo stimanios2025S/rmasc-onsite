@@ -17,6 +17,10 @@ export interface ChantierData {
   checklist_etapes?: ChecklistEtape[] | string | null;
   checklist_complete?: boolean | null;
   date_echeance?: string | null;
+  mission_id?: string | null;
+  motifs_blocage?: string | null;
+  nb_blocages?: number;
+  blocage_ids?: string | null;
 }
 export interface DemandeData {
   id: string; ref: string; client_nom: string; nom_chantier: string; statut: string; cree: string;
@@ -24,6 +28,8 @@ export interface DemandeData {
 export interface EquipeData {
   id: string; nom: string; type: string; statut_equipe: string; dispo: string; missions: number; jours_repos_restants: number;
   membres_noms?: string;
+  pointage_matinal?: string | null;
+  pointage_fin_journee?: string | null;
 }
 export interface StatsData {
   chantiersActifs: number; chantiersBloques: number; chantiersTotal: number;
@@ -95,6 +101,7 @@ export interface NouveauChantier {
   pdfUrl?: string;
   ficheTechnique?: string;
   date_echeance?: string;
+  forceEquipeId?: string;
 }
 
 export interface CreerChantierResult {
@@ -148,6 +155,14 @@ export async function reassignerEquipe(chantierId: string, equipeId: string): Pr
   return apiFetch(`/admin/chantiers/${chantierId}/reassign`, {
     method: 'PATCH',
     body: JSON.stringify({ equipe_id: equipeId }),
+  });
+}
+
+// ─── CANCEL BLOCAGE ───────────────────────────────────────────────
+export async function annulerBlocage(blocageId: string, motif?: string): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/mission/blocage/${blocageId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ motif: motif || 'Annulé par admin' }),
   });
 }
 

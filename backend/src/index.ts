@@ -231,7 +231,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
   try {
     // Run all queries in parallel — EXACTLY 8 items, matched to destructuring below
     const results = await Promise.all([
-      // [0] Chantiers with mission counts (CTE)
+      // [0] Chantiers with mission counts (CTE) + blockage info
       safe(pool.query(
         `WITH ms AS (
            SELECT chantier_id,
@@ -243,9 +243,10 @@ app.get('/api/dashboard/all', async (_req, res) => {
            FROM ordres_de_mission GROUP BY chantier_id
          ),
          am AS (
-           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.id AS mission_id, om.statut AS mission_statut
+           SELECT DISTINCT ON (om.chantier_id) om.chantier_id, om.id AS mission_id,
+                  e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut
            FROM ordres_de_mission om LEFT JOIN equipes e ON e.id=om.equipe_id
-           WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
+           WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause','bloque')
            ORDER BY om.chantier_id, om.date_creation DESC
          ),
          cl AS (
@@ -253,6 +254,16 @@ app.get('/api/dashboard/all', async (_req, res) => {
            FROM am
            JOIN checklists_phases cp ON cp.mission_id = am.mission_id
            ORDER BY am.chantier_id, cp.date_mise_a_jour DESC
+         ),
+         bl AS (
+           SELECT om.chantier_id,
+                  STRING_AGG(b.raison_blocage, ' | ' ORDER BY b.date_creation) AS motifs_blocage,
+                  COUNT(*)::INT AS nb_blocages,
+                  STRING_AGG(b.id::text, ',' ORDER BY b.date_creation) AS blocage_ids
+           FROM blocages_et_requisitions b
+           JOIN ordres_de_mission om ON om.id = b.ordre_mission_id
+           WHERE b.statut IN ('ouvert','en_cours')
+           GROUP BY om.chantier_id
          )
          SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
                 c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf, c.adresse,
@@ -262,13 +273,16 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 COALESCE(ms.en_attente,0) AS en_attente, COALESCE(ms.bloquee,0) AS bloquee,
                 COALESCE(ms.terminee,0) AS terminee,
                 COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle, am.mission_statut,
+                am.mission_id,
                 cl.etapes AS checklist_etapes, cl.complete AS checklist_complete,
                 TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
-                TO_CHAR(c.date_echeance,'YYYY-MM-DD"T"HH24:MI') AS date_echeance
+                TO_CHAR(c.date_echeance,'YYYY-MM-DD"T"HH24:MI') AS date_echeance,
+                bl.motifs_blocage, bl.nb_blocages, bl.blocage_ids
          FROM chantiers c
          LEFT JOIN ms ON ms.chantier_id=c.id
          LEFT JOIN am ON am.chantier_id=c.id
          LEFT JOIN cl ON cl.chantier_id=c.id
+         LEFT JOIN bl ON bl.chantier_id=c.id
          ORDER BY c.date_creation DESC`
       )),
       // [1] Chantiers stats — use statut::text to avoid enum validation errors
@@ -280,14 +294,22 @@ app.get('/api/dashboard/all', async (_req, res) => {
       safe(pool.query(`SELECT COUNT(*) AS total,
         COUNT(*) FILTER (WHERE statut='en_cours') AS en_cours
         FROM ordres_de_mission`)),
-      // [3] Equipes list (with member names)
+      // [3] Equipes list (with member names + today's pointage times)
       safe(pool.query(
         `SELECT e.id, e.nom, e.type, e.statut_equipe,
                 (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
                 CASE WHEN e.disponible_a_partir_de > NOW()
                   THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants,
                 (SELECT STRING_AGG(u.prenom || ' ' || u.nom, ', ' ORDER BY u.nom)
-                 FROM utilisateurs u WHERE u.equipe_id = e.id AND u.actif = TRUE) AS membres_noms
+                 FROM utilisateurs u WHERE u.equipe_id = e.id AND u.actif = TRUE) AS membres_noms,
+                -- Today's pointage matinal
+                (SELECT TO_CHAR(pj.horodatage,'HH24:MI') FROM pointages_jour pj
+                 WHERE pj.equipe_id = e.id AND pj.type_pointage = 'matinal' AND DATE(pj.horodatage) = CURRENT_DATE
+                 ORDER BY pj.horodatage DESC LIMIT 1) AS pointage_matinal,
+                -- Today's pointage fin_journee
+                (SELECT TO_CHAR(pj.horodatage,'HH24:MI') FROM pointages_jour pj
+                 WHERE pj.equipe_id = e.id AND pj.type_pointage = 'fin_journee' AND DATE(pj.horodatage) = CURRENT_DATE
+                 ORDER BY pj.horodatage DESC LIMIT 1) AS pointage_fin_journee
          FROM equipes e ORDER BY e.type, e.nom`
       )),
       // [4] Demandes (use reference_commande_erp, not reference_erp)
@@ -476,7 +498,7 @@ app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', async (req, res) => {
   try {
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId } = req.body;
     if (!nom) {
       return res.status(400).json({ erreur: 'nom requis.' });
     }
@@ -496,15 +518,24 @@ app.post('/api/chantiers', async (req, res) => {
     );
     const chantierId = rows[0].id;
 
-    // Assigner une équipe mécanique disponible + créer mission + checklist
-    const equipeResult = await pool.query(
-      `SELECT e.id, e.nom FROM equipes e
-       WHERE e.type = 'mecanique' AND e.actif = TRUE
-         AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
-       ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om
-                 WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
-       LIMIT 1`
-    );
+    // Assigner une équipe mécanique — use forceEquipeId if provided (admin override for EN_REPOS teams)
+    let equipeResult;
+    if (forceEquipeId) {
+      equipeResult = await pool.query(
+        `SELECT e.id, e.nom FROM equipes e
+         WHERE e.id = $1 AND e.type = 'mecanique' AND e.actif = TRUE`,
+        [forceEquipeId]
+      );
+    } else {
+      equipeResult = await pool.query(
+        `SELECT e.id, e.nom FROM equipes e
+         WHERE e.type = 'mecanique' AND e.actif = TRUE
+           AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
+         ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om
+                   WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC
+         LIMIT 1`
+      );
+    }
 
     let missionId: string | null = null;
     let equipeNom: string | null = null;

@@ -8,9 +8,10 @@ import {
 import {
   fetchTeamsManagement, updateTeam, updateTeamMembers,
   fetchSystemConfig, updateSystemConfig,
-  fetchMissionsReassign, reassignMission,
+  fetchMissionsReassign,
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
 } from '@/lib/api';
+import { apiFetch } from '@/lib/auth';
 
 /* ─── CONSTANTS ────────────────────────────────────────────────────── */
 const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: string; ring: string }> = {
@@ -156,7 +157,16 @@ export default function TeamManagementPage() {
     if (!newEquipeId) return;
     setSaving(true);
     try {
-      const result = await reassignMission(missionId, newEquipeId);
+      // Check if the selected team is EN_REPOS — send force=true
+      const selectedTeam = teams.find(t => t.id === newEquipeId);
+      const isForce = selectedTeam?.statut_equipe === 'EN_REPOS';
+      if (isForce && !confirm(`${selectedTeam?.nom} est en repos. Forcer l'assignation ?`)) {
+        setSaving(false);
+        return;
+      }
+      const result = await apiFetch<{ ok: boolean; message: string }>(`/admin/teams/missions/${missionId}/reassign`, {
+        method: 'PATCH', body: JSON.stringify({ equipe_id: newEquipeId, force: isForce || undefined }),
+      });
       showToast('success', result.message || '✅ Mission réassignée.');
       setReassigning(null);
       setReassignForm(prev => { const n = { ...prev }; delete n[missionId]; return n; });
@@ -519,7 +529,7 @@ export default function TeamManagementPage() {
                             <option value="">Choisir une équipe...</option>
                             {teams.filter(t => t.actif).map(t => (
                               <option key={t.id} value={t.id}>
-                                {t.nom} ({TYPE_META[t.type]?.label || t.type})
+                                {t.nom} ({TYPE_META[t.type]?.label || t.type}) {t.statut_equipe === 'EN_REPOS' ? '⚠ Repos' : t.statut_equipe === 'EN_MISSION' ? '🔧 En mission' : '✅ Dispo'}
                               </option>
                             ))}
                           </select>

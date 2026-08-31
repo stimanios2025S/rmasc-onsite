@@ -215,7 +215,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
   router.patch('/missions/:id/reassign', async (req, res) => {
     try {
       const { id: missionId } = req.params;
-      const { equipe_id: newEquipeId } = req.body;
+      const { equipe_id: newEquipeId, force } = req.body;
 
       if (!newEquipeId) {
         return res.status(400).json({ erreur: 'equipe_id requis.' });
@@ -238,7 +238,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       const mission = missionRes.rows[0];
 
       const equipeRes = await pool.query(
-        `SELECT id, nom, type::text AS type FROM equipes WHERE id = $1 AND actif = TRUE`,
+        `SELECT id, nom, type::text AS type, statut_equipe FROM equipes WHERE id = $1 AND actif = TRUE`,
         [newEquipeId]
       );
 
@@ -248,14 +248,20 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
 
       const newEquipe = equipeRes.rows[0];
 
+      // Allow EN_REPOS teams only with force override
+      if (newEquipe.statut_equipe === 'EN_REPOS' && !force) {
+        return res.status(400).json({ erreur: 'Cette équipe est en repos. Utilisez force=true pour forcer l\'assignation.' });
+      }
+
       await pool.query(
         `UPDATE ordres_de_mission SET equipe_id = $1, date_modification = NOW() WHERE id = $2`,
         [newEquipeId, missionId]
       );
 
-      if (mission.statut === 'en_cours' || mission.statut === 'en_attente') {
+      if (mission.statut === 'en_cours' || mission.statut === 'en_attente' || mission.statut === 'en_route') {
+        // Set new team to EN_MISSION — works for DISPONIBLE or EN_REPOS (with force override)
         await pool.query(
-          `UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1 AND statut_equipe = 'DISPONIBLE'`,
+          `UPDATE equipes SET statut_equipe = 'EN_MISSION', date_modification = NOW() WHERE id = $1 AND statut_equipe IN ('DISPONIBLE', 'EN_REPOS')`,
           [newEquipeId]
         );
       }

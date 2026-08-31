@@ -2,13 +2,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getUtilisateur, apiFetch } from '@/lib/auth';
 import {
-  approuverDemande, refuserDemande,
+  approuverDemande, refuserDemande, annulerBlocage,
   type StatsData, type DemandeData, type EquipeData, type ChantierData, type IncidentData,
 } from '@/lib/api';
 import {
   HardHat, AlertTriangle, Users, MapPin, XCircle,
   Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
-  CheckCheck, Timer, CheckCircle,
+  CheckCheck, Timer, CheckCircle, Calendar, Clock, Ban, Sunrise, Sunset,
 } from 'lucide-react';
 import MapView, { type TeamPosition } from '@/components/MapView';
 import SyncNotifications from '@/components/SyncNotifications';
@@ -91,6 +91,18 @@ export default function DashboardPage() {
   async function handleRefuser(id: string) {
     if (!confirm('Refuser cette commande ?')) return;
     setActionLoading(id); try { await refuserDemande(id); await loadAll(); } catch (e: any) { alert(e.message); } setActionLoading(null);
+  }
+  async function handleAnnulerBlocage(blocageIds: string) {
+    if (!confirm('Annuler ce(s) blocage(s) et réactiver la mission ?')) return;
+    const ids = blocageIds.split(',').filter(Boolean);
+    setActionLoading(`blocage-${ids[0]}`);
+    try {
+      for (const id of ids) {
+        await annulerBlocage(id, 'Annulé par El Ghani');
+      }
+      await loadAll();
+    } catch (e: any) { alert(e.message || 'Erreur lors de l\'annulation du blocage.'); }
+    setActionLoading(null);
   }
 
   const equipeTypes = useMemo(() => {
@@ -346,6 +358,42 @@ export default function DashboardPage() {
                       </div>
                     )}
 
+                    {/* Chantier dates */}
+                    <div className="flex items-center gap-3 mt-2 text-[10px]">
+                      <span className="flex items-center gap-1 text-stone-400">
+                        <Calendar size={10} /> Créé: {c.date_creation}
+                      </span>
+                      {c.date_echeance && (
+                        <span className={`flex items-center gap-1 font-semibold ${
+                          new Date(c.date_echeance) < new Date() ? 'text-rose-500' : 'text-amber-600'
+                        }`}>
+                          <Clock size={10} /> Échéance: {new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Blockage reasons */}
+                    {c.nb_blocages && c.nb_blocages > 0 && c.motifs_blocage && (
+                      <div className="mt-2 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Ban size={12} className="text-rose-500" />
+                            <span className="text-[10px] font-bold text-rose-600">Blocage{c.nb_blocages > 1 ? 's' : ''} ({c.nb_blocages})</span>
+                          </div>
+                          {c.blocage_ids && (
+                            <button
+                              onClick={() => handleAnnulerBlocage(c.blocage_ids!)}
+                              disabled={actionLoading === `blocage-${c.blocage_ids}`}
+                              className="text-[10px] font-bold text-white bg-rose-500 hover:bg-rose-600 px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
+                            >
+                              {actionLoading === `blocage-${c.blocage_ids}` ? <Loader2 size={10} className="animate-spin" /> : '✕ Annuler'}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-rose-500 mt-1 leading-relaxed">{c.motifs_blocage}</p>
+                      </div>
+                    )}
+
                     {/* Mission counts */}
                     <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
                       <span className="flex items-center gap-1">
@@ -481,6 +529,21 @@ export default function DashboardPage() {
                         {eq.statut_equipe === 'EN_REPOS' && eq.jours_repos_restants > 0 && <p className="text-[11px] text-amber-600 font-medium">⏳ {eq.jours_repos_restants}j restants</p>}
                         {eq.statut_equipe === 'EN_MISSION' && <p className="text-[11px] text-indigo-600 font-medium">🔧 {eq.missions} mission{eq.missions > 1 ? 's' : ''}</p>}
                         {eq.statut_equipe === 'DISPONIBLE' && <p className="text-[11px] text-emerald-600 font-medium">✅ Prêt</p>}
+                        {/* Pointage times */}
+                        {(eq.pointage_matinal || eq.pointage_fin_journee) && (
+                          <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                            {eq.pointage_matinal && (
+                              <span className="flex items-center gap-0.5 text-blue-600" title="Pointage matinal">
+                                <Sunrise size={10} /> {eq.pointage_matinal}
+                              </span>
+                            )}
+                            {eq.pointage_fin_journee && (
+                              <span className="flex items-center gap-0.5 text-purple-600" title="Pointage fin de journée">
+                                <Sunset size={10} /> {eq.pointage_fin_journee}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

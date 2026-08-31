@@ -351,5 +351,51 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     }
   });
 
+  // POST /api/mission/blocage/:id/cancel — Annuler un blocage (admin)
+  router.post('/blocage/:id/cancel', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { motif } = req.body;
+
+      const blocageRes = await pool.query(
+        `SELECT b.id, b.ordre_mission_id, b.statut
+         FROM blocages_et_requisitions b WHERE b.id = $1`, [id]
+      );
+      if (blocageRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Blocage introuvable.' });
+      }
+
+      const blocage = blocageRes.rows[0];
+      if (blocage.statut === 'annule' || blocage.statut === 'resolu') {
+        return res.status(400).json({ erreur: 'Ce blocage est déjà clôturé.' });
+      }
+
+      // Mark blockage as cancelled
+      await pool.query(
+        `UPDATE blocages_et_requisitions SET statut = 'annule', date_modification = NOW() WHERE id = $1`, [id]
+      );
+
+      // Restore mission to en_cours if it was blocked
+      if (blocage.ordre_mission_id) {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'en_cours' WHERE id = $1 AND statut = 'bloque'`,
+          [blocage.ordre_mission_id]
+        );
+
+        // SSE broadcast
+        eventBus.emit('blocage_annule', {
+          blocageId: id,
+          missionId: blocage.ordre_mission_id,
+          motif: motif || 'Annulé par admin',
+        });
+      }
+
+      logger.info('Blocage annulé', { blocageId: id, missionId: blocage.ordre_mission_id });
+      res.json({ ok: true, message: 'Blocage annulé. Mission réactivée.' });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }

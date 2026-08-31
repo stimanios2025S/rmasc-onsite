@@ -307,7 +307,7 @@ export default function MissionActivePage() {
 
   /* ═══ NEW: PAUSE / SHOP ═══ */
   const handlePause = async (type: 'pause' | 'retour_shop') => {
-    if (!equipeId) return;
+    if (!equipeId) { setPointageMsg({ type: 'error', text: 'Équipe non identifiée.' }); return; }
     setPauseLoading(true);
     try {
       const res = await fetch('/api/tracking/pause', {
@@ -317,13 +317,17 @@ export default function MissionActivePage() {
       if (res.ok) {
         setEnPause(true);
         setPointageMsg({ type: 'success', text: type === 'pause' ? '☕ Pause enregistrée' : '🏪 Retour au shop enregistré' });
+        loadMission(); // Sync with admin dashboard
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setPointageMsg({ type: 'error', text: d.erreur || 'Erreur lors de la pause.' });
       }
-    } catch { setPointageMsg({ type: 'error', text: 'Erreur.' }); }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
     setPauseLoading(false);
   };
 
   const handleReprise = async () => {
-    if (!equipeId) return;
+    if (!equipeId) { setPointageMsg({ type: 'error', text: 'Équipe non identifiée.' }); return; }
     setPauseLoading(true);
     try {
       const res = await fetch('/api/tracking/pause', {
@@ -333,8 +337,12 @@ export default function MissionActivePage() {
       if (res.ok) {
         setEnPause(false);
         setPointageMsg({ type: 'success', text: '✅ Reprise du travail' });
+        loadMission(); // Sync with admin dashboard
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setPointageMsg({ type: 'error', text: d.erreur || 'Erreur lors de la reprise.' });
       }
-    } catch { setPointageMsg({ type: 'error', text: 'Erreur.' }); }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
     setPauseLoading(false);
   };
 
@@ -418,7 +426,8 @@ export default function MissionActivePage() {
 
   /* ═══ BLOCAGE ═══ */
   const handleBlocage = async () => {
-    if (!mission || !technicienId) return;
+    if (!mission) { setPointageMsg({ type: 'error', text: 'Aucune mission active.' }); return; }
+    if (!technicienId) { setPointageMsg({ type: 'error', text: 'Session invalide. Reconnectez-vous.' }); return; }
     setBlocageLoading(true);
     try {
       let photoUrl: string | null = null;
@@ -440,7 +449,7 @@ export default function MissionActivePage() {
         setBlocageForm({ raison: '', pieceERP: '', priorite: 'moyenne', stepId: '', motifRetard: '' });
         setBlocagePhoto(null); setBlocagePhotoPreview(null);
         setPointageMsg({ type: 'success', text: '✅ Blocage signalé à El Ghani.' });
-        loadMission();
+        loadMission(); // Sync with admin dashboard
       } else {
         const d = await res.json();
         setPointageMsg({ type: 'error', text: d.erreur || 'Erreur' });

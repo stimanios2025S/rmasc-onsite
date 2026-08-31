@@ -310,7 +310,7 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
   // ─── RÉASSIGNER UNE ÉQUIPE À UN CHANTIER ─────────────────────────
   router.patch('/chantiers/:id/reassign', async (req: any, res) => {
     try {
-      const { equipe_id } = req.body;
+      const { equipe_id, force } = req.body;
       if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
 
       // Vérifier que le chantier existe
@@ -322,14 +322,19 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       }
       const chantier = chantierRes.rows[0];
 
-      // Vérifier que la nouvelle équipe existe
+      // Vérifier que la nouvelle équipe existe (accept EN_REPOS when force=true)
       const equipeRes = await pool.query(
-        `SELECT id, nom, type FROM equipes WHERE id = $1 AND actif = TRUE`, [equipe_id]
+        `SELECT id, nom, type, statut_equipe FROM equipes WHERE id = $1 AND actif = TRUE`, [equipe_id]
       );
       if (equipeRes.rows.length === 0) {
         return res.status(404).json({ erreur: 'Équipe introuvable ou inactive.' });
       }
       const nouvelleEquipe = equipeRes.rows[0];
+
+      // Allow EN_REPOS teams only with force override
+      if (nouvelleEquipe.statut_equipe === 'EN_REPOS' && !force) {
+        return res.status(400).json({ erreur: 'Cette équipe est en repos. Utilisez force=true pour forcer l\'assignation.' });
+      }
 
       // Trouver la mission active pour ce chantier (tous statuts actifs)
       const missionRes = await pool.query(
