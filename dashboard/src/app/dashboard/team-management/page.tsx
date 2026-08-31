@@ -8,7 +8,7 @@ import {
 import {
   fetchTeamsManagement, updateTeam, updateTeamMembers,
   fetchSystemConfig, updateSystemConfig,
-  fetchMissionsReassign,
+  fetchMissionsReassign, manageRepos,
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
 } from '@/lib/api';
 import { apiFetch } from '@/lib/auth';
@@ -124,6 +124,37 @@ export default function TeamManagementPage() {
       await updateTeamMembers(id, membres);
       showToast('success', '✅ Membres mis à jour.');
       setEditingMembers(null);
+      await loadAll();
+    } catch (e: any) {
+      showToast('error', e.message || 'Erreur');
+    }
+    setSaving(false);
+  };
+
+  // ─── REPOS MANAGEMENT ──────────────────────────────────────────────
+  const [reposTeam, setReposTeam] = useState<string | null>(null);
+  const [prolongDays, setProlongDays] = useState<Record<string, number>>({});
+
+  const handleAnnulerRepos = async (teamId: string, teamNom: string) => {
+    if (!confirm(`Annuler le repos de "${teamNom}" ? Elle sera de nouveau disponible.`)) return;
+    setSaving(true);
+    try {
+      const res = await manageRepos(teamId, 'annuler');
+      showToast('success', res.message || 'Repos annulé.');
+      await loadAll();
+    } catch (e: any) {
+      showToast('error', e.message || 'Erreur');
+    }
+    setSaving(false);
+  };
+
+  const handleProlongerRepos = async (teamId: string, teamNom: string) => {
+    const jours = prolongDays[teamId] || 1;
+    if (!confirm(`Prolonger le repos de "${teamNom}" de ${jours} jour${jours > 1 ? 's' : ''} ?`)) return;
+    setSaving(true);
+    try {
+      const res = await manageRepos(teamId, 'prolonger', { jours });
+      showToast('success', res.message || 'Repos prolongé.');
       await loadAll();
     } catch (e: any) {
       showToast('error', e.message || 'Erreur');
@@ -507,6 +538,41 @@ export default function TeamManagementPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Repos Management — only when not editing */}
+                  {!isEditing && !isEditingMembers && team.statut_equipe === 'EN_REPOS' && (
+                    <div className="bg-amber-50 rounded-2xl p-3 mt-3 border border-amber-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar size={14} className="text-amber-600" />
+                        <span className="text-xs font-bold text-amber-700">Gestion du Repos</span>
+                        <span className="text-[10px] text-amber-500 ml-auto">
+                          Dispo le: {team.disponible_a_partir_de ? new Date(team.disponible_a_partir_de).toLocaleDateString('fr-FR') : '—'}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleAnnulerRepos(team.id, team.nom)}
+                          disabled={saving}
+                          className="flex-1 flex items-center justify-center gap-1 py-2 bg-emerald-500 text-white rounded-xl text-[11px] font-bold hover:bg-emerald-600 disabled:opacity-50 transition-all">
+                          <CheckCircle size={12} /> Annuler Repos
+                        </button>
+                        <div className="flex items-center gap-1 flex-1">
+                          <input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={prolongDays[team.id] || 1}
+                            onChange={e => setProlongDays({ ...prolongDays, [team.id]: parseInt(e.target.value) || 1 })}
+                            className="w-14 px-2 py-2 bg-white border border-amber-200 rounded-xl text-xs text-center outline-none focus:border-amber-400"
+                          />
+                          <button onClick={() => handleProlongerRepos(team.id, team.nom)}
+                            disabled={saving}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 bg-amber-500 text-white rounded-xl text-[11px] font-bold hover:bg-amber-600 disabled:opacity-50 transition-all">
+                            <Calendar size={12} /> +Jours
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

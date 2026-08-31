@@ -289,7 +289,106 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
     }
   });
 
-  // ─── 8. TIMESHEET — Full daily timeline per team ─────────────────────
+  // ─── 8. REPOS MANAGEMENT — Cancel / Prolong / Set manually ────────────
+  router.patch('/:id/repos', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { action, jours, date_fin } = req.body;
+
+      const equipeRes = await pool.query(
+        `SELECT id, nom, statut_equipe, disponible_a_partir_de, jours_repos FROM equipes WHERE id = $1`, [id]
+      );
+      if (equipeRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Équipe introuvable.' });
+      }
+      const equipe = equipeRes.rows[0];
+
+      if (action === 'annuler') {
+        // Cancel repos — set team back to DISPONIBLE immediately
+        await pool.query(
+          `UPDATE equipes SET statut_equipe = 'DISPONIBLE',
+           disponible_a_partir_de = NOW(),
+           date_modification = NOW()
+           WHERE id = $1`, [id]
+        );
+        logger.info('Repos annulé par admin', { equipeId: id, equipeNom: equipe.nom });
+        res.json({ ok: true, message: `Repos de "${equipe.nom}" annulé. Équipe de nouveau disponible.` });
+
+      } else if (action === 'prolonger') {
+        // Prolong repos by X additional days
+        if (!jours || jours <= 0) {
+          return res.status(400).json({ erreur: 'Nombre de jours requis (> 0).' });
+        }
+        if (equipe.statut_equipe !== 'EN_REPOS') {
+          return res.status(400).json({ erreur: 'Cette équipe n\'est pas en repos.' });
+        }
+        const newDate = await pool.query(
+          `UPDATE equipes
+           SET disponible_a_partir_de = disponible_a_partir_de + ($1 || ' days')::INTERVAL,
+               date_modification = NOW()
+           WHERE id = $2
+           RETURNING disponible_a_partir_de`,
+          [jours, id]
+        );
+        logger.info('Repos prolongé par admin', { equipeId: id, equipeNom: equipe.nom, joursAjoutes: jours });
+        res.json({
+          ok: true,
+          message: `Repos de "${equipe.nom}" prolongé de ${jours} jour${jours > 1 ? 's' : ''}.`,
+          nouveau_disponible: newDate.rows[0].disponible_a_partir_de,
+        });
+
+      } else if (action === 'definir') {
+        // Set repos end date manually
+        if (!date_fin) {
+          return res.status(400).json({ erreur: 'date_fin requise (ISO timestamp).' });
+        }
+        // If date_fin is in the past or now, team becomes DISPONIBLE
+        const finDate = new Date(date_fin);
+        const isPast = finDate <= new Date();
+        const newStatus = isPast ? 'DISPONIBLE' : 'EN_REPOS';
+
+        await pool.query(
+          `UPDATE equipes SET statut_equipe = $1,
+           disponible_a_partir_de = $2,
+           date_modification = NOW()
+           WHERE id = $3`,
+          [newStatus, date_fin, id]
+        );
+        logger.info('Repos défini par admin', { equipeId: id, equipeNom: equipe.nom, dateFin: date_fin, statut: newStatus });
+        res.json({
+          ok: true,
+          message: isPast
+            ? `Repos de "${equipe.nom}" terminé. Équipe de nouveau disponible.`
+            : `Repos de "${equipe.nom}" jusqu'au ${finDate.toLocaleDateString('fr-FR')}.`,
+          nouveau_statut: newStatus,
+        });
+
+      } else if (action === 'configurer') {
+        // Set per-team repos duration (days) — used when mission completes
+        if (jours === null || jours === undefined) {
+          return res.status(400).json({ erreur: 'jours requis.' });
+        }
+        await pool.query(
+          `UPDATE equipes SET jours_repos = $1, date_modification = NOW() WHERE id = $2`,
+          [jours === null ? null : Number(jours), id]
+        );
+        res.json({
+          ok: true,
+          message: jours
+            ? `Durée de repos de "${equipe.nom}" configurée à ${jours} jour${jours > 1 ? 's' : ''}.`
+            : `Durée de repos de "${equipe.nom}" réinitialisée à la config globale.`,
+        });
+
+      } else {
+        return res.status(400).json({ erreur: 'Action invalide. Utilisez: annuler, prolonger, definir, ou configurer.' });
+      }
+    } catch (err: any) {
+      logger.error('Erreur gestion repos', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── 9. TIMESHEET — Full daily timeline per team ─────────────────────
   router.get('/timesheet', async (req, res) => {
     try {
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
