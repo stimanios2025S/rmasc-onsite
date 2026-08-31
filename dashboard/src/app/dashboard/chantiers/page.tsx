@@ -38,13 +38,14 @@ export default function ChantiersPage() {
     nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
     latitude: '', longitude: '', rayon_geofencing: '50',
     complexite: 'MOYENNE', fiche_technique: '', dxf_url: '', pdf_url: '',
+    date_echeance: '',
   });
   const [dxfFile, setDxfFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '' });
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '', date_echeance: '' });
   const [saving, setSaving] = useState(false);
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
@@ -104,6 +105,7 @@ export default function ChantiersPage() {
         dxfUrl: dxfUrl || undefined,
         pdfUrl: pdfUrl || undefined,
         ficheTechnique: form.fiche_technique || undefined,
+        date_echeance: form.date_echeance || undefined,
       });
       setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
       setShowWizard(false);
@@ -121,6 +123,7 @@ export default function ChantiersPage() {
       nom_projet: '', client_nom: '', client_telephone: '', client_adresse: '',
       latitude: '', longitude: '', rayon_geofencing: '50',
       complexite: 'MOYENNE', fiche_technique: '', dxf_url: '', pdf_url: '',
+      date_echeance: '',
     });
     setDxfFile(null);
     setPdfFile(null);
@@ -139,6 +142,7 @@ export default function ChantiersPage() {
       complexite: c.complexite || 'MOYENNE',
       rayonGeofencing: 50,
       equipe_id: currentEquipe?.id || '',
+      date_echeance: c.date_echeance ? c.date_echeance.slice(0, 16) : '',
     });
   }
 
@@ -154,6 +158,7 @@ export default function ChantiersPage() {
         longitude: parseFloat(editForm.longitude),
         complexite: editForm.complexite,
         rayon_geofencing: editForm.rayonGeofencing || 50,
+        date_echeance: editForm.date_echeance || undefined,
       });
       // Si l'équipe a changé, réassigner
       if (editForm.equipe_id && editForm.equipe_id !== equipes.find(e => e.nom === editChantier.equipe_actuelle)?.id) {
@@ -339,6 +344,16 @@ export default function ChantiersPage() {
                     }`}>{c.complexite}</span>
                   </>
                 )}
+                {c.date_echeance && (
+                  <>
+                    <span className="text-stone-300">•</span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                      new Date(c.date_echeance) < new Date() ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                    }`}>
+                      ⏰ {new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                    </span>
+                  </>
+                )}
               </div>
 
               {(c.dxf || c.pdf) && (
@@ -451,6 +466,13 @@ export default function ChantiersPage() {
                             type="number" step="any" placeholder="3.0588"
                             className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-stone-500 mb-1.5 block">📅 Date limite (Échéance)</label>
+                        <input value={form.date_echeance} onChange={e => setForm({ ...form, date_echeance: e.target.value })}
+                          type="datetime-local"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                        <p className="text-[10px] text-stone-400 mt-1">L'équipe doit terminer avant cette date</p>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Position sur la carte</label>
@@ -652,6 +674,13 @@ export default function ChantiersPage() {
                 <label className="text-xs font-semibold text-stone-500 mb-1 block">📏 Zone de travail (m)</label>
                 <input value={editForm.rayonGeofencing} onChange={e => setEditForm({ ...editForm, rayonGeofencing: parseInt(e.target.value) || 50 })}
                   type="number" min="10" max="500" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">📅 Date limite (Échéance)</label>
+                <input value={editForm.date_echeance} onChange={e => setEditForm({ ...editForm, date_echeance: e.target.value })}
+                  type="datetime-local"
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                <p className="text-[10px] text-stone-400 mt-1">L'équipe doit terminer avant cette date</p>
               </div>
 
               {/* ═══ ÉQUIPE ASSIGNÉE ═══ */}

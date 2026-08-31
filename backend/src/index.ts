@@ -263,7 +263,8 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 COALESCE(ms.terminee,0) AS terminee,
                 COALESCE(am.equipe_actuelle,'Aucune') AS equipe_actuelle, am.phase_actuelle, am.mission_statut,
                 cl.etapes AS checklist_etapes, cl.complete AS checklist_complete,
-                TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
+                TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
+                TO_CHAR(c.date_echeance,'YYYY-MM-DD"T"HH24:MI') AS date_echeance
          FROM chantiers c
          LEFT JOIN ms ON ms.chantier_id=c.id
          LEFT JOIN am ON am.chantier_id=c.id
@@ -475,7 +476,7 @@ app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', async (req, res) => {
   try {
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance } = req.body;
     if (!nom) {
       return res.status(400).json({ erreur: 'nom requis.' });
     }
@@ -487,11 +488,11 @@ app.post('/api/chantiers', async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
                               rayon_geofencing, statut, client_nom, complexite,
-                              dxf_url, pdf_url, fiche_technique)
-       VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11)
+                              dxf_url, pdf_url, fiche_technique, date_echeance)
+       VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [ref, nom, adresse || null, hasCoords ? longitude : null, hasCoords ? latitude : null, rayon_geofencing || 50, client_nom || null, validComplexity,
-       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null]
+       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null, date_echeance || null]
     );
     const chantierId = rows[0].id;
 
@@ -511,11 +512,11 @@ app.post('/api/chantiers', async (req, res) => {
       const equipe = equipeResult.rows[0];
       await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [equipe.id]);
       const missionResult = await pool.query(
-        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours)
+        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours, date_echeance)
          VALUES ($1, $2, 'mecanique', 'en_attente', NOW(),
-                 (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = 'mecanique'))
+                 (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = 'mecanique'), $3)
          RETURNING id`,
-        [chantierId, equipe.id]
+        [chantierId, equipe.id, date_echeance || null]
       );
       missionId = missionResult.rows[0].id;
       equipeNom = equipe.nom;
@@ -552,7 +553,7 @@ app.post('/api/chantiers', async (req, res) => {
 app.put('/api/chantiers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique, date_echeance } = req.body;
     if (!nom) return res.status(400).json({ erreur: 'nom requis.' });
 
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
@@ -568,11 +569,12 @@ app.put('/api/chantiers/:id', async (req, res) => {
          coordonnees = CASE WHEN $9::float8 IS NOT NULL AND $10::float8 IS NOT NULL
                             THEN ST_SetSRID(ST_MakePoint($10, $9), 4326)
                             ELSE coordonnees END,
+         date_echeance = $12,
          date_modification = NOW()
        WHERE id = $11`,
       [nom, client_nom || null, adresse || null, rayon_geofencing || 50, validComplexity,
        dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null,
-       lat, lng, id]
+       lat, lng, id, date_echeance || null]
     );
     res.json({ message: `Chantier "${nom}" mis à jour.` });
   } catch (err: any) {

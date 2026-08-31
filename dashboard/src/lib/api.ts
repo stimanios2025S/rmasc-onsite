@@ -16,6 +16,7 @@ export interface ChantierData {
   equipe_actuelle?: string; phase_actuelle?: string; mission_statut?: string; adresse?: string;
   checklist_etapes?: ChecklistEtape[] | string | null;
   checklist_complete?: boolean | null;
+  date_echeance?: string | null;
 }
 export interface DemandeData {
   id: string; ref: string; client_nom: string; nom_chantier: string; statut: string; cree: string;
@@ -93,6 +94,7 @@ export interface NouveauChantier {
   dxfUrl?: string;
   pdfUrl?: string;
   ficheTechnique?: string;
+  date_echeance?: string;
 }
 
 export interface CreerChantierResult {

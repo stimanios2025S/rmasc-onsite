@@ -77,7 +77,7 @@ const LeafletMap = React.memo(function LeafletMap({
       if (!document.querySelector('link[href*="leaflet"]')) {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
         document.head.appendChild(link);
       }
       if (!mapRef.current) return;
