@@ -317,7 +317,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
           LEFT JOIN equipes e ON e.id=om.equipe_id
           WHERE b.statut IN ('ouvert','en_cours')
          UNION ALL
-         SELECT 'pause' AS type, 'info' AS priorite,
+         SELECT 'pause' AS type, 'basse'::niveau_priorite AS priorite,
                  p.type_pause || ' — ' || COALESCE(e2.nom, 'Équipe') AS message,
                  COALESCE(c2.nom_chantier, 'N/A') AS nom_chantier,
                  e2.nom AS equipe_nom,

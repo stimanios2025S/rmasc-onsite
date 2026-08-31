@@ -73,7 +73,7 @@ CREATE TABLE chantiers (
     reference_commande_erp VARCHAR(50) NOT NULL,
     nom_chantier VARCHAR(200) NOT NULL,
     adresse TEXT,
-    coordonnees GEOGRAPHY(Point, 4326) NOT NULL,
+    coordonnees GEOGRAPHY(Point, 4326),
     rayon_geofencing NUMERIC(6,1) NOT NULL DEFAULT 50.0,
     statut statut_chantier NOT NULL DEFAULT 'planifie',
     instructions_acces TEXT,
