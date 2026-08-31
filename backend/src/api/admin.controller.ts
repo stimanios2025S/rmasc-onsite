@@ -210,22 +210,49 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
   // ─── INCIDENTS (blocages + pointages récents) ─────────────────────
   router.get('/incidents', async (_req, res) => {
     const { rows } = await pool.query(
-      `SELECT 'blocage' AS type, priorite, raison_blocage AS message,
-              c.nom_chantier, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+      `SELECT 'blocage' AS type, b.priorite::text AS priorite, b.raison_blocage AS message,
+              c.nom_chantier, e.nom AS equipe_nom,
+              TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+              b.photo_proof_url AS photo_url, b.ordre_mission_id AS mission_id, b.id AS blocage_id
        FROM blocages_et_requisitions b
        JOIN ordres_de_mission om ON om.id = b.ordre_mission_id
        JOIN chantiers c ON c.id = om.chantier_id
+       LEFT JOIN equipes e ON e.id = om.equipe_id
        WHERE b.statut IN ('ouvert','en_cours')
        UNION ALL
-       SELECT 'pointage' AS type, 'moyenne' AS priorite,
+       SELECT 'pause' AS type, 'basse'::text AS priorite,
+              p.type_pause || ' — ' || COALESCE(e2.nom, 'Équipe') AS message,
+              COALESCE(c2.nom_chantier, 'N/A') AS nom_chantier,
+              e2.nom AS equipe_nom,
+              TO_CHAR(p.date_debut,'YYYY-MM-DD HH24:MI') AS moment,
+              NULL AS photo_url, p.mission_id, NULL AS blocage_id
+       FROM pauses_journee p
+       LEFT JOIN equipes e2 ON e2.id = p.equipe_id
+       LEFT JOIN ordres_de_mission om2 ON om2.id = p.mission_id
+       LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
+       WHERE p.date_debut > NOW() - INTERVAL '7 days' AND p.date_fin IS NULL
+       UNION ALL
+       SELECT 'retard' AS type, 'haute'::text AS priorite,
+              nr.motif AS message,
+              c.nom_chantier, e.nom AS equipe_nom,
+              TO_CHAR(nr.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+              nr.photo_url, nr.mission_id, NULL AS blocage_id
+       FROM notifications_retard nr
+       JOIN chantiers c ON c.id = nr.chantier_id
+       JOIN equipes e ON e.id = nr.equipe_id
+       UNION ALL
+       SELECT 'pointage' AS type, 'basse'::text AS priorite,
               u.prenom || ' ' || u.nom || ' — ' ||
                 CASE jp.type_pointage WHEN 'arrivee' THEN 'Arrivée' ELSE 'Départ' END AS message,
-              c.nom_chantier, TO_CHAR(jp.horodatage,'YYYY-MM-DD HH24:MI') AS moment
+              c.nom_chantier, e.nom AS equipe_nom,
+              TO_CHAR(jp.horodatage,'YYYY-MM-DD HH24:MI') AS moment,
+              NULL AS photo_url, jp.ordre_mission_id AS mission_id, NULL AS blocage_id
        FROM journal_pointage_gps jp
        JOIN utilisateurs u ON u.id = jp.utilisateur_id
        JOIN ordres_de_mission om ON om.id = jp.ordre_mission_id
        JOIN chantiers c ON c.id = om.chantier_id
-       ORDER BY moment DESC LIMIT 20`
+       LEFT JOIN equipes e ON e.id = om.equipe_id
+       ORDER BY moment DESC LIMIT 50`
     );
     res.json(rows);
   });

@@ -297,6 +297,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
       // [3] Equipes list (with member names + today's pointage times)
       safe(pool.query(
         `SELECT e.id, e.nom, e.type, e.statut_equipe,
+                e.jours_repos,
                 (SELECT COUNT(*) FROM ordres_de_mission om WHERE om.equipe_id=e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
                 CASE WHEN e.disponible_a_partir_de > NOW()
                   THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT ELSE 0 END AS jours_repos_restants,

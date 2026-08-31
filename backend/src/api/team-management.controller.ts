@@ -26,6 +26,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         SELECT
           e.id, e.nom, e.type::text AS type, e.couleur_hex, e.actif,
           e.statut_equipe, e.disponible_a_partir_de,
+          e.jours_repos,
           TO_CHAR(e.date_creation, 'YYYY-MM-DD') AS date_creation,
           (SELECT COUNT(*) FROM ordres_de_mission om
            WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions_actives,
@@ -137,7 +138,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
   router.patch('/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { nom, type, couleur_hex, actif } = req.body;
+      const { nom, type, couleur_hex, actif, jours_repos } = req.body;
 
       const sets: string[] = [];
       const values: any[] = [];
@@ -147,6 +148,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       if (type !== undefined) { sets.push(`type = $${idx++}::type_equipe`); values.push(type); }
       if (couleur_hex !== undefined) { sets.push(`couleur_hex = $${idx++}`); values.push(couleur_hex); }
       if (actif !== undefined) { sets.push(`actif = $${idx++}`); values.push(actif); }
+      if (jours_repos !== undefined) { sets.push(`jours_repos = $${idx++}`); values.push(jours_repos === null || jours_repos === '' ? null : Number(jours_repos)); }
 
       if (sets.length === 0) {
         return res.status(400).json({ erreur: 'Aucun champ à modifier.' });

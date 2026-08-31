@@ -30,6 +30,7 @@ export interface EquipeData {
   membres_noms?: string;
   pointage_matinal?: string | null;
   pointage_fin_journee?: string | null;
+  jours_repos?: number | null;
 }
 export interface StatsData {
   chantiersActifs: number; chantiersBloques: number; chantiersTotal: number;
@@ -38,6 +39,7 @@ export interface StatsData {
 }
 export interface IncidentData {
   type: string; priorite: string; message: string; nom_chantier: string; moment: string; equipe_nom?: string;
+  photo_url?: string | null; mission_id?: string | null; blocage_id?: string | null;
 }
 
 export async function fetchChantiers(): Promise<ChantierData[]> {
@@ -221,6 +223,7 @@ export interface TeamData {
   id: string; nom: string; type: string; couleur_hex: string | null;
   actif: boolean; statut_equipe: string; disponible_a_partir_de: string;
   date_creation: string; missions_actives: number; jours_repos_restants: number;
+  jours_repos: number | null;
   membres: TeamMember[];
 }
 export interface MissionReassign {
@@ -237,7 +240,7 @@ export interface SystemConfig {
 export async function fetchTeamsManagement(): Promise<TeamData[]> {
   return apiFetch('/admin/teams');
 }
-export async function updateTeam(id: string, data: { nom?: string; type?: string; couleur_hex?: string; actif?: boolean }) {
+export async function updateTeam(id: string, data: { nom?: string; type?: string; couleur_hex?: string; actif?: boolean; jours_repos?: number | null }) {
   return apiFetch(`/admin/teams/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
 export async function updateTeamMembers(id: string, membres: { id: string; prenom: string; nom: string; telephone?: string | null }[]) {

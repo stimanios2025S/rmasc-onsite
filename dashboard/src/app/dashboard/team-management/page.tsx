@@ -51,7 +51,7 @@ export default function TeamManagementPage() {
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
 
   // Form states
-  const [teamForm, setTeamForm] = useState({ nom: '', type: '', couleur_hex: '' });
+  const [teamForm, setTeamForm] = useState<{ nom: string; type: string; couleur_hex: string; jours_repos: number | null }>({ nom: '', type: '', couleur_hex: '', jours_repos: null });
   const [memberForms, setMemberForms] = useState<Record<string, { prenom: string; nom: string; telephone: string }>>({});
   const [configForm, setConfigForm] = useState<Record<string, string>>({});
   const [reassignForm, setReassignForm] = useState<Record<string, string>>({});
@@ -91,7 +91,7 @@ export default function TeamManagementPage() {
   // ─── TEAM NAME/TYPE/COLOR EDIT ────────────────────────────────────
   const startEditTeam = (team: TeamData) => {
     setEditingTeam(team.id);
-    setTeamForm({ nom: team.nom, type: team.type, couleur_hex: team.couleur_hex || '#2196F3' });
+    setTeamForm({ nom: team.nom, type: team.type, couleur_hex: team.couleur_hex || '#2196F3', jours_repos: team.jours_repos ?? null });
   };
   const saveTeam = async (id: string) => {
     setSaving(true);
@@ -365,6 +365,33 @@ export default function TeamManagementPage() {
                           ))}
                         </div>
                       </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-stone-400 mb-1 block">
+                          Jours de repos (laisser vide = global)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={30}
+                            value={teamForm.jours_repos ?? ''}
+                            onChange={e => setTeamForm({
+                              ...teamForm,
+                              jours_repos: e.target.value === '' ? null : parseInt(e.target.value) || null,
+                            })}
+                            placeholder={`Config globale: ${config?.['jours_repos']?.valeur || 3}j`}
+                            className="w-24 px-3 py-2 bg-white border border-stone-200 rounded-xl text-sm outline-none focus:border-indigo-400"
+                            style={{ fontSize: '16px' }}
+                          />
+                          <span className="text-xs text-stone-400">jours</span>
+                          {teamForm.jours_repos !== null && (
+                            <button onClick={() => setTeamForm({ ...teamForm, jours_repos: null })}
+                              className="text-[10px] text-stone-400 hover:text-stone-600 underline">
+                              Réinitialiser
+                            </button>
+                          )}
+                        </div>
+                      </div>
                       <div className="flex gap-2 pt-1">
                         <button onClick={() => setEditingTeam(null)}
                           className="flex-1 py-2 bg-stone-100 rounded-xl text-xs font-semibold text-stone-500 hover:bg-stone-200 transition-all">
@@ -391,6 +418,11 @@ export default function TeamManagementPage() {
                     )}
                     {team.statut_equipe === 'DISPONIBLE' && (
                       <span className="flex items-center gap-1 text-emerald-500"><CheckCircle size={12} /> Prêt</span>
+                    )}
+                    {team.jours_repos != null && (
+                      <span className="flex items-center gap-1 text-violet-500 font-medium" title={`Repos custom: ${team.jours_repos} jours`}>
+                        <Calendar size={12} /> {team.jours_repos}j repos
+                      </span>
                     )}
                     <span className="text-stone-300">•</span>
                     <span>{team.membres.length} membre{team.membres.length > 1 ? 's' : ''}</span>
