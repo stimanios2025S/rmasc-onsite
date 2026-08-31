@@ -240,3 +240,24 @@ export async function reassignMission(missionId: string, equipeId: string) {
     method: 'PATCH', body: JSON.stringify({ equipe_id: equipeId }),
   });
 }
+
+// ─── TIMESHEET (Admin daily timeline) ───────────────────────────────
+export interface TimesheetEvent {
+  type: string; heure: string; horodatage: string;
+  chantier?: string | null; technicien?: string;
+  conforme?: boolean; distance?: number; icon: string; label: string;
+  heure_fin?: string | null; duree_minutes?: number | null;
+  motif?: string | null; en_cours?: boolean;
+}
+export interface TimesheetEquipe {
+  equipe_id: string; equipe_nom: string; equipe_type: string;
+  events: TimesheetEvent[];
+  stats: { matinal: string | null; fin_journee: string | null; arrivee: string | null; totalPausedMinutes: number; isPaused: boolean };
+}
+export interface TimesheetData {
+  date: string; equipes: TimesheetEquipe[];
+}
+export async function fetchTimesheet(date?: string): Promise<TimesheetData> {
+  const q = date ? `?date=${date}` : '';
+  return apiFetch(`/admin/teams/timesheet${q}`);
+}

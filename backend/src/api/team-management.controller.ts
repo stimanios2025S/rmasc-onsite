@@ -281,5 +281,151 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
     }
   });
 
+  // ─── 8. TIMESHEET — Full daily timeline per team ─────────────────────
+  router.get('/timesheet', async (req, res) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const dateStart = `${date}T00:00:00Z`;
+      const dateEnd = `${date}T23:59:59Z`;
+
+      // All pointages for this day
+      const { rows: pointages } = await pool.query(`
+        SELECT pj.equipe_id, e.nom AS equipe_nom, e.type::text AS equipe_type,
+               pj.type_pointage, pj.horodatage, pj.dans_rayon,
+               pj.distance_chantier_m, pj.notes,
+               om.id AS mission_id, c.nom_chantier
+        FROM pointages_jour pj
+        JOIN equipes e ON e.id = pj.equipe_id
+        LEFT JOIN ordres_de_mission om ON om.id = pj.mission_id
+        LEFT JOIN chantiers c ON c.id = om.chantier_id
+        WHERE pj.horodatage >= $1 AND pj.horodatage <= $2
+        ORDER BY pj.equipe_id, pj.horodatage
+      `, [dateStart, dateEnd]);
+
+      // All pauses for this day
+      const { rows: pauses } = await pool.query(`
+        SELECT p.equipe_id, e.nom AS equipe_nom,
+               p.type_pause, p.date_debut, p.date_fin, p.duree_minutes, p.motif,
+               om.id AS mission_id, c.nom_chantier
+        FROM pauses_journee p
+        JOIN equipes e ON e.id = p.equipe_id
+        LEFT JOIN ordres_de_mission om ON om.id = p.mission_id
+        LEFT JOIN chantiers c ON c.id = om.chantier_id
+        WHERE p.date_debut >= $1 AND p.date_debut <= $2
+        ORDER BY p.equipe_id, p.date_debut
+      `, [dateStart, dateEnd]);
+
+      // All GPS arrivals for this day
+      const { rows: arrivees } = await pool.query(`
+        SELECT jg.ordre_mission_id AS mission_id,
+               u.equipe_id, e.nom AS equipe_nom,
+               u.prenom || ' ' || u.nom AS technicien_nom,
+               jg.type_pointage, jg.horodatage, jg.dans_rayon, jg.distance_chantier_m,
+               c.nom_chantier
+        FROM journal_pointage_gps jg
+        JOIN utilisateurs u ON u.id = jg.utilisateur_id
+        JOIN equipes e ON e.id = u.equipe_id
+        LEFT JOIN ordres_de_mission om ON om.id = jg.ordre_mission_id
+        LEFT JOIN chantiers c ON c.id = om.chantier_id
+        WHERE jg.horodatage >= $1 AND jg.horodatage <= $2
+        ORDER BY u.equipe_id, jg.horodatage
+      `, [dateStart, dateEnd]);
+
+      // Build unified timeline per team
+      const teamMap = new Map<string, any>();
+
+      const ensureTeam = (equipeId: string, equipeNom: string, equipeType: string) => {
+        if (!teamMap.has(equipeId)) {
+          teamMap.set(equipeId, {
+            equipe_id: equipeId, equipe_nom: equipeNom, equipe_type: equipeType,
+            events: [], stats: { matinal: null as string | null, fin_journee: null as string | null,
+              arrivee: null as string | null, totalPausedMinutes: 0, isPaused: false }
+          });
+        }
+        return teamMap.get(equipeId)!;
+      };
+
+      // Add pointage events
+      for (const p of pointages) {
+        const team = ensureTeam(p.equipe_id, p.equipe_nom, p.equipe_type);
+        const heure = new Date(p.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        team.events.push({
+          type: p.type_pointage === 'matinal' ? 'pointage_matin' : 'pointage_fin',
+          heure,
+          horodatage: p.horodatage,
+          chantier: p.nom_chantier || null,
+          conforme: p.dans_rayon,
+          distance: p.distance_chantier_m,
+          icon: p.type_pointage === 'matinal' ? '🌅' : '🌙',
+          label: p.type_pointage === 'matinal' ? 'Pointage matinal' : 'Fin de journée',
+        });
+        if (p.type_pointage === 'matinal') team.stats.matinal = heure;
+        if (p.type_pointage === 'fin_journee') team.stats.fin_journee = heure;
+      }
+
+      // Add GPS arrival/departure events
+      for (const a of arrivees) {
+        const team = ensureTeam(a.equipe_id, a.equipe_nom, '');
+        const heure = new Date(a.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        team.events.push({
+          type: a.type_pointage === 'arrivee' ? 'arrivee' : 'depart',
+          heure,
+          horodatage: a.horodatage,
+          chantier: a.nom_chantier || null,
+          technicien: a.technicien_nom,
+          conforme: a.dans_rayon,
+          distance: a.distance_chantier_m,
+          icon: a.type_pointage === 'arrivee' ? '📍' : '🚶',
+          label: a.type_pointage === 'arrivee' ? `${a.technicien_nom} arrivé` : `${a.technicien_nom} parti`,
+        });
+        if (a.type_pointage === 'arrivee') team.stats.arrivee = heure;
+      }
+
+      // Add pause events
+      for (const p of pauses) {
+        const team = ensureTeam(p.equipe_id, p.equipe_nom, '');
+        const heureDebut = new Date(p.date_debut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const heureFin = p.date_fin ? new Date(p.date_fin).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
+        const duree = p.duree_minutes ? Math.round(p.duree_minutes) : null;
+
+        const typeLabels: Record<string, string> = {
+          pause: 'Pause', pause_repos: 'Pause repos', retour_shop: 'Retour shop',
+          pause_repas: 'Pause repas', pause_technique: 'Pause technique',
+        };
+
+        team.events.push({
+          type: p.type_pause === 'retour_shop' ? 'retour_shop' : 'pause',
+          heure: heureDebut,
+          heure_fin: heureFin,
+          horodatage: p.date_debut,
+          duree_minutes: duree,
+          motif: p.motif || null,
+          en_cours: !p.date_fin,
+          icon: p.type_pause === 'retour_shop' ? '🔧' : (!p.date_fin ? '⏸' : '▶️'),
+          label: typeLabels[p.type_pause] || p.type_pause,
+        });
+
+        if (duree) team.stats.totalPausedMinutes += duree;
+        if (!p.date_fin) team.stats.isPaused = true;
+      }
+
+      // Sort each team's events chronologically
+      const result = Array.from(teamMap.values()).map(t => ({
+        ...t,
+        events: t.events.sort((a: any, b: any) =>
+          new Date(a.horodatage).getTime() - new Date(b.horodatage).getTime()
+        ),
+      }));
+
+      // Sort teams by type then name
+      result.sort((a, b) => a.equipe_type.localeCompare(b.equipe_type) || a.equipe_nom.localeCompare(b.equipe_nom));
+
+      res.json({ date, equipes: result });
+    } catch (err: any) {
+      logger.error('Erreur timesheet', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }
