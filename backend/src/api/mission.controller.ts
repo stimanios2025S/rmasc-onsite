@@ -396,6 +396,64 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     }
   });
 
+  // GET /api/mission/blocage/active/:missionId — Find active blocage for a mission
+  router.get('/blocage/active/:missionId', async (req, res) => {
+    try {
+      const { missionId } = req.params;
+      const { rows } = await pool.query(
+        `SELECT id FROM blocages_et_requisitions
+         WHERE ordre_mission_id = $1 AND statut IN ('ouvert','en_cours')
+         ORDER BY date_creation DESC LIMIT 1`,
+        [missionId]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ erreur: 'Aucun blocage actif.' });
+      }
+      res.json({ blocageId: rows[0].id });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // POST /api/mission/blocage/:id/annuler — Annuler un blocage (par l'équipe qui l'a créé)
+  router.post('/blocage/:id/annuler', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { equipeId } = req.body;
+
+      const blocageRes = await pool.query(
+        `SELECT b.id, b.ordre_mission_id, b.declare_par, b.statut
+         FROM blocages_et_requisitions b WHERE b.id = $1`, [id]
+      );
+      if (blocageRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Blocage introuvable.' });
+      }
+      const blocage = blocageRes.rows[0];
+      if (blocage.statut === 'annule' || blocage.statut === 'resolu') {
+        return res.status(400).json({ erreur: 'Ce blocage est déjà clôturé.' });
+      }
+
+      await pool.query(
+        `UPDATE blocages_et_requisitions SET statut = 'annule', date_modification = NOW() WHERE id = $1`, [id]
+      );
+
+      if (blocage.ordre_mission_id) {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'en_cours' WHERE id = $1 AND statut = 'bloque'`,
+          [blocage.ordre_mission_id]
+        );
+        try {
+          const { eventBus } = await import('../services/events/event-bus');
+          eventBus.emit('blocage_annule', { blocageId: id, missionId: blocage.ordre_mission_id });
+        } catch (_) { /* non-critical */ }
+      }
+
+      res.json({ ok: true, message: 'Blocage annulé. Mission réactivée.' });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // POST /api/mission/blocage/:id/cancel — Annuler un blocage (admin)
   router.post('/blocage/:id/cancel', async (req, res) => {
     try {

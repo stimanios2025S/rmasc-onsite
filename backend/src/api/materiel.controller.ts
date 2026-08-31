@@ -172,13 +172,30 @@ export function creerMaterielRouter(pool: Pool, logger: LoggerService, smsServic
   router.patch('/:id', async (req, res) => {
     try {
       const { statut } = req.body;
-      if (!statut || !['EN_ATTENTE', 'EN_COURS', 'TRAITE', 'REFUSE'].includes(statut)) {
+      if (!statut || !['EN_ATTENTE', 'EN_COURS', 'EN_ROUTE', 'LIVREE', 'TRAITE', 'REFUSE'].includes(statut)) {
         return res.status(400).json({ erreur: 'Statut invalide.' });
       }
-      await pool.query(
-        `UPDATE demandes_materiel SET statut = $1, date_modification = NOW() WHERE id = $2`,
+      const { rows } = await pool.query(
+        `UPDATE demandes_materiel SET statut = $1, date_modification = NOW()
+         WHERE id = $2 RETURNING equipe_id, chantier_id, description`,
         [statut, req.params.id]
       );
+      // Notify the team via SSE
+      if (rows.length > 0 && rows[0].equipe_id) {
+        const { eventBus } = require('../services/events/event-bus');
+        const statusMsg: Record<string, string> = {
+          EN_ROUTE: '📦 Votre matériel est en route !',
+          LIVREE: '✅ Matériel livré sur site.',
+          EN_COURS: '⏳ Demande en cours de traitement.',
+          TRAITE: '✅ Demande traitée.',
+          REFUSE: '❌ Demande refusée.',
+        };
+        eventBus.emit('demande_materiel', {
+          equipeId: rows[0].equipe_id,
+          chantierId: rows[0].chantier_id,
+          message: statusMsg[statut] || `Statut: ${statut}`,
+        });
+      }
       res.json({ message: 'Statut mis à jour.' });
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });

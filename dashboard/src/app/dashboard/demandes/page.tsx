@@ -101,7 +101,7 @@ export default function DemandesPage() {
       <div className="flex items-center gap-2">
         <Filter size={14} className="text-stone-400" />
         <div className="flex gap-1.5 flex-wrap">
-          {['tous', 'EN_ATTENTE', 'EN_COURS', 'TRAITE', 'REFUSE'].map(s => (
+          {['tous', 'EN_ATTENTE', 'EN_COURS', 'EN_ROUTE', 'LIVREE', 'TRAITE', 'REFUSE'].map(s => (
             <button
               key={s}
               onClick={() => setFiltreStatut(s)}
@@ -111,7 +111,7 @@ export default function DemandesPage() {
                   : 'bg-stone-100 text-stone-400 hover:bg-stone-200'
               }`}
             >
-              {s === 'tous' ? 'Tous' : s === 'EN_ATTENTE' ? 'En attente' : s === 'EN_COURS' ? 'En cours' : s === 'TRAITE' ? 'Traité' : 'Refusé'}
+              {s === 'tous' ? 'Tous' : s === 'EN_ATTENTE' ? 'En attente' : s === 'EN_COURS' ? 'En cours' : s === 'EN_ROUTE' ? 'En route' : s === 'LIVREE' ? 'Livrée' : s === 'TRAITE' ? 'Traité' : 'Refusé'}
             </button>
           ))}
         </div>
@@ -162,6 +162,10 @@ export default function DemandesPage() {
               ? 'bg-amber-50 text-amber-700 border-amber-200'
               : d.statut === 'EN_COURS'
               ? 'bg-blue-50 text-blue-700 border-blue-200'
+              : d.statut === 'EN_ROUTE'
+              ? 'bg-sky-50 text-sky-700 border-sky-200'
+              : d.statut === 'LIVREE'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : d.statut === 'TRAITE'
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : 'bg-red-50 text-red-700 border-red-200';
@@ -169,6 +173,10 @@ export default function DemandesPage() {
               ? <Clock size={12} />
               : d.statut === 'EN_COURS'
               ? <RefreshCw size={12} />
+              : d.statut === 'EN_ROUTE'
+              ? <Package size={12} />
+              : d.statut === 'LIVREE'
+              ? <CheckCircle size={12} />
               : d.statut === 'TRAITE'
               ? <CheckCircle size={12} />
               : <XCircle size={12} />;
@@ -181,7 +189,7 @@ export default function DemandesPage() {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${statutColor}`}>
                         {statutIcon}
-                        {d.statut === 'EN_ATTENTE' ? 'En attente' : d.statut === 'EN_COURS' ? 'En cours' : d.statut === 'TRAITE' ? 'Traité' : 'Refusé'}
+                        {d.statut === 'EN_ATTENTE' ? 'En attente' : d.statut === 'EN_COURS' ? 'En cours' : d.statut === 'EN_ROUTE' ? 'En route' : d.statut === 'LIVREE' ? 'Livrée' : d.statut === 'TRAITE' ? 'Traité' : 'Refusé'}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         isRetard ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'
@@ -205,6 +213,8 @@ export default function DemandesPage() {
                       >
                         <option value="EN_ATTENTE">En attente</option>
                         <option value="EN_COURS">En cours</option>
+                        <option value="EN_ROUTE">📦 En route</option>
+                        <option value="LIVREE">✅ Livrée</option>
                         <option value="TRAITE">Traité</option>
                         <option value="REFUSE">Refusé</option>
                       </select>
@@ -273,6 +283,8 @@ export default function DemandesPage() {
                   >
                     <option value="EN_ATTENTE">En attente</option>
                     <option value="EN_COURS">En cours</option>
+                    <option value="EN_ROUTE">📦 En route</option>
+                    <option value="LIVREE">✅ Livrée</option>
                     <option value="TRAITE">Traité</option>
                     <option value="REFUSE">Refusé</option>
                   </select>
@@ -307,7 +319,7 @@ export default function DemandesPage() {
               {detail.photo_url && (
                 <div>
                   <p className="text-[10px] text-stone-400 uppercase font-medium mb-1">Photo</p>
-                  <img src={detail.photo_url} alt="Photo" className="rounded-xl max-h-48 object-cover" />
+                  <img src={detail.photo_url.startsWith('http') ? detail.photo_url : `https://onsite.sarl-rmasc.com${detail.photo_url}`} alt="Photo" className="rounded-xl max-h-48 object-cover" />
                 </div>
               )}
 

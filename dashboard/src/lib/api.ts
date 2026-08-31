@@ -246,8 +246,8 @@ export async function updateTeam(id: string, data: { nom?: string; type?: string
 export async function updateTeamMembers(id: string, membres: { id: string; prenom: string; nom: string; telephone?: string | null }[]) {
   return apiFetch(`/admin/teams/${id}/members`, { method: 'PUT', body: JSON.stringify({ membres }) });
 }
-export async function manageRepos(equipeId: string, action: 'annuler' | 'prolonger' | 'definir' | 'configurer', params?: { jours?: number; date_fin?: string }) {
-  return apiFetch(`/admin/teams/${equipeId}/repos`, {
+export async function manageRepos(equipeId: string, action: 'annuler' | 'prolonger' | 'definir' | 'configurer', params?: { jours?: number; date_fin?: string }): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/teams/${equipeId}/repos`, {
     method: 'PATCH',
     body: JSON.stringify({ action, ...params }),
   });

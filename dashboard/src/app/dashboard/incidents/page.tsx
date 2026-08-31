@@ -222,7 +222,7 @@ export default function IncidentsPage() {
 
                     {/* Photo link */}
                     {inc.photo_url && (
-                      <a href={inc.photo_url} target="_blank" rel="noopener noreferrer"
+                      <a href={inc.photo_url.startsWith('http') ? inc.photo_url : `https://onsite.sarl-rmasc.com${inc.photo_url}`} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-1 text-[10px] font-medium text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full hover:bg-blue-100 transition-colors">
                         <Camera size={10} /> Photo <ExternalLink size={9} />
                       </a>

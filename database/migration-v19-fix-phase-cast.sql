@@ -1,11 +1,11 @@
 -- ============================================================================
--- Migration v18 — Fix deterministic team assignment + admin repos management
+-- Migration v19 — Fix phase_mission type cast in trigger
 -- ============================================================================
 
 BEGIN;
 
--- 1. Fix the phase relay trigger to use deterministic ordering
---    (least loaded + oldest team first, not random)
+-- Fix the trigger function: cast phase comparisons to text to avoid
+-- "operator does not exist: character varying = phase_mission" error
 CREATE OR REPLACE FUNCTION declencher_phase_suivante()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -16,8 +16,7 @@ DECLARE
     v_mission_id UUID;
 BEGIN
     IF NEW.statut = 'termine' AND OLD.statut IS DISTINCT FROM 'termine' THEN
-        -- 1. Determine next phase
-        v_prochaine_phase := CASE NEW.phase
+        v_prochaine_phase := CASE NEW.phase::text
             WHEN 'mecanique' THEN 'electrique'::phase_mission
             WHEN 'electrique' THEN 'verification'::phase_mission
             ELSE NULL
@@ -27,14 +26,12 @@ BEGIN
             RETURN NEW;
         END IF;
 
-        -- 2. Team type for next phase
-        v_equipe_type := CASE v_prochaine_phase
+        v_equipe_type := CASE v_prochaine_phase::text
             WHEN 'mecanique' THEN 'mecanique'::type_equipe
             WHEN 'electrique' THEN 'electrique'::type_equipe
             WHEN 'verification' THEN 'mixte'::type_equipe
         END;
 
-        -- 3. Check for ACTIVE mission only (exclude termine)
         IF EXISTS (
             SELECT 1 FROM ordres_de_mission om
             WHERE om.chantier_id = NEW.chantier_id
@@ -44,10 +41,9 @@ BEGIN
             RETURN NEW;
         END IF;
 
-        -- 4. Find least-loaded available team (DETERMINISTIC: least loaded + oldest first)
         SELECT e.id, e.nom INTO v_equipe_id, v_equipe_nom
         FROM equipes e
-        WHERE e.type = v_equipe_type
+        WHERE e.type::text = v_equipe_type::text
           AND e.actif = TRUE
           AND e.id <> NEW.equipe_id
           AND e.disponible_a_partir_de <= NOW()
@@ -58,31 +54,27 @@ BEGIN
           e.date_creation ASC
         LIMIT 1;
 
-        -- 5. Create mission (with or without team)
         IF v_equipe_id IS NULL THEN
             INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-            VALUES (NEW.chantier_id, NULL, v_prochaine_phase, 'en_attente', NOW(),
-                    'Phase ' || v_prochaine_phase || ' — aucune equipe dispo, assignation manuelle requise')
+            VALUES (NEW.chantier_id, NULL, v_prochaine_phase::text, 'en_attente', NOW(),
+                    'Phase ' || v_prochaine_phase || ' — aucune equipe dispo')
             RETURNING id INTO v_mission_id;
         ELSE
             UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = v_equipe_id;
-
             INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours, notes)
-            VALUES (NEW.chantier_id, v_equipe_id, v_prochaine_phase, 'en_attente', NOW(),
-                    (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = v_prochaine_phase),
+            VALUES (NEW.chantier_id, v_equipe_id, v_prochaine_phase::text, 'en_attente', NOW(),
+                    (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = v_prochaine_phase::text),
                     'Declenche auto depuis phase ' || NEW.phase)
             RETURNING id INTO v_mission_id;
         END IF;
 
-        -- 6. Generate checklist
         IF v_mission_id IS NOT NULL THEN
             INSERT INTO checklists_phases (mission_id, phase, etapes)
-            VALUES (v_mission_id, v_prochaine_phase, generer_checklist(v_prochaine_phase::text));
+            VALUES (v_mission_id, v_prochaine_phase::text, generer_checklist(v_prochaine_phase::text));
         END IF;
 
-        -- 7. Record in roadmap
         INSERT INTO roadmap_chantier (chantier_id, phase, equipe_id, statut, date_debut)
-        VALUES (NEW.chantier_id, v_prochaine_phase, v_equipe_id, 'EN_ATTENTE', NOW());
+        VALUES (NEW.chantier_id, v_prochaine_phase::text, v_equipe_id, 'EN_ATTENTE', NOW());
     END IF;
     RETURN NEW;
 END;
@@ -93,5 +85,34 @@ CREATE TRIGGER trg_mission_phase_suivante
     AFTER UPDATE OF statut ON ordres_de_mission
     FOR EACH ROW WHEN (NEW.statut = 'termine' AND (OLD.statut IS DISTINCT FROM 'termine'))
     EXECUTE FUNCTION declencher_phase_suivante();
+
+-- Also fix repos trigger for same cast issues
+CREATE OR REPLACE FUNCTION appliquer_repos_equipe()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_jours INTEGER;
+    v_interval INTERVAL;
+BEGIN
+    IF NEW.statut = 'termine' AND OLD.statut != 'termine' THEN
+        SELECT e.jours_repos INTO v_jours FROM equipes e WHERE e.id = NEW.equipe_id;
+        IF v_jours IS NULL OR v_jours <= 0 THEN
+            SELECT COALESCE(valeur::INTEGER, 3) INTO v_jours FROM parametres_systeme WHERE cle = 'jours_repos';
+        END IF;
+        IF v_jours IS NULL OR v_jours <= 0 THEN v_jours := 3; END IF;
+        v_interval := (v_jours || ' days')::INTERVAL;
+        UPDATE equipes
+        SET statut_equipe = 'EN_REPOS',
+            disponible_a_partir_de = NOW() + v_interval
+        WHERE id = NEW.equipe_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_repos_equipe ON ordres_de_mission;
+CREATE TRIGGER trg_repos_equipe
+    AFTER UPDATE OF statut ON ordres_de_mission
+    FOR EACH ROW WHEN (NEW.statut = 'termine' AND (OLD.statut IS DISTINCT FROM 'termine'))
+    EXECUTE FUNCTION appliquer_repos_equipe();
 
 COMMIT;

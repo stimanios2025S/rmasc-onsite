@@ -394,6 +394,34 @@ export default function MissionActivePage() {
     setTransferLoading(false);
   };
 
+  /* ═══ ANNULER BLOCAGE (par l'équipe) ═══ */
+  const handleAnnulerBlocageEquipe = async () => {
+    if (!mission) return;
+    if (!confirm('Le problème est résolu ? Le blocage sera annulé et vous reprendrez le travail.')) return;
+    setBlocageLoading(true);
+    try {
+      // Find the active blocage for this mission
+      const blocageRes = await fetch(`/api/mission/blocage/active/${mission.id}`);
+      if (blocageRes.ok) {
+        const { blocageId } = await blocageRes.json();
+        const res = await fetch(`/api/mission/blocage/${blocageId}/annuler`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ equipeId }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setPointageMsg({ type: 'success', text: '✅ Blocage annulé ! Mission réactivée.' });
+          loadMission();
+        } else {
+          setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+        }
+      } else {
+        setPointageMsg({ type: 'error', text: 'Aucun blocage actif trouvé.' });
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setBlocageLoading(false);
+  };
+
   /* ═══ CHECKLIST (simple, sans blocage frustrant) ═══ */
   // Toutes les étapes sont cochables librement
   // Les sous-tâches suivent l'étape parente
@@ -1111,10 +1139,15 @@ export default function MissionActivePage() {
               <Ban size={24} className="text-white" />
               <div>
                 <p className="font-bold text-white text-sm">⛔ Mission Bloquée</p>
-                <p className="text-white/70 text-xs">En attente d'El Ghani pour annuler le blocage</p>
+                <p className="text-white/70 text-xs">En attente de résolution du blocage</p>
               </div>
             </div>
-            <p className="text-white/60 text-xs mb-3">Vous ne pouvez pas continuer tant que le blocage n'est pas annulé par l'administrateur.</p>
+            <p className="text-white/60 text-xs mb-3">Le problème a été signalé. Vous pouvez annuler le blocage si le problème est résolu.</p>
+            <button onClick={handleAnnulerBlocageEquipe} disabled={blocageLoading}
+              className="w-full bg-white text-rose-600 py-3 rounded-2xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+              {blocageLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              ✅ Problème Résolu — Reprendre le Travail
+            </button>
           </div>
         </div>
       )}

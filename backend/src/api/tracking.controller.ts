@@ -379,7 +379,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
 
           const result = await pool.query(
             `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-             VALUES ($1, $2, $3::phase_mission, 'en_attente', NOW(), $4)
+             VALUES ($1, $2, $3, 'en_attente', NOW(), $4)
              RETURNING id`,
             [m.chantier_id, eq.id, nextPhase, `Transfert depuis ${m.phase} (${m.equipe_nom})`]
           );
@@ -387,13 +387,13 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
 
           await pool.query(
             `INSERT INTO checklists_phases (mission_id, phase, etapes)
-             VALUES ($1, $2::phase_mission, generer_checklist($2))`,
+             VALUES ($1, $2, generer_checklist($2))`,
             [missionNextId, nextPhase]
           );
         } else {
           const result = await pool.query(
             `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-             VALUES ($1, NULL, $2::phase_mission, 'en_attente', NOW(), $3)
+             VALUES ($1, NULL, $2, 'en_attente', NOW(), $3)
              RETURNING id`,
             [m.chantier_id, nextPhase, `Transfert depuis ${m.phase} (${m.equipe_nom}) — assignation manuelle requise`]
           );
