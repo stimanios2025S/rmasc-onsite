@@ -322,7 +322,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
       // [4b] Demandes matériel (from worker portal)
       safe(pool.query(
         `SELECT dm.id, dm.type_demande, dm.statut, dm.description, dm.items,
-                dm.pdf_url, e.nom AS equipe_nom, e.type AS equipe_type,
+                dm.photo_url, dm.pdf_url, e.nom AS equipe_nom, e.type AS equipe_type,
                 c.nom_chantier AS chantier_nom,
                 TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS cree
          FROM demandes_materiel dm
@@ -350,8 +350,29 @@ app.get('/api/dashboard/all', async (_req, res) => {
           LEFT JOIN equipes e2 ON e2.id = p.equipe_id
           LEFT JOIN ordres_de_mission om2 ON om2.id = p.mission_id
           LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
-          WHERE p.date_debut > NOW() - INTERVAL '24 hours'
-          ORDER BY moment DESC LIMIT 25
+          WHERE p.date_fin IS NULL
+         UNION ALL
+         SELECT 'reprise' AS type, 'basse'::niveau_priorite AS priorite,
+                 'Reprise — ' || COALESCE(e3.nom, 'Équipe') AS message,
+                 COALESCE(c3.nom_chantier, 'N/A') AS nom_chantier,
+                 e3.nom AS equipe_nom,
+                 TO_CHAR(p3.date_fin,'YYYY-MM-DD HH24:MI') AS moment
+          FROM pauses_journee p3
+          LEFT JOIN equipes e3 ON e3.id = p3.equipe_id
+          LEFT JOIN ordres_de_mission om3 ON om3.id = p3.mission_id
+          LEFT JOIN chantiers c3 ON c3.id = om3.chantier_id
+          WHERE p3.date_fin IS NOT NULL AND p3.date_fin > NOW() - INTERVAL '24 hours'
+         UNION ALL
+         SELECT 'materiel' AS type, 'basse'::niveau_priorite AS priorite,
+                 dm.description AS message,
+                 COALESCE(c4.nom_chantier, 'N/A') AS nom_chantier,
+                 e4.nom AS equipe_nom,
+                 TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+          FROM demandes_materiel dm
+          LEFT JOIN equipes e4 ON e4.id = dm.equipe_id
+          LEFT JOIN chantiers c4 ON c4.id = dm.chantier_id
+          WHERE dm.statut = 'EN_ATTENTE'
+          ORDER BY moment DESC LIMIT 30
         `
       )),
       // [6] Team positions (GPS tracking)

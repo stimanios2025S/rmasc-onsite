@@ -230,7 +230,30 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
        LEFT JOIN equipes e2 ON e2.id = p.equipe_id
        LEFT JOIN ordres_de_mission om2 ON om2.id = p.mission_id
        LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
-       WHERE p.date_debut > NOW() - INTERVAL '7 days' AND p.date_fin IS NULL
+       WHERE p.date_fin IS NULL AND p.date_debut > NOW() - INTERVAL '7 days'
+       UNION ALL
+       SELECT 'reprise' AS type, 'basse'::text AS priorite,
+              'Reprise du travail — ' || COALESCE(e3.nom, 'Équipe') || COALESCE(' (' || pr.type_pause || ')', '') AS message,
+              COALESCE(c3.nom_chantier, 'N/A') AS nom_chantier,
+              e3.nom AS equipe_nom,
+              TO_CHAR(pr.date_fin,'YYYY-MM-DD HH24:MI') AS moment,
+              NULL AS photo_url, pr.mission_id, NULL AS blocage_id
+       FROM pauses_journee pr
+       LEFT JOIN equipes e3 ON e3.id = pr.equipe_id
+       LEFT JOIN ordres_de_mission om3 ON om3.id = pr.mission_id
+       LEFT JOIN chantiers c3 ON c3.id = om3.chantier_id
+       WHERE pr.date_fin IS NOT NULL AND pr.date_fin > NOW() - INTERVAL '24 hours'
+       UNION ALL
+       SELECT 'materiel' AS type, 'moyenne'::text AS priorite,
+              dm.description AS message,
+              COALESCE(c4.nom_chantier, 'N/A') AS nom_chantier,
+              e4.nom AS equipe_nom,
+              TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+              dm.photo_url, dm.mission_id, NULL AS blocage_id
+       FROM demandes_materiel dm
+       LEFT JOIN equipes e4 ON e4.id = dm.equipe_id
+       LEFT JOIN chantiers c4 ON c4.id = dm.chantier_id
+       WHERE dm.type_demande = 'materiel' AND dm.statut = 'EN_ATTENTE'
        UNION ALL
        SELECT 'retard' AS type, 'haute'::text AS priorite,
               nr.motif AS message,

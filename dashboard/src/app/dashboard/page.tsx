@@ -484,7 +484,16 @@ export default function DashboardPage() {
                       </p>
                     )}
                   </div>
-                  <span className="text-[10px] text-stone-400 whitespace-nowrap">{dm.cree}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {dm.photo_url && (
+                      <a href={dm.photo_url.startsWith('http') ? dm.photo_url : `https://onsite.sarl-rmasc.com${dm.photo_url}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] font-semibold text-sky-600 bg-sky-50 px-2 py-1 rounded-full hover:bg-sky-100 flex items-center gap-1">
+                        📷 Photo
+                      </a>
+                    )}
+                    <span className="text-[10px] text-stone-400 whitespace-nowrap">{dm.cree}</span>
+                  </div>
                 </div>
               </div>
             ))}

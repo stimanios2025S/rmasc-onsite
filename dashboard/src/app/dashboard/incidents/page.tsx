@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { fetchIncidents, annulerBlocage, type IncidentData } from '@/lib/api';
 import {
   AlertTriangle, Loader2, Clock, Filter, Search, Ban, ExternalLink,
-  PauseCircle, MapPin, Camera, User, ChevronDown, CheckCircle,
+  PauseCircle, MapPin, Camera, User, ChevronDown, CheckCircle, PlayCircle,
+  Package,
 } from 'lucide-react';
 
 /* ─── CONSTANTS ────────────────────────────────────────────────────── */
@@ -15,15 +16,17 @@ const PRIORITE: Record<string, string> = {
 };
 
 const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: string }> = {
-  blocage:  { label: 'Blocage',   icon: Ban,           color: 'text-rose-600',    bg: 'bg-rose-50' },
-  retard:   { label: 'Retard',    icon: Clock,         color: 'text-orange-600',  bg: 'bg-orange-50' },
-  pause:    { label: 'Pause',     icon: PauseCircle,   color: 'text-amber-600',   bg: 'bg-amber-50' },
-  pointage: { label: 'Pointage',  icon: MapPin,        color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+  blocage:  { label: 'Blocage',       icon: Ban,           color: 'text-rose-600',    bg: 'bg-rose-50' },
+  retard:   { label: 'Retard',        icon: Clock,         color: 'text-orange-600',  bg: 'bg-orange-50' },
+  pause:    { label: 'Pause',         icon: PauseCircle,   color: 'text-amber-600',   bg: 'bg-amber-50' },
+  reprise:  { label: 'Reprise',       icon: PlayCircle,    color: 'text-emerald-600',  bg: 'bg-emerald-50' },
+  pointage: { label: 'Pointage',      icon: MapPin,        color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+  materiel: { label: 'Matériel',      icon: Package,       color: 'text-sky-600',     bg: 'bg-sky-50' },
 };
 
-const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Pointages'];
+const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Reprises', 'Matériel', 'Pointages'];
 const FILTRE_MAP: Record<string, string | null> = {
-  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Pointages: 'pointage',
+  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Reprises: 'reprise', 'Matériel': 'materiel', Pointages: 'pointage',
 };
 
 function timeAgo(d: string): string {
@@ -87,6 +90,8 @@ export default function IncidentsPage() {
   const blocages = incidents.filter(i => i.type === 'blocage');
   const retards  = incidents.filter(i => i.type === 'retard');
   const pauses   = incidents.filter(i => i.type === 'pause');
+  const reprises = incidents.filter(i => i.type === 'reprise');
+  const materiels = incidents.filter(i => i.type === 'materiel');
   const pointages = incidents.filter(i => i.type === 'pointage');
   const critiques = incidents.filter(i => i.priorite === 'critique');
 
@@ -115,7 +120,7 @@ export default function IncidentsPage() {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 sm:gap-3 mb-6">
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-stone-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-stone-400 uppercase mb-1">Total</p>
           <p className="text-2xl font-bold text-stone-700">{incidents.length}</p>
@@ -131,6 +136,14 @@ export default function IncidentsPage() {
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-amber-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-amber-400 uppercase mb-1">Pauses</p>
           <p className="text-2xl font-bold text-amber-500">{pauses.length}</p>
+        </div>
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-emerald-100 shadow-sm p-4">
+          <p className="text-[10px] font-semibold text-emerald-400 uppercase mb-1">Reprises</p>
+          <p className="text-2xl font-bold text-emerald-500">{reprises.length}</p>
+        </div>
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-sky-100 shadow-sm p-4">
+          <p className="text-[10px] font-semibold text-sky-400 uppercase mb-1">Matériel</p>
+          <p className="text-2xl font-bold text-sky-500">{materiels.length}</p>
         </div>
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-indigo-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-indigo-400 uppercase mb-1">Pointages</p>
