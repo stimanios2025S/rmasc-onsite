@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -7,6 +7,199 @@ import {
   User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
+
+/* ═══════════════════════════════════════════════════════════════
+   TEAM SEARCH BAR — Replaces the old <select> dropdown
+   ═══════════════════════════════════════════════════════════════ */
+const STATUT_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  DISPONIBLE: { label: 'Disponible', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  EN_MISSION: { label: 'En mission', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+  EN_REPOS: { label: 'En repos', color: 'text-stone-400', bg: 'bg-stone-100 border-stone-200' },
+};
+const TYPE_ICONS: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield, mixte: Shield };
+
+function TeamSearchBar({
+  equipes,
+  selectedId,
+  onSelect,
+  disabled,
+  placeholder,
+}: {
+  equipes: EquipeData[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const selectedEquipe = equipes.find(e => e.id === selectedId);
+
+  // Update query when selected changes externally
+  useEffect(() => {
+    if (selectedEquipe) setQuery('');
+  }, [selectedEquipe?.id]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return equipes;
+    const q = query.toLowerCase().trim();
+    return equipes.filter(e =>
+      e.nom.toLowerCase().includes(q) ||
+      e.type.toLowerCase().includes(q) ||
+      e.statut_equipe.toLowerCase().includes(q) ||
+      e.membres_noms?.toLowerCase().includes(q) ||
+      (e as any).equipe_numero?.toString().includes(q) ||
+      (e as any).chef_nom?.toLowerCase().includes(q) ||
+      (e as any).telephone?.includes(q)
+    );
+  }, [equipes, query]);
+
+  // Outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!open) { if (e.key === 'ArrowDown' || e.key === 'Enter') { setOpen(true); setHighlightIdx(0); e.preventDefault(); } return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && highlightIdx >= 0 && filtered[highlightIdx]) {
+      e.preventDefault();
+      onSelect(filtered[highlightIdx].id);
+      setOpen(false);
+      setQuery('');
+      setHighlightIdx(-1);
+    }
+    else if (e.key === 'Escape') { setOpen(false); setHighlightIdx(-1); }
+  }
+
+  const TYPE_LABELS: Record<string, string> = { mecanique: 'Méca', electrique: 'Élec', verification: 'Vérif', mixte: 'Mixte' };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      {/* Display / Trigger */}
+      {!open && selectedEquipe && !disabled ? (
+        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-indigo-100 transition-all" onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}>
+          <Users size={14} className="text-indigo-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-indigo-800 truncate">{selectedEquipe.nom}</span>
+              <span className="text-[10px] font-medium text-indigo-500 bg-indigo-100 px-1.5 py-0.5 rounded shrink-0">{TYPE_LABELS[selectedEquipe.type] || selectedEquipe.type}</span>
+            </div>
+            {selectedEquipe.membres_noms && (
+              <p className="text-[10px] text-indigo-500 truncate mt-0.5">{selectedEquipe.membres_noms}</p>
+            )}
+          </div>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${STATUT_LABELS[selectedEquipe.statut_equipe]?.bg || 'bg-stone-100'} ${STATUT_LABELS[selectedEquipe.statut_equipe]?.color || 'text-stone-500'} border`}>
+            {STATUT_LABELS[selectedEquipe.statut_equipe]?.label || selectedEquipe.statut_equipe}
+          </span>
+          <button onClick={(e) => { e.stopPropagation(); onSelect(''); setQuery(''); }} className="ml-auto text-stone-300 hover:text-rose-500 shrink-0"><X size={14} /></button>
+        </div>
+      ) : (
+        <div className={`flex items-center gap-2 bg-stone-50 border rounded-xl px-3 py-2.5 transition-all ${open ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-stone-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-text'}`}
+          onClick={() => { if (!disabled) { setOpen(true); setTimeout(() => inputRef.current?.focus(), 50); } }}>
+          <Search size={14} className={`${open ? 'text-indigo-400' : 'text-stone-300'} shrink-0`} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setHighlightIdx(0); if (!open) setOpen(true); }}
+            onFocus={() => { if (!disabled) setOpen(true); }}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder || 'Rechercher une équipe...'}
+            disabled={disabled}
+            className="bg-transparent text-sm text-stone-700 outline-none flex-1 placeholder:text-stone-300 disabled:cursor-not-allowed"
+          />
+          {query && (
+            <button onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="text-stone-300 hover:text-stone-500 shrink-0">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Dropdown */}
+      {open && !disabled && (
+        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stone-200 shadow-2xl shadow-stone-200/50 z-50 overflow-hidden max-h-72 flex flex-col">
+          {/* Stats bar */}
+          <div className="flex items-center gap-2 px-4 py-2 bg-stone-50 border-b border-stone-100">
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+              {filtered.length} équipe{filtered.length !== 1 ? 's' : ''}
+            </span>
+            {query && (
+              <span className="text-[10px] text-stone-300">· pour "{query}"</span>
+            )}
+            <div className="ml-auto flex items-center gap-1.5">
+              <span className="text-[10px] font-medium text-emerald-500">
+                {equipes.filter(e => e.statut_equipe === 'DISPONIBLE').length} dispo
+              </span>
+              <span className="text-[10px] font-medium text-blue-500">
+                {equipes.filter(e => e.statut_equipe === 'EN_MISSION').length} en mission
+              </span>
+            </div>
+          </div>
+          {/* Team list */}
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <Search size={24} className="text-stone-200 mx-auto mb-2" />
+                <p className="text-xs text-stone-400">Aucune équipe trouvée</p>
+                <p className="text-[10px] text-stone-300 mt-1">Essayez un autre terme de recherche</p>
+              </div>
+            ) : (
+              filtered.map((eq, idx) => {
+                const TypeIcon = TYPE_ICONS[eq.type] || Shield;
+                const isSel = eq.id === selectedId;
+                const statutInfo = STATUT_LABELS[eq.statut_equipe] || { label: eq.statut_equipe, color: 'text-stone-500', bg: 'bg-stone-100' };
+                return (
+                  <button
+                    key={eq.id}
+                    onClick={() => { onSelect(eq.id); setOpen(false); setQuery(''); }}
+                    onMouseEnter={() => setHighlightIdx(idx)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all ${isSel ? 'bg-indigo-50' : idx === highlightIdx ? 'bg-stone-50' : 'bg-white'} hover:bg-indigo-50 border-b border-stone-50 last:border-0`}
+                  >
+                    {/* Icon */}
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${eq.type === 'mecanique' ? 'bg-blue-100 text-blue-600' : eq.type === 'electrique' ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <TypeIcon size={14} />
+                    </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-stone-800 truncate">{eq.nom}</span>
+                        {isSel && <CheckCircle size={12} className="text-indigo-500 shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] font-medium text-stone-400">{TYPE_LABELS[eq.type] || eq.type}</span>
+                        {eq.membres_noms && (
+                          <>
+                            <span className="text-stone-200">·</span>
+                            <span className="text-[10px] text-stone-400 truncate">👤 {eq.membres_noms}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {/* Status badge */}
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 border ${statutInfo.bg} ${statutInfo.color}`}>
+                      {statutInfo.label}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const PHASE_ICON: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield };
 const PHASE_COLOR: Record<string, string> = {
@@ -695,16 +888,12 @@ export default function ChantiersPage() {
                     if (canReassign) {
                       return (
                         <>
-                          <select
-                            value={editForm.equipe_id}
-                            onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
-                            {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
-                              <option key={e.id} value={e.id}>
-                                {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
-                              </option>
-                            ))}
-                          </select>
+                          <TeamSearchBar
+                            equipes={equipes}
+                            selectedId={editForm.equipe_id}
+                            onSelect={(id) => setEditForm({ ...editForm, equipe_id: id })}
+                            placeholder="Rechercher une équipe par nom, type, chef..."
+                          />
                           <p className="text-[10px] text-stone-400 mt-1.5">💡 Travail pas encore commencé — vous pouvez changer l'équipe.</p>
                         </>
                       );
@@ -725,18 +914,13 @@ export default function ChantiersPage() {
                   })()
                 ) : (
                   <>
-                    <select
-                      value={editForm.equipe_id}
-                      onChange={e => setEditForm({ ...editForm, equipe_id: e.target.value })}
-                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all">
-                      <option value="">— Aucune équipe —</option>
-                      {equipes.filter(e => e.statut_equipe !== 'EN_REPOS').map(e => (
-                        <option key={e.id} value={e.id}>
-                          {e.nom} — {e.type} ({e.statut_equipe === 'DISPONIBLE' ? '✅ Dispo' : '🔄 En mission'})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-stone-400 mt-1.5">Aucune équipe assignée — sélectionnez une équipe.</p>
+                    <TeamSearchBar
+                      equipes={equipes}
+                      selectedId={editForm.equipe_id}
+                      onSelect={(id) => setEditForm({ ...editForm, equipe_id: id })}
+                      placeholder="Rechercher une équipe à assigner..."
+                    />
+                    <p className="text-[10px] text-stone-400 mt-1.5">Aucune équipe assignée — recherchez et sélectionnez une équipe.</p>
                   </>
                 )}
               </div>

@@ -173,7 +173,9 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
                WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) AS missions,
               CASE WHEN e.disponible_a_partir_de > NOW()
                 THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT
-                ELSE 0 END AS jours_repos_restants
+                ELSE 0 END AS jours_repos_restants,
+              (SELECT STRING_AGG(TRIM(COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')), ', ')
+               FROM utilisateurs u WHERE u.equipe_id = e.id AND u.actif = TRUE) AS membres_noms
        FROM equipes e ORDER BY e.type, e.nom`
     );
     res.json(rows);
