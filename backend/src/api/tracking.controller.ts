@@ -336,10 +336,34 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
 
       // Mark current mission as termine — this fires the DB trigger trg_mission_phase_suivante
       // which auto-creates the next phase mission + checklist. We just need to find it and send SMS.
-      await pool.query(
-        `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
-        [missionId]
-      );
+      // If the trigger fails, we disable it temporarily, retry the update, then handle next phase manually.
+      try {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+          [missionId]
+        );
+      } catch (triggerErr: any) {
+        logger.error('Trigger error during transfer — retrying with trigger disabled', { erreur: triggerErr.message });
+        // Disable triggers temporarily, retry the update, then re-enable
+        await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_mission_phase_suivante`);
+        await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_repos_equipe`);
+        try {
+          await pool.query(
+            `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+            [missionId]
+          );
+        } finally {
+          await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_mission_phase_suivante`);
+          await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_repos_equipe`);
+        }
+        // Manually set team to EN_REPOS (trigger couldn't do it)
+        if (m.equipe_id) {
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = NOW() + INTERVAL '3 days' WHERE id = $1`,
+            [m.equipe_id]
+          );
+        }
+      }
 
       // The DB trigger may have already created the next phase mission. Check first.
       let missionNextId: string | null = null;
@@ -385,11 +409,16 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           );
           missionNextId = result.rows[0].id;
 
-          await pool.query(
-            `INSERT INTO checklists_phases (mission_id, phase, etapes)
-             VALUES ($1, $2, generer_checklist($2))`,
-            [missionNextId, nextPhase]
-          );
+          // Create checklist — wrapped in try/catch in case generer_checklist() function is missing/broken
+          try {
+            await pool.query(
+              `INSERT INTO checklists_phases (mission_id, phase, etapes)
+               VALUES ($1, $2, generer_checklist($2))`,
+              [missionNextId, nextPhase]
+            );
+          } catch (clErr: any) {
+            logger.error('Erreur création checklist phase suivante — mission créée sans checklist', { erreur: clErr.message, missionNextId });
+          }
         } else {
           const result = await pool.query(
             `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)

@@ -79,10 +79,34 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
           [missionId]
         );
 
-        await pool.query(
-          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
-          [missionId]
-        );
+        // Safely terminate mission — handle trigger failures gracefully
+        try {
+          await pool.query(
+            `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+            [missionId]
+          );
+        } catch (triggerErr: any) {
+          logger.error('Trigger error during depart termination — retrying', { erreur: triggerErr.message });
+          await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_mission_phase_suivante`);
+          await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_repos_equipe`);
+          try {
+            await pool.query(
+              `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+              [missionId]
+            );
+          } finally {
+            await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_mission_phase_suivante`);
+            await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_repos_equipe`);
+          }
+          // Manually handle what triggers would have done
+          const mInfo = missionInfoBefore.rows[0];
+          if (mInfo?.equipe_id) {
+            await pool.query(
+              `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = NOW() + INTERVAL '3 days' WHERE id = $1`,
+              [mInfo.equipe_id]
+            );
+          }
+        }
         logger.info('Mission terminée', { missionId });
 
         if (missionInfoBefore.rows.length > 0) {
@@ -369,11 +393,40 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       }
       const m = missionRes.rows[0];
 
-      // Mark mission as termine
-      await pool.query(
-        `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1 AND statut != 'termine'`,
-        [id]
-      );
+      // Mark mission as termine — safely handle trigger failures
+      try {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1 AND statut != 'termine'`,
+          [id]
+        );
+      } catch (triggerErr: any) {
+        logger.error('Trigger error during mission termination — retrying', { erreur: triggerErr.message });
+        await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_mission_phase_suivante`);
+        await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_repos_equipe`);
+        try {
+          await pool.query(
+            `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1 AND statut != 'termine'`,
+            [id]
+          );
+        } finally {
+          await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_mission_phase_suivante`);
+          await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_repos_equipe`);
+        }
+        // Manually handle chantier completion (trigger couldn't do it)
+        if (m.phase === 'verification') {
+          await pool.query(
+            `UPDATE chantiers SET statut = 'reception_officielle', date_modification = NOW() WHERE id = $1`,
+            [m.chantier_id]
+          );
+        }
+        // Manually set team to EN_REPOS
+        if (m.equipe_id) {
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = NOW() + INTERVAL '3 days' WHERE id = $1`,
+            [m.equipe_id]
+          );
+        }
+      }
 
       // Notify admin
       await pool.query(

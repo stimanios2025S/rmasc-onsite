@@ -546,15 +546,17 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
     const ref = reference_commande_erp || `MAN-${Date.now().toString().slice(-6)}`;
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
 
-    // Handle coordinates: if provided, use them; otherwise NULL (no geocoding crash)
-    const hasCoords = latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null;
+    // Handle coordinates: validate not NaN (parseFloat('') returns NaN which breaks PostGIS)
+    const latNum = (latitude != null && !isNaN(Number(latitude))) ? Number(latitude) : null;
+    const lngNum = (longitude != null && !isNaN(Number(longitude))) ? Number(longitude) : null;
+    const hasCoords = latNum !== null && lngNum !== null;
     const { rows } = await pool.query(
       `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
                               rayon_geofencing, statut, client_nom, complexite,
                               dxf_url, pdf_url, fiche_technique, date_echeance)
        VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11, $12)
        RETURNING id`,
-      [ref, nom, adresse || null, hasCoords ? longitude : null, hasCoords ? latitude : null, rayon_geofencing || 50, client_nom || null, validComplexity,
+      [ref, nom, adresse || null, lngNum, latNum, rayon_geofencing || 50, client_nom || null, validComplexity,
        dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null, date_echeance || null]
     );
     const chantierId = rows[0].id;
