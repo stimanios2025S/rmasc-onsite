@@ -331,48 +331,62 @@ app.get('/api/dashboard/all', async (_req, res) => {
          WHERE dm.statut = 'EN_ATTENTE'
          ORDER BY dm.date_creation DESC LIMIT 20`
       )),
-      // [5] Incidents (blocages + pauses récentes)
+      // [5] Incidents (blocages + pauses + retards + matériel) — all include photo_url + blocage_id
       safe(pool.query(`
-         SELECT 'blocage' AS type, b.priorite, b.raison_blocage AS message, c.nom_chantier,
-                 e.nom AS equipe_nom, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+         SELECT 'blocage' AS type, b.priorite::text, b.raison_blocage AS message, c.nom_chantier,
+                 e.nom AS equipe_nom, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+                 b.photo_proof_url AS photo_url, b.id AS blocage_id
           FROM blocages_et_requisitions b
           JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
           JOIN chantiers c ON c.id=om.chantier_id
           LEFT JOIN equipes e ON e.id=om.equipe_id
           WHERE b.statut IN ('ouvert','en_cours')
          UNION ALL
-         SELECT 'pause' AS type, 'basse'::niveau_priorite AS priorite,
+         SELECT 'pause' AS type, 'basse'::text,
                  p.type_pause || ' — ' || COALESCE(e2.nom, 'Équipe') AS message,
                  COALESCE(c2.nom_chantier, 'N/A') AS nom_chantier,
                  e2.nom AS equipe_nom,
-                 TO_CHAR(p.date_debut,'YYYY-MM-DD HH24:MI') AS moment
+                 TO_CHAR(p.date_debut,'YYYY-MM-DD HH24:MI') AS moment,
+                 NULL::text AS photo_url, NULL::text AS blocage_id
           FROM pauses_journee p
           LEFT JOIN equipes e2 ON e2.id = p.equipe_id
           LEFT JOIN ordres_de_mission om2 ON om2.id = p.mission_id
           LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
           WHERE p.date_fin IS NULL
          UNION ALL
-         SELECT 'reprise' AS type, 'basse'::niveau_priorite AS priorite,
+         SELECT 'reprise' AS type, 'basse'::text,
                  'Reprise — ' || COALESCE(e3.nom, 'Équipe') AS message,
                  COALESCE(c3.nom_chantier, 'N/A') AS nom_chantier,
                  e3.nom AS equipe_nom,
-                 TO_CHAR(p3.date_fin,'YYYY-MM-DD HH24:MI') AS moment
+                 TO_CHAR(p3.date_fin,'YYYY-MM-DD HH24:MI') AS moment,
+                 NULL::text AS photo_url, NULL::text AS blocage_id
           FROM pauses_journee p3
           LEFT JOIN equipes e3 ON e3.id = p3.equipe_id
           LEFT JOIN ordres_de_mission om3 ON om3.id = p3.mission_id
           LEFT JOIN chantiers c3 ON c3.id = om3.chantier_id
           WHERE p3.date_fin IS NOT NULL AND p3.date_fin > NOW() - INTERVAL '24 hours'
          UNION ALL
-         SELECT 'materiel' AS type, 'basse'::niveau_priorite AS priorite,
+         SELECT 'materiel' AS type, 'moyenne'::text,
                  dm.description AS message,
                  COALESCE(c4.nom_chantier, 'N/A') AS nom_chantier,
                  e4.nom AS equipe_nom,
-                 TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS moment
+                 TO_CHAR(dm.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+                 dm.photo_url, NULL::text AS blocage_id
           FROM demandes_materiel dm
           LEFT JOIN equipes e4 ON e4.id = dm.equipe_id
           LEFT JOIN chantiers c4 ON c4.id = dm.chantier_id
           WHERE dm.statut = 'EN_ATTENTE'
-          ORDER BY moment DESC LIMIT 30
+         UNION ALL
+         SELECT 'retard' AS type, 'haute'::text,
+                 nr.motif AS message,
+                 c.nom_chantier, e.nom AS equipe_nom,
+                 TO_CHAR(nr.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
+                 nr.photo_url, NULL::text AS blocage_id
+          FROM notifications_retard nr
+          JOIN chantiers c ON c.id = nr.chantier_id
+          JOIN equipes e ON e.id = nr.equipe_id
+          WHERE nr.date_creation > NOW() - INTERVAL '7 days'
+          ORDER BY moment DESC LIMIT 50
         `
       )),
       // [6] Team positions (GPS tracking)

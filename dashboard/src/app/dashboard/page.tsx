@@ -204,7 +204,7 @@ export default function DashboardPage() {
 
       {/* Incidents */}
       <div className="mb-8">
-        <IncidentsWidget incidents={incidents} />
+        <IncidentsWidget incidents={incidents} onAnnulerBlocage={handleAnnulerBlocage} actionLoading={actionLoading} />
       </div>
 
       {/* ═══ RETARDS SIGNALÉS (sync technicien → admin) ═══ */}
@@ -577,7 +577,7 @@ function KpiCard({ titre, valeur, couleur, icon, badge }: { titre: string; valeu
   );
 }
 
-function IncidentsWidget({ incidents }: { incidents: IncidentData[] }) {
+function IncidentsWidget({ incidents, onAnnulerBlocage, actionLoading }: { incidents: IncidentData[]; onAnnulerBlocage: (id: string) => void; actionLoading: string | null }) {
   const blocages = incidents.filter(i => i.type === 'blocage');
   const pauses = incidents.filter(i => i.type === 'pause');
   const pointages = incidents.filter(i => i.type === 'pointage');
@@ -600,6 +600,24 @@ function IncidentsWidget({ incidents }: { incidents: IncidentData[] }) {
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRIORITE_COULEUR[inc.priorite] || 'bg-stone-100 text-stone-500'}`}>{inc.priorite?.toUpperCase()}</span>
                 </div>
                 <p className="text-[12px] text-stone-400 mt-1">{inc.nom_chantier} • {timeAgo(inc.moment)}</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  {inc.photo_url && (
+                    <a href={inc.photo_url.startsWith('http') ? inc.photo_url : `https://onsite.sarl-rmasc.com${inc.photo_url}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full hover:bg-blue-100 flex items-center gap-1">
+                      📷 Photo
+                    </a>
+                  )}
+                  {inc.blocage_id && (
+                    <button
+                      onClick={() => onAnnulerBlocage(inc.blocage_id!)}
+                      disabled={actionLoading === `blocage-${inc.blocage_id}`}
+                      className="text-[10px] font-bold text-white bg-rose-500 hover:bg-rose-600 px-2 py-0.5 rounded-full transition-all disabled:opacity-50"
+                    >
+                      {actionLoading === `blocage-${inc.blocage_id}` ? '...' : '✕ Annuler'}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {pauses.slice(0, 4).map((inc, i) => (

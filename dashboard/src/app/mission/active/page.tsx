@@ -482,9 +482,17 @@ export default function MissionActivePage() {
     try {
       let photoUrl: string | null = null;
       if (blocagePhoto) {
-        const fd = new FormData(); fd.append('file', blocagePhoto); fd.append('type', 'photo_blocage');
-        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
-        if (upRes.ok) photoUrl = (await upRes.json()).url;
+        try {
+          const fd = new FormData(); fd.append('file', blocagePhoto); fd.append('type', 'photo_blocage');
+          const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+          if (upRes.ok) {
+            photoUrl = (await upRes.json()).url;
+          } else {
+            setPointageMsg({ type: 'error', text: '⚠ Photo non envoyée — le blocage sera signalé sans photo. Réessayez si nécessaire.' });
+          }
+        } catch {
+          setPointageMsg({ type: 'error', text: '⚠ Échec envoi photo — le blocage est envoyé sans photo.' });
+        }
       }
       // Auto-fill raison from motifRetard if raison is empty
       const raisonFinale = blocageForm.raison || blocageForm.motifRetard || 'Non spécifié';
@@ -534,9 +542,17 @@ export default function MissionActivePage() {
     try {
       let photoUrl: string | null = null;
       if (retardPhoto) {
-        const fd = new FormData(); fd.append('file', retardPhoto); fd.append('type', 'photo_retard');
-        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
-        if (upRes.ok) photoUrl = (await upRes.json()).url;
+        try {
+          const fd = new FormData(); fd.append('file', retardPhoto); fd.append('type', 'photo_retard');
+          const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+          if (upRes.ok) {
+            photoUrl = (await upRes.json()).url;
+          } else {
+            setPointageMsg({ type: 'error', text: '⚠ Photo non envoyée — le retard sera notifié sans photo.' });
+          }
+        } catch {
+          setPointageMsg({ type: 'error', text: '⚠ Échec envoi photo — le retard est notifié sans photo.' });
+        }
       }
       // Use the new materiel/signaler endpoint so it appears in admin Demandes page
       await fetch('/api/materiel/signaler', {
@@ -567,9 +583,17 @@ export default function MissionActivePage() {
     try {
       let photoUrl: string | null = null;
       if (demandePhoto) {
-        const fd = new FormData(); fd.append('file', demandePhoto); fd.append('type', 'photo_demande');
-        const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
-        if (upRes.ok) photoUrl = (await upRes.json()).url;
+        try {
+          const fd = new FormData(); fd.append('file', demandePhoto); fd.append('type', 'photo_demande');
+          const upRes = await fetch('/api/upload/single', { method: 'POST', body: fd });
+          if (upRes.ok) {
+            photoUrl = (await upRes.json()).url;
+          } else {
+            setPointageMsg({ type: 'error', text: '⚠ Photo non envoyée — la demande sera envoyée sans photo.' });
+          }
+        } catch {
+          setPointageMsg({ type: 'error', text: '⚠ Échec envoi photo — la demande est envoyée sans photo.' });
+        }
       }
       const res = await fetch('/api/materiel/demande', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

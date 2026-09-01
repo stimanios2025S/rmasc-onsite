@@ -10,8 +10,7 @@ import { useState } from 'react';
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: MapPin, label: 'Chantiers', href: '/dashboard/chantiers' },
-  { icon: Users, label: 'Équipes', href: '/dashboard/equipes' },
-  { icon: ShieldCheck, label: 'Team Management', href: '/dashboard/team-management' },
+  { icon: ShieldCheck, label: 'Équipes', href: '/dashboard/team-management' },
   { icon: Clock, label: 'Feuille de Temps', href: '/dashboard/timesheet' },
   { icon: MessageSquareText, label: 'SMS Auto', href: '/dashboard/sms' },
   { icon: AlertTriangle, label: 'Incidents', href: '/dashboard/incidents' },
