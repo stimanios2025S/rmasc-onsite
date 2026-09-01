@@ -536,10 +536,11 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
       }
 
       // Create new mission for the SAME team with the next phase
+      // Team is already on site → start directly as en_cours
       const nextPhaseLabel = nextPhase === 'electrique' ? 'Électrique' : 'Vérification';
       const result = await pool.query(
-        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
-         VALUES ($1, $2, $3, 'en_attente', NOW(), $4)
+        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, date_debut_effectif, notes)
+         VALUES ($1, $2, $3, 'en_cours', NOW(), NOW(), $4)
          RETURNING id`,
         [m.chantier_id, equipeId, nextPhase,
          `${m.equipe_nom} a accepté la phase ${nextPhaseLabel} (transition depuis ${m.phase})`]
