@@ -480,6 +480,146 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
     }
   });
 
+  // ─── 5.5. ACCEPTER LA PHASE SUIVANTE — L'équipe mécanique/électrique continue ──
+  // If the team accepts, they get the next phase in their own portal instead of transferring
+  router.post('/accepter-phase', async (req, res) => {
+    try {
+      const { missionId, equipeId } = req.body;
+      if (!missionId || !equipeId) {
+        return res.status(400).json({ erreur: 'missionId et equipeId requis.' });
+      }
+
+      // Get current mission info
+      const missionRes = await pool.query(
+        `SELECT om.*, c.nom_chantier, e.nom AS equipe_nom, e.type::text AS equipe_type
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.id = $1`,
+        [missionId]
+      );
+      if (missionRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Mission introuvable.' });
+      }
+      const m = missionRes.rows[0];
+
+      // Only mecanique and electrique can accept next phase
+      if (m.phase !== 'mecanique' && m.phase !== 'electrique') {
+        return res.status(400).json({ erreur: 'Seules les phases mécanique et électrique permettent de continuer.' });
+      }
+
+      // Determine next phase
+      const nextPhase = m.phase === 'mecanique' ? 'electrique' : 'verification';
+
+      // Check if the team already has an active mission for the next phase
+      const existingActive = await pool.query(
+        `SELECT id FROM ordres_de_mission
+         WHERE equipe_id = $1 AND phase = $2 AND statut NOT IN ('termine')
+         LIMIT 1`,
+        [equipeId, nextPhase]
+      );
+      if (existingActive.rows.length > 0) {
+        return res.status(400).json({ erreur: 'Cette équipe a déjà une mission active pour cette phase.' });
+      }
+
+      // Terminate current mission — disable triggers to prevent auto-creation for another team
+      await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_mission_phase_suivante`);
+      await pool.query(`ALTER TABLE ordres_de_mission DISABLE TRIGGER trg_repos_equipe`);
+      try {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW() WHERE id = $1`,
+          [missionId]
+        );
+      } finally {
+        await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_mission_phase_suivante`);
+        await pool.query(`ALTER TABLE ordres_de_mission ENABLE TRIGGER trg_repos_equipe`);
+      }
+
+      // Create new mission for the SAME team with the next phase
+      const nextPhaseLabel = nextPhase === 'electrique' ? 'Électrique' : 'Vérification';
+      const result = await pool.query(
+        `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
+         VALUES ($1, $2, $3, 'en_attente', NOW(), $4)
+         RETURNING id`,
+        [m.chantier_id, equipeId, nextPhase,
+         `${m.equipe_nom} a accepté la phase ${nextPhaseLabel} (transition depuis ${m.phase})`]
+      );
+      const newMissionId = result.rows[0].id;
+
+      // Create checklist for the new phase
+      try {
+        await pool.query(
+          `INSERT INTO checklists_phases (mission_id, phase, etapes)
+           VALUES ($1, $2, generer_checklist($2))`,
+          [newMissionId, nextPhase]
+        );
+      } catch (clErr: any) {
+        logger.error('Erreur création checklist phase acceptée', { erreur: clErr.message });
+      }
+
+      // Keep team as EN_MISSION (not EN_REPOS!)
+      await pool.query(
+        `UPDATE equipes SET statut_equipe = 'EN_MISSION', date_modification = NOW() WHERE id = $1`,
+        [equipeId]
+      );
+
+      // Record in roadmap
+      try {
+        await pool.query(
+          `INSERT INTO roadmap_chantier (chantier_id, phase, equipe_id, statut, date_debut)
+           VALUES ($1, $2, $3, 'EN_COURS', NOW())`,
+          [m.chantier_id, nextPhase, equipeId]
+        );
+      } catch (_) { /* non-critical */ }
+
+      // 📡 SSE: Notify admin that the team accepted the next phase
+      eventBus.emit('phase_acceptee', {
+        missionId: newMissionId,
+        chantierId: m.chantier_id,
+        chantierNom: m.nom_chantier,
+        equipeId,
+        equipeNom: m.equipe_nom,
+        equipeType: m.equipe_type,
+        anciennePhase: m.phase,
+        nouvellePhase: nextPhase,
+      });
+
+      // 📲 SMS notification to admin
+      try {
+        const telAdminRes = await pool.query(
+          `SELECT telephone FROM utilisateurs WHERE role = 'administrateur' AND telephone IS NOT NULL LIMIT 1`
+        );
+        if (telAdminRes.rows.length > 0 && smsService) {
+          await smsService.notifierNouvelleMission({
+            equipeId, equipeNom: m.equipe_nom,
+            telephone: telAdminRes.rows[0].telephone,
+            phase: nextPhase, chantierNom: m.nom_chantier, adresse: null,
+            chantierId: m.chantier_id, missionId: newMissionId,
+          });
+        }
+      } catch (smsErr) {
+        logger.error('Erreur SMS phase acceptée', { erreur: (smsErr as any).message });
+      }
+
+      logger.info('Phase suivante acceptée par l\'équipe', {
+        ancienneMission: missionId, nouvelleMission: newMissionId,
+        equipe: m.equipe_nom, chantier: m.nom_chantier,
+        nouvellePhase: nextPhase,
+      });
+
+      res.json({
+        ok: true,
+        newMissionId,
+        nouvellePhase: nextPhase,
+        nouvellePhaseLabel: nextPhaseLabel,
+        message: `✅ ${m.equipe_nom} continue avec la phase ${nextPhaseLabel} sur "${m.nom_chantier}".`,
+      });
+    } catch (err: any) {
+      logger.error('Erreur acceptation phase', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // ─── 6. POSITIONS ÉQUIPES — Pour la carte admin (temps réel) ─────
   router.get('/equipes', async (_req, res) => {
     try {

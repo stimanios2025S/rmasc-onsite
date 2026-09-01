@@ -64,6 +64,10 @@ export default function MissionActivePage() {
   const [retardLoading, setRetardLoading] = useState(false);
   const [syncDot, setSyncDot] = useState(false); // indicateur sync temps réel
 
+  // ─── Phase choice modal (continuer ou transférer) ───
+  const [showPhaseChoice, setShowPhaseChoice] = useState(false);
+  const [phaseChoiceLoading, setPhaseChoiceLoading] = useState(false);
+
   // ─── Demande matériel ───
   const [demandeItems, setDemandeItems] = useState<{ nom: string; quantite: number; categorie: string }[]>([]);
   const [demandeItemNom, setDemandeItemNom] = useState('');
@@ -392,6 +396,51 @@ export default function MissionActivePage() {
       }
     } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
     setTransferLoading(false);
+  };
+
+  /* ═══ ACCEPTER LA PHASE SUIVANTE — L'équipe continue elle-même ═══ */
+  const handleAccepterPhase = async () => {
+    if (!mission) return;
+    setPhaseChoiceLoading(true);
+    try {
+      const res = await fetch('/api/tracking/accepter-phase', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ missionId: mission.id, equipeId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowPhaseChoice(false);
+        setPointageMsg({ type: 'success', text: data.message });
+        loadMission();
+      } else {
+        setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+        setShowPhaseChoice(false);
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setPhaseChoiceLoading(false);
+  };
+
+  /* ═══ TRANSFÉRER LA PHASE SUIVANTE — Équipe différente ═══ */
+  const handleRefuserPhase = async () => {
+    if (!mission) return;
+    setPhaseChoiceLoading(true);
+    try {
+      const res = await fetch('/api/tracking/transferer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ missionId: mission.id, equipeId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowPhaseChoice(false);
+        setPointageMsg({ type: 'success', text: data.message });
+        setPeutTransférer(false);
+        loadMission();
+      } else {
+        setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+        setShowPhaseChoice(false);
+      }
+    } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+    setPhaseChoiceLoading(false);
   };
 
   /* ═══ ANNULER BLOCAGE (par l'équipe) ═══ */
@@ -1176,7 +1225,7 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ TRANSFERT PHASE (Méca→Élec ou Élec→Vérification) ═══ */}
+      {/* ═══ TERMINER LA PHASE — Choix: continuer ou transférer ═══ */}
       {(isEnCours || isArrive) && (isMecanique || isElectrique) && checklist?.complete && (
         <div className="mx-4 mb-4">
           <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-5 shadow-lg shadow-indigo-200">
@@ -1187,14 +1236,14 @@ export default function MissionActivePage() {
                   {isMecanique ? 'Phase Mécanique Terminée !' : 'Phase Électrique Terminée !'}
                 </p>
                 <p className="text-white/70 text-xs">
-                  {isMecanique ? 'Transférer à l\'équipe électrique' : 'Transférer à l\'équipe de vérification'}
+                  {isMecanique ? 'Voulez-vous continuer avec la phase électrique ?' : 'Voulez-vous continuer avec la phase de vérification ?'}
                 </p>
               </div>
             </div>
-            <button onClick={handleTransferer} disabled={transferLoading}
+            <button onClick={() => setShowPhaseChoice(true)}
               className="w-full bg-white text-indigo-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
-              {transferLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
-              {isMecanique ? '⚡ Envoyer à l\'Équipe Électrique' : '🛡️ Envoyer à l\'Équipe Vérification'}
+              <ArrowRightLeft size={22} />
+              {isMecanique ? '⚡ Terminer & Choisir la suite' : '🛡️ Terminer & Choisir la suite'}
             </button>
           </div>
         </div>
@@ -1379,6 +1428,70 @@ export default function MissionActivePage() {
                 Notifier El Ghani
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL CHOIX PHASE — Continuer ou Transférer ═══ */}
+      {showPhaseChoice && mission && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 sm:m-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className={`w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
+                isMecanique ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-orange-500 to-orange-600'
+              }`}>
+                <ArrowRightLeft size={28} className="text-white" />
+              </div>
+              <h3 className="font-bold text-lg text-stone-800 mb-1">
+                Phase {isMecanique ? 'Mécanique' : 'Électrique'} Terminée !
+              </h3>
+              <p className="text-sm text-stone-400">
+                Que souhaitez-vous faire pour la phase suivante ?
+              </p>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              {/* Option 1: Continuer */}
+              <button onClick={handleAccepterPhase} disabled={phaseChoiceLoading}
+                className="w-full p-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-all text-left disabled:opacity-50 group">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                    {phaseChoiceLoading ? <Loader2 size={18} className="text-white animate-spin" /> : <CheckCircle size={18} className="text-white" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-emerald-700 text-sm">
+                      {isMecanique ? '⚡ Je continue avec la phase Électrique' : '🛡️ Je continue avec la Vérification'}
+                    </p>
+                    <p className="text-xs text-emerald-600 mt-0.5">
+                      Les étapes {isMecanique ? 'électriques' : 'de vérification'} s'ouvrent dans votre portail. Pas de transfert.
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Transférer */}
+              <button onClick={handleRefuserPhase} disabled={phaseChoiceLoading}
+                className="w-full p-4 rounded-2xl border-2 border-stone-200 bg-stone-50 hover:bg-stone-100 transition-all text-left disabled:opacity-50 group">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-stone-400 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                    {phaseChoiceLoading ? <Loader2 size={18} className="text-white animate-spin" /> : <ArrowRightLeft size={18} className="text-white" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-stone-700 text-sm">
+                      {isMecanique ? '🔄 Transférer à l\'équipe Électrique' : '🔄 Transférer à l\'équipe Vérification'}
+                    </p>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      La phase {isMecanique ? 'électrique' : 'de vérification'} sera assignée à une autre équipe dédiée.
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <button onClick={() => setShowPhaseChoice(false)} disabled={phaseChoiceLoading}
+              className="w-full py-3 rounded-2xl text-sm font-semibold text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-all">
+              Annuler
+            </button>
           </div>
         </div>
       )}
