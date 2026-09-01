@@ -253,7 +253,7 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
        FROM demandes_materiel dm
        LEFT JOIN equipes e4 ON e4.id = dm.equipe_id
        LEFT JOIN chantiers c4 ON c4.id = dm.chantier_id
-       WHERE dm.type_demande = 'materiel' AND dm.statut = 'EN_ATTENTE'
+       WHERE dm.type_demande = 'materiel' AND dm.statut IN ('EN_ATTENTE','EN_PREPARATION','EXPEDIE')
        UNION ALL
        SELECT 'retard' AS type, 'haute'::text AS priorite,
               nr.motif AS message,

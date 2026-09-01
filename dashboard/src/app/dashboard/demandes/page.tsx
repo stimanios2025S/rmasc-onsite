@@ -101,7 +101,7 @@ export default function DemandesPage() {
       <div className="flex items-center gap-2">
         <Filter size={14} className="text-stone-400" />
         <div className="flex gap-1.5 flex-wrap">
-          {['tous', 'EN_ATTENTE', 'EN_COURS', 'EN_ROUTE', 'LIVREE', 'TRAITE', 'REFUSE'].map(s => (
+          {['tous', 'EN_ATTENTE', 'EN_PREPARATION', 'EN_COURS', 'EN_ROUTE', 'EXPEDIE', 'LIVREE', 'TRAITE', 'REFUSE'].map(s => (
             <button
               key={s}
               onClick={() => setFiltreStatut(s)}
@@ -111,7 +111,7 @@ export default function DemandesPage() {
                   : 'bg-stone-100 text-stone-400 hover:bg-stone-200'
               }`}
             >
-              {s === 'tous' ? 'Tous' : s === 'EN_ATTENTE' ? 'En attente' : s === 'EN_COURS' ? 'En cours' : s === 'EN_ROUTE' ? 'En route' : s === 'LIVREE' ? 'Livrée' : s === 'TRAITE' ? 'Traité' : 'Refusé'}
+              {s === 'tous' ? 'Tous' : s === 'EN_ATTENTE' ? 'En attente' : s === 'EN_PREPARATION' ? '📦 En préparation' : s === 'EN_COURS' ? 'En cours' : s === 'EN_ROUTE' ? 'En route' : s === 'EXPEDIE' ? '🚚 Expédié' : s === 'LIVREE' ? 'Livrée' : s === 'TRAITE' ? 'Traité' : 'Refusé'}
             </button>
           ))}
         </div>
@@ -160,10 +160,14 @@ export default function DemandesPage() {
             const isRetard = d.type_demande === 'retard';
             const statutColor = d.statut === 'EN_ATTENTE'
               ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : d.statut === 'EN_PREPARATION'
+              ? 'bg-blue-50 text-blue-700 border-blue-200'
               : d.statut === 'EN_COURS'
               ? 'bg-blue-50 text-blue-700 border-blue-200'
               : d.statut === 'EN_ROUTE'
               ? 'bg-sky-50 text-sky-700 border-sky-200'
+              : d.statut === 'EXPEDIE'
+              ? 'bg-cyan-50 text-cyan-700 border-cyan-200'
               : d.statut === 'LIVREE'
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : d.statut === 'TRAITE'
@@ -171,9 +175,13 @@ export default function DemandesPage() {
               : 'bg-red-50 text-red-700 border-red-200';
             const statutIcon = d.statut === 'EN_ATTENTE'
               ? <Clock size={12} />
+              : d.statut === 'EN_PREPARATION'
+              ? <Package size={12} />
               : d.statut === 'EN_COURS'
               ? <RefreshCw size={12} />
               : d.statut === 'EN_ROUTE'
+              ? <Package size={12} />
+              : d.statut === 'EXPEDIE'
               ? <Package size={12} />
               : d.statut === 'LIVREE'
               ? <CheckCircle size={12} />
@@ -189,7 +197,7 @@ export default function DemandesPage() {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${statutColor}`}>
                         {statutIcon}
-                        {d.statut === 'EN_ATTENTE' ? 'En attente' : d.statut === 'EN_COURS' ? 'En cours' : d.statut === 'EN_ROUTE' ? 'En route' : d.statut === 'LIVREE' ? 'Livrée' : d.statut === 'TRAITE' ? 'Traité' : 'Refusé'}
+                        {d.statut === 'EN_ATTENTE' ? 'En attente' : d.statut === 'EN_PREPARATION' ? 'En préparation' : d.statut === 'EN_COURS' ? 'En cours' : d.statut === 'EN_ROUTE' ? 'En route' : d.statut === 'EXPEDIE' ? 'Expédié' : d.statut === 'LIVREE' ? 'Livrée' : d.statut === 'TRAITE' ? 'Traité' : 'Refusé'}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         isRetard ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'
@@ -212,8 +220,10 @@ export default function DemandesPage() {
                         className="text-[10px] border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
                       >
                         <option value="EN_ATTENTE">En attente</option>
+                        <option value="EN_PREPARATION">📦 En préparation</option>
                         <option value="EN_COURS">En cours</option>
                         <option value="EN_ROUTE">📦 En route</option>
+                        <option value="EXPEDIE">🚚 Expédié</option>
                         <option value="LIVREE">✅ Livrée</option>
                         <option value="TRAITE">Traité</option>
                         <option value="REFUSE">Refusé</option>
@@ -282,8 +292,10 @@ export default function DemandesPage() {
                     className="text-sm border border-stone-200 rounded-lg px-2 py-1"
                   >
                     <option value="EN_ATTENTE">En attente</option>
+                    <option value="EN_PREPARATION">📦 En préparation</option>
                     <option value="EN_COURS">En cours</option>
                     <option value="EN_ROUTE">📦 En route</option>
+                    <option value="EXPEDIE">🚚 Expédié</option>
                     <option value="LIVREE">✅ Livrée</option>
                     <option value="TRAITE">Traité</option>
                     <option value="REFUSE">Refusé</option>

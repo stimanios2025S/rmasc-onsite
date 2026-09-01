@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: MapPin, label: 'Chantiers', href: '/dashboard/chantiers' },
   { icon: ShieldCheck, label: 'Équipes', href: '/dashboard/team-management' },
+  { icon: Package, label: 'Magasiniers', href: '/dashboard/magasiniers' },
   { icon: Clock, label: 'Feuille de Temps', href: '/dashboard/timesheet' },
   { icon: MessageSquareText, label: 'SMS Auto', href: '/dashboard/sms' },
   { icon: AlertTriangle, label: 'Incidents', href: '/dashboard/incidents' },
