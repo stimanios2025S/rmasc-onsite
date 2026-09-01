@@ -17,7 +17,7 @@ function useCityscape(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     resize();
     window.addEventListener('resize', resize);
 
-    interface Tower { x: number; baseW: number; targetH: number; currentH: number; delay: number; color: string; windowColor: string; }
+    interface Tower { x: number; baseW: number; targetH: number; currentH: number; delay: number; color: string; windowColor: string; rx: number; bw: number; th: number; }
     function makeTowers(): Tower[] {
       return [
         { rx: 0.1, bw: 0.025, th: 0.4, d: 0, c: '#1a1206', wc: '#cc8822' },
@@ -26,7 +26,7 @@ function useCityscape(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
         { rx: 0.55, bw: 0.022, th: 0.65, d: 0.15, c: '#1a1208', wc: '#cc9933' },
         { rx: 0.7, bw: 0.028, th: 0.45, d: 0.45, c: '#1c1406', wc: '#dd8822' },
         { rx: 0.85, bw: 0.02, th: 0.3, d: 0.7, c: '#18100a', wc: '#bb8833' },
-      ].map(c => ({ x: c.rx * w, baseW: c.bw * w, targetH: c.th * h, currentH: 0, delay: c.d, color: c.c, windowColor: c.wc }));
+      ].map(c => ({ x: c.rx * w, baseW: c.bw * w, targetH: c.th * h, currentH: 0, delay: c.d, color: c.c, windowColor: c.wc, rx: c.rx, bw: c.bw, th: c.th }));
     }
 
     let towers = makeTowers();
