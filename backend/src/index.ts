@@ -332,7 +332,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
          FROM demandes_materiel dm
          LEFT JOIN equipes e ON e.id = dm.equipe_id
          LEFT JOIN chantiers c ON c.id = dm.chantier_id
-         WHERE dm.statut = 'EN_ATTENTE'
+         WHERE dm.statut IN ('EN_ATTENTE','EN_PREPARATION','EXPEDIE')
          ORDER BY dm.date_creation DESC LIMIT 20`
       )),
       // [5] Incidents (blocages + pauses + retards + matériel) — all include photo_url + blocage_id
@@ -379,7 +379,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
           FROM demandes_materiel dm
           LEFT JOIN equipes e4 ON e4.id = dm.equipe_id
           LEFT JOIN chantiers c4 ON c4.id = dm.chantier_id
-          WHERE dm.statut = 'EN_ATTENTE'
+          WHERE dm.statut IN ('EN_ATTENTE','EN_PREPARATION','EXPEDIE')
          UNION ALL
          SELECT 'retard' AS type, 'haute'::text,
                  nr.motif AS message,
@@ -536,7 +536,7 @@ app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
 });
 
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
-app.post('/api/chantiers', async (req, res) => {
+app.post('/api/chantiers', verifierToken, async (req, res) => {
   try {
     const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId } = req.body;
     if (!nom) {
@@ -622,7 +622,7 @@ app.post('/api/chantiers', async (req, res) => {
 });
 
 // PUT /api/chantiers/:id — modifier un chantier (El Ghani)
-app.put('/api/chantiers/:id', async (req, res) => {
+app.put('/api/chantiers/:id', verifierToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique, date_echeance } = req.body;
@@ -655,7 +655,7 @@ app.put('/api/chantiers/:id', async (req, res) => {
 });
 
 // DELETE /api/chantiers/:id — supprimer un chantier (El Ghani)
-app.delete('/api/chantiers/:id', async (req, res) => {
+app.delete('/api/chantiers/:id', verifierToken, async (req, res) => {
   try {
     const { id } = req.params;
 

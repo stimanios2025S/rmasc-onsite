@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
+import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
@@ -135,7 +136,7 @@ export function creerMaterielRouter(pool: Pool, logger: LoggerService, smsServic
   });
 
   // ═══ ADMIN: Liste des demandes ═════════════════════════════════════════
-  router.get('/', async (req, res) => {
+  router.get('/', verifierToken, async (req, res) => {
     try {
       const { type, statut } = req.query;
       let sql = `
@@ -169,10 +170,10 @@ export function creerMaterielRouter(pool: Pool, logger: LoggerService, smsServic
   });
 
   // ═══ ADMIN: Modifier le statut ═════════════════════════════════════════
-  router.patch('/:id', async (req, res) => {
+  router.patch('/:id', verifierToken, async (req, res) => {
     try {
       const { statut } = req.body;
-      if (!statut || !['EN_ATTENTE', 'EN_COURS', 'EN_ROUTE', 'LIVREE', 'TRAITE', 'REFUSE'].includes(statut)) {
+      if (!statut || !['EN_ATTENTE', 'EN_PREPARATION', 'EN_COURS', 'EN_ROUTE', 'EXPEDIE', 'LIVREE', 'TRAITE', 'REFUSE'].includes(statut)) {
         return res.status(400).json({ erreur: 'Statut invalide.' });
       }
       const { rows } = await pool.query(
@@ -184,7 +185,9 @@ export function creerMaterielRouter(pool: Pool, logger: LoggerService, smsServic
       if (rows.length > 0 && rows[0].equipe_id) {
         const { eventBus } = require('../services/events/event-bus');
         const statusMsg: Record<string, string> = {
+          EN_PREPARATION: '📦 Votre demande est en préparation par le magasinier.',
           EN_ROUTE: '📦 Votre matériel est en route !',
+          EXPEDIE: '🚚 Votre matériel a été expédié.',
           LIVREE: '✅ Matériel livré sur site.',
           EN_COURS: '⏳ Demande en cours de traitement.',
           TRAITE: '✅ Demande traitée.',
@@ -203,7 +206,7 @@ export function creerMaterielRouter(pool: Pool, logger: LoggerService, smsServic
   });
 
   // ═══ ADMIN: Télécharger le PDF ═════════════════════════════════════════
-  router.get('/:id/pdf', async (req, res) => {
+  router.get('/:id/pdf', verifierToken, async (req, res) => {
     try {
       const { rows } = await pool.query(
         `SELECT dm.*, e.nom AS equipe_nom, e.type AS equipe_type,
