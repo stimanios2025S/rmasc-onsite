@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -154,8 +153,8 @@ function TeamSearchBar({
         </div>
       )}
 
-      {/* ═══ PORTAL DROPDOWN — renders at body level, never clipped ═══ */}
-      {open && !disabled && typeof document !== 'undefined' && createPortal(
+      {/* ═══ DROPDOWN — position:fixed escapes modal overflow ═══ */}
+      {open && !disabled && (
         <>
           {/* Invisible backdrop to catch clicks outside */}
           <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
@@ -233,8 +232,7 @@ function TeamSearchBar({
               )}
             </div>
           </div>
-        </>,
-        document.body
+        </>
       )}
     </div>
   );
