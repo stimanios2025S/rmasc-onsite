@@ -14,6 +14,7 @@ export interface ChantierData {
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
   equipe_actuelle?: string; phase_actuelle?: string; mission_statut?: string; adresse?: string;
+  date_echeance?: string | null;
   checklist_etapes?: ChecklistEtape[] | string | null;
   checklist_complete?: boolean | null;
   date_echeance?: string | null;

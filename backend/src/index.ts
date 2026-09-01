@@ -213,7 +213,8 @@ app.get('/api/chantiers', async (_req, res) => {
               COALESCE(ms.terminee, 0) AS terminee,
               COALESCE(am.equipe_actuelle, 'Aucune équipe') AS equipe_actuelle,
               am.phase_actuelle,
-              TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation
+              TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
+              TO_CHAR(c.date_echeance,'YYYY-MM-DD') AS date_echeance
        FROM chantiers c
        LEFT JOIN mission_stats ms ON ms.chantier_id = c.id
        LEFT JOIN active_mission am ON am.chantier_id = c.id
