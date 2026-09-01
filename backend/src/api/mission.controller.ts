@@ -209,7 +209,13 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
         [req.params.id]
       );
       if (rows.length === 0) return res.json(null);
-      res.json(rows[0]);
+      // Ensure etapes is always a parsed array (some pg drivers return JSONB as string)
+      const row = rows[0];
+      if (typeof row.etapes === 'string') {
+        try { row.etapes = JSON.parse(row.etapes); } catch (_) { /* keep as-is */ }
+      }
+      if (!Array.isArray(row.etapes)) row.etapes = [];
+      res.json(row);
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });
     }

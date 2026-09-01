@@ -411,7 +411,13 @@ export default function MissionActivePage() {
       if (data.ok) {
         setShowPhaseChoice(false);
         setPointageMsg({ type: 'success', text: data.message });
-        loadMission();
+        // Force full reload with chargeDetail=true to ensure checklist is fetched
+        // Small delay to let the backend commit the new mission + checklist
+        setTimeout(async () => {
+          await loadMission(true);
+          // If still no checklist after first load, retry once after 1s
+          setTimeout(() => { loadMission(true); }, 1000);
+        }, 300);
       } else {
         setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
         setShowPhaseChoice(false);

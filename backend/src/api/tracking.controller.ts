@@ -547,15 +547,40 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
       );
       const newMissionId = result.rows[0].id;
 
-      // Create checklist for the new phase
+      // Create checklist for the new phase — critical, must not fail silently
       try {
-        await pool.query(
+        const clResult = await pool.query(
           `INSERT INTO checklists_phases (mission_id, phase, etapes)
-           VALUES ($1, $2, generer_checklist($2))`,
+           VALUES ($1, $2, generer_checklist($2))
+           RETURNING id, phase, etapes`,
           [newMissionId, nextPhase]
         );
+        logger.info('Checklist phase acceptée créée', {
+          checklistId: clResult.rows[0]?.id,
+          missionId: newMissionId,
+          phase: nextPhase,
+          etapesCount: Array.isArray(clResult.rows[0]?.etapes) ? clResult.rows[0].etapes.length : 'not array',
+        });
       } catch (clErr: any) {
-        logger.error('Erreur création checklist phase acceptée', { erreur: clErr.message });
+        logger.error('Erreur CRITIQUE création checklist phase acceptée', {
+          erreur: clErr.message,
+          missionId: newMissionId,
+          phase: nextPhase,
+        });
+        // Try fallback: manual checklist insert without generer_checklist function
+        try {
+          const fallbackEtapes = nextPhase === 'electrique'
+            ? [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}]
+            : [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+          await pool.query(
+            `INSERT INTO checklists_phases (mission_id, phase, etapes)
+             VALUES ($1, $2, $3)`,
+            [newMissionId, nextPhase, JSON.stringify(fallbackEtapes)]
+          );
+          logger.info('Checklist créée via fallback pour phase', { phase: nextPhase });
+        } catch (fbErr: any) {
+          logger.error('Échec total création checklist fallback', { erreur: fbErr.message });
+        }
       }
 
       // Keep team as EN_MISSION (not EN_REPOS!)
