@@ -545,7 +545,8 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
           teamMap.set(equipeId, {
             equipe_id: equipeId, equipe_nom: equipeNom, equipe_type: equipeType,
             events: [], stats: { matinal: null as string | null, fin_journee: null as string | null,
-              arrivee: null as string | null, totalPausedMinutes: 0, isPaused: false }
+              arrivee: null as string | null, totalPausedMinutes: 0, isPaused: false,
+              chantier_nom: null as string | null }
           });
         }
         return teamMap.get(equipeId)!;
@@ -607,6 +608,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
           duree_minutes: duree,
           motif: p.motif || null,
           en_cours: !p.date_fin,
+          chantier: p.nom_chantier || null,
           icon: p.type_pause === 'retour_shop' ? '🔧' : (!p.date_fin ? '⏸' : '▶️'),
           label: typeLabels[p.type_pause] || p.type_pause,
         });
@@ -615,13 +617,18 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         if (!p.date_fin) team.stats.isPaused = true;
       }
 
-      // Sort each team's events chronologically
-      const result = Array.from(teamMap.values()).map(t => ({
-        ...t,
-        events: t.events.sort((a: any, b: any) =>
-          new Date(a.horodatage).getTime() - new Date(b.horodatage).getTime()
-        ),
-      }));
+      // Sort each team's events chronologically and extract chantier from events
+      const result = Array.from(teamMap.values()).map(t => {
+        // Find the active chantier from events (first non-null chantier)
+        const chantierEvt = t.events.find((e: any) => e.chantier);
+        if (chantierEvt) t.stats.chantier_nom = chantierEvt.chantier;
+        return {
+          ...t,
+          events: t.events.sort((a: any, b: any) =>
+            new Date(a.horodatage).getTime() - new Date(b.horodatage).getTime()
+          ),
+        };
+      });
 
       // Sort teams by type then name
       result.sort((a, b) => a.equipe_type.localeCompare(b.equipe_type) || a.equipe_nom.localeCompare(b.equipe_nom));

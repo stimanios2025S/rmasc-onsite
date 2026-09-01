@@ -561,7 +561,17 @@ function TeamTimeline({ team }: { team: TimesheetEquipe }) {
             </div>
             <div>
               <p className="text-sm font-bold text-stone-800">{team.equipe_nom}</p>
-              <p className="text-[10px] text-stone-400">{meta.label}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] text-stone-400">{meta.label}</p>
+                {s.chantier_nom && (
+                  <>
+                    <span className="text-stone-200">·</span>
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      <MapPin size={9} /> {s.chantier_nom}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs">
@@ -628,23 +638,25 @@ function EventRow({ event }: { event: TimesheetEvent }) {
       <div className={`w-[10px] h-[10px] rounded-full ${style.dot} mt-[7px] z-10 shrink-0 ring-2 ring-white`} />
       <span className="text-xs font-mono font-bold text-stone-400 w-12 shrink-0 mt-1">{event.heure}</span>
       <div className={`flex-1 ${style.bg} border ${style.border} rounded-xl px-3 py-2 mb-1`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">{event.icon}</span>
-            <span className="text-xs font-semibold text-stone-700">{event.label}</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-sm shrink-0">{event.icon}</span>
+            <span className="text-xs font-semibold text-stone-700 truncate">{event.label}</span>
           </div>
-          {event.en_cours && (
-            <span className="text-[9px] font-bold text-orange-500 bg-orange-100 px-2 py-0.5 rounded-full animate-pulse">
-              EN COURS
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {event.en_cours && (
+              <span className="text-[9px] font-bold text-orange-500 bg-orange-100 px-2 py-0.5 rounded-full animate-pulse">
+                EN COURS
+              </span>
+            )}
+            {event.chantier && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                <MapPin size={9} /> {event.chantier}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3 mt-1 text-[10px] text-stone-400">
-          {event.chantier && (
-            <span className="flex items-center gap-1">
-              <MapPin size={9} /> {event.chantier}
-            </span>
-          )}
+        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-stone-400">
           {event.distance !== undefined && event.distance !== null && (
             <span className={event.conforme ? 'text-emerald-500' : 'text-rose-500'}>
               {event.conforme ? '✅' : '❌'} {Math.round(event.distance)}m
@@ -652,14 +664,14 @@ function EventRow({ event }: { event: TimesheetEvent }) {
           )}
           {event.duree_minutes !== undefined && event.duree_minutes !== null && (
             <span className="text-orange-500 font-medium">
-              {event.duree_minutes}min
+              ⏱ {event.duree_minutes}min
             </span>
           )}
           {event.heure_fin && (
             <span>→ {event.heure_fin}</span>
           )}
           {event.motif && (
-            <span className="italic">{event.motif}</span>
+            <span className="italic text-stone-500">"{event.motif}"</span>
           )}
         </div>
       </div>

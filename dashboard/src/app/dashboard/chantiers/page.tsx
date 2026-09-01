@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, createPortal } from 'react';
 import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -9,7 +9,7 @@ import {
 import MapPicker from '@/components/MapPicker';
 
 /* ═══════════════════════════════════════════════════════════════
-   TEAM SEARCH BAR — Replaces the old <select> dropdown
+   TEAM SEARCH BAR — Portal-based dropdown, never clipped
    ═══════════════════════════════════════════════════════════════ */
 const STATUT_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   DISPONIBLE: { label: 'Disponible', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
@@ -17,6 +17,7 @@ const STATUT_LABELS: Record<string, { label: string; color: string; bg: string }
   EN_REPOS: { label: 'En repos', color: 'text-stone-400', bg: 'bg-stone-100 border-stone-200' },
 };
 const TYPE_ICONS: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield, mixte: Shield };
+const TYPE_LABELS: Record<string, string> = { mecanique: 'Méca', electrique: 'Élec', verification: 'Vérif', mixte: 'Mixte' };
 
 function TeamSearchBar({
   equipes,
@@ -34,12 +35,12 @@ function TeamSearchBar({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const selectedEquipe = equipes.find(e => e.id === selectedId);
 
-  // Update query when selected changes externally
   useEffect(() => {
     if (selectedEquipe) setQuery('');
   }, [selectedEquipe?.id]);
@@ -51,12 +52,28 @@ function TeamSearchBar({
       e.nom.toLowerCase().includes(q) ||
       e.type.toLowerCase().includes(q) ||
       e.statut_equipe.toLowerCase().includes(q) ||
-      e.membres_noms?.toLowerCase().includes(q) ||
-      (e as any).equipe_numero?.toString().includes(q) ||
-      (e as any).chef_nom?.toLowerCase().includes(q) ||
-      (e as any).telephone?.includes(q)
+      e.membres_noms?.toLowerCase().includes(q)
     );
   }, [equipes, query]);
+
+  // Calculate dropdown position from trigger element
+  function updatePosition() {
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    // If less than 320px below, open upward
+    if (spaceBelow < 320) {
+      setDropPos({ top: rect.top - 8, left: rect.left, width: rect.width });
+    } else {
+      setDropPos({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
+  }
+
+  function openDropdown() {
+    updatePosition();
+    setOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
 
   // Outside click
   useEffect(() => {
@@ -67,8 +84,17 @@ function TeamSearchBar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Reposition on scroll/resize
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => updatePosition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => { window.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition); };
+  }, [open]);
+
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (!open) { if (e.key === 'ArrowDown' || e.key === 'Enter') { setOpen(true); setHighlightIdx(0); e.preventDefault(); } return; }
+    if (!open) { if (e.key === 'ArrowDown' || e.key === 'Enter') { openDropdown(); setHighlightIdx(0); e.preventDefault(); } return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, filtered.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter' && highlightIdx >= 0 && filtered[highlightIdx]) {
@@ -81,13 +107,14 @@ function TeamSearchBar({
     else if (e.key === 'Escape') { setOpen(false); setHighlightIdx(-1); }
   }
 
-  const TYPE_LABELS: Record<string, string> = { mecanique: 'Méca', electrique: 'Élec', verification: 'Vérif', mixte: 'Mixte' };
+  const spaceBelow = typeof window !== 'undefined' ? window.innerHeight - dropPos.top - 40 : 400;
+  const openUpward = spaceBelow < 320;
 
   return (
     <div ref={wrapRef} className="relative">
       {/* Display / Trigger */}
       {!open && selectedEquipe && !disabled ? (
-        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-indigo-100 transition-all" onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}>
+        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-indigo-100 transition-all" onClick={() => openDropdown()}>
           <Users size={14} className="text-indigo-500 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
@@ -105,14 +132,14 @@ function TeamSearchBar({
         </div>
       ) : (
         <div className={`flex items-center gap-2 bg-stone-50 border rounded-xl px-3 py-2.5 transition-all ${open ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-stone-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-text'}`}
-          onClick={() => { if (!disabled) { setOpen(true); setTimeout(() => inputRef.current?.focus(), 50); } }}>
+          onClick={() => { if (!disabled) openDropdown(); }}>
           <Search size={14} className={`${open ? 'text-indigo-400' : 'text-stone-300'} shrink-0`} />
           <input
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => { setQuery(e.target.value); setHighlightIdx(0); if (!open) setOpen(true); }}
-            onFocus={() => { if (!disabled) setOpen(true); }}
+            onChange={e => { setQuery(e.target.value); setHighlightIdx(0); if (!open) { updatePosition(); setOpen(true); } }}
+            onFocus={() => { if (!disabled) { updatePosition(); setOpen(true); } }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder || 'Rechercher une équipe...'}
             disabled={disabled}
@@ -126,76 +153,87 @@ function TeamSearchBar({
         </div>
       )}
 
-      {/* Dropdown */}
-      {open && !disabled && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stone-200 shadow-2xl shadow-stone-200/50 z-50 overflow-hidden max-h-72 flex flex-col">
-          {/* Stats bar */}
-          <div className="flex items-center gap-2 px-4 py-2 bg-stone-50 border-b border-stone-100">
-            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-              {filtered.length} équipe{filtered.length !== 1 ? 's' : ''}
-            </span>
-            {query && (
-              <span className="text-[10px] text-stone-300">· pour "{query}"</span>
-            )}
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="text-[10px] font-medium text-emerald-500">
-                {equipes.filter(e => e.statut_equipe === 'DISPONIBLE').length} dispo
+      {/* ═══ PORTAL DROPDOWN — renders at body level, never clipped ═══ */}
+      {open && !disabled && typeof document !== 'undefined' && createPortal(
+        <>
+          {/* Invisible backdrop to catch clicks outside */}
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[9999] bg-white rounded-2xl border border-stone-200 shadow-2xl shadow-stone-300/30 overflow-hidden flex flex-col"
+            style={{
+              top: openUpward ? 'auto' : dropPos.top,
+              bottom: openUpward ? window.innerHeight - dropPos.top : 'auto',
+              left: dropPos.left,
+              width: dropPos.width,
+              maxHeight: '300px',
+            }}
+          >
+            {/* Stats bar */}
+            <div className="flex items-center gap-2 px-4 py-2 bg-stone-50 border-b border-stone-100 shrink-0">
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                {filtered.length} équipe{filtered.length !== 1 ? 's' : ''}
               </span>
-              <span className="text-[10px] font-medium text-blue-500">
-                {equipes.filter(e => e.statut_equipe === 'EN_MISSION').length} en mission
-              </span>
+              {query && (
+                <span className="text-[10px] text-stone-300">· pour &quot;{query}&quot;</span>
+              )}
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-[10px] font-medium text-emerald-500">
+                  {equipes.filter(e => e.statut_equipe === 'DISPONIBLE').length} dispo
+                </span>
+                <span className="text-[10px] font-medium text-blue-500">
+                  {equipes.filter(e => e.statut_equipe === 'EN_MISSION').length} en mission
+                </span>
+              </div>
+            </div>
+            {/* Team list */}
+            <div className="overflow-y-auto flex-1">
+              {filtered.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <Search size={24} className="text-stone-200 mx-auto mb-2" />
+                  <p className="text-xs text-stone-400">Aucune équipe trouvée</p>
+                  <p className="text-[10px] text-stone-300 mt-1">Essayez un autre terme de recherche</p>
+                </div>
+              ) : (
+                filtered.map((eq, idx) => {
+                  const TypeIcon = TYPE_ICONS[eq.type] || Shield;
+                  const isSel = eq.id === selectedId;
+                  const statutInfo = STATUT_LABELS[eq.statut_equipe] || { label: eq.statut_equipe, color: 'text-stone-500', bg: 'bg-stone-100' };
+                  return (
+                    <button
+                      key={eq.id}
+                      onClick={(e) => { e.stopPropagation(); onSelect(eq.id); setOpen(false); setQuery(''); }}
+                      onMouseEnter={() => setHighlightIdx(idx)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all ${isSel ? 'bg-indigo-50' : idx === highlightIdx ? 'bg-stone-50' : 'bg-white'} hover:bg-indigo-50 border-b border-stone-50 last:border-0`}
+                    >
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${eq.type === 'mecanique' ? 'bg-blue-100 text-blue-600' : eq.type === 'electrique' ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                        <TypeIcon size={14} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-stone-800 truncate">{eq.nom}</span>
+                          {isSel && <CheckCircle size={12} className="text-indigo-500 shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] font-medium text-stone-400">{TYPE_LABELS[eq.type] || eq.type}</span>
+                          {eq.membres_noms && (
+                            <>
+                              <span className="text-stone-200">·</span>
+                              <span className="text-[10px] text-stone-400 truncate">👤 {eq.membres_noms}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 border ${statutInfo.bg} ${statutInfo.color}`}>
+                        {statutInfo.label}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
-          {/* Team list */}
-          <div className="overflow-y-auto flex-1">
-            {filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center">
-                <Search size={24} className="text-stone-200 mx-auto mb-2" />
-                <p className="text-xs text-stone-400">Aucune équipe trouvée</p>
-                <p className="text-[10px] text-stone-300 mt-1">Essayez un autre terme de recherche</p>
-              </div>
-            ) : (
-              filtered.map((eq, idx) => {
-                const TypeIcon = TYPE_ICONS[eq.type] || Shield;
-                const isSel = eq.id === selectedId;
-                const statutInfo = STATUT_LABELS[eq.statut_equipe] || { label: eq.statut_equipe, color: 'text-stone-500', bg: 'bg-stone-100' };
-                return (
-                  <button
-                    key={eq.id}
-                    onClick={() => { onSelect(eq.id); setOpen(false); setQuery(''); }}
-                    onMouseEnter={() => setHighlightIdx(idx)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all ${isSel ? 'bg-indigo-50' : idx === highlightIdx ? 'bg-stone-50' : 'bg-white'} hover:bg-indigo-50 border-b border-stone-50 last:border-0`}
-                  >
-                    {/* Icon */}
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${eq.type === 'mecanique' ? 'bg-blue-100 text-blue-600' : eq.type === 'electrique' ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                      <TypeIcon size={14} />
-                    </div>
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-stone-800 truncate">{eq.nom}</span>
-                        {isSel && <CheckCircle size={12} className="text-indigo-500 shrink-0" />}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] font-medium text-stone-400">{TYPE_LABELS[eq.type] || eq.type}</span>
-                        {eq.membres_noms && (
-                          <>
-                            <span className="text-stone-200">·</span>
-                            <span className="text-[10px] text-stone-400 truncate">👤 {eq.membres_noms}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {/* Status badge */}
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 border ${statutInfo.bg} ${statutInfo.color}`}>
-                      {statutInfo.label}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+        </>,
+        document.body
       )}
     </div>
   );

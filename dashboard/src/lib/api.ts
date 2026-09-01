@@ -284,7 +284,7 @@ export interface TimesheetEvent {
 export interface TimesheetEquipe {
   equipe_id: string; equipe_nom: string; equipe_type: string;
   events: TimesheetEvent[];
-  stats: { matinal: string | null; fin_journee: string | null; arrivee: string | null; totalPausedMinutes: number; isPaused: boolean };
+  stats: { matinal: string | null; fin_journee: string | null; arrivee: string | null; totalPausedMinutes: number; isPaused: boolean; chantier_nom: string | null };
 }
 export interface TimesheetData {
   date: string; equipes: TimesheetEquipe[];
