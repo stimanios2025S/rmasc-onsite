@@ -645,9 +645,9 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       const { rows: chantiers } = await pool.query(`
         SELECT c.id, c.nom_chantier, c.reference_commande_erp, c.adresse,
                c.client_nom, c.client_telephone, c.statut,
-               c.date_echeance, c.complexe,
-               ST_Y(c.coordonnees::geometry) AS latitude,
-               ST_X(c.coordonnees::geometry) AS longitude,
+               c.date_echeance,
+               CASE WHEN c.coordonnees IS NOT NULL THEN ST_Y(c.coordonnees::geometry) END AS latitude,
+               CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS longitude,
                c.rayon_geofencing
         FROM chantiers c
         WHERE c.nom_chantier ILIKE $1
