@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
+import * as bcrypt from 'bcryptjs';
 
 /**
  * Team Management Controller — Admin CRUD for teams, members, rest config, reassignment
  *
  * Endpoints:
  *   GET    /api/admin/teams               — List all teams with members
+ *   POST   /api/admin/teams               — Create new team with optional members
  *   PATCH  /api/admin/teams/:id           — Update team (name, type, color)
  *   PUT    /api/admin/teams/:id/members   — Update team member names
  *   GET    /api/admin/teams/config        — Get system config (rest days)
@@ -59,6 +61,103 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       res.json(result);
     } catch (err: any) {
       logger.error('Erreur listing equipes', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── 1.5. CREATE NEW TEAM ─────────────────────────────────────────────
+  router.post('/', async (req, res) => {
+    try {
+      const { nom, type, couleur_hex, jours_repos, membres } = req.body;
+
+      if (!nom || !type) {
+        return res.status(400).json({ erreur: 'nom et type sont requis.' });
+      }
+
+      const validTypes = ['mecanique', 'electrique', 'mixte'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ erreur: `Type invalide. Valeurs acceptées: ${validTypes.join(', ')}` });
+      }
+
+      // Create the team
+      const { rows: equipeRows } = await pool.query(
+        `INSERT INTO equipes (nom, type, couleur_hex, statut_equipe, disponible_a_partir_de, jours_repos)
+         VALUES ($1, $2::type_equipe, $3, 'DISPONIBLE', NOW(), $4)
+         RETURNING id, nom, type::text AS type, couleur_hex, actif, statut_equipe,
+                   disponible_a_partir_de, date_creation, jours_repos`,
+        [nom.trim(), type, couleur_hex || '#2196F3', jours_repos != null ? Number(jours_repos) : null]
+      );
+
+      const equipe = equipeRows[0];
+      const createdMembers: any[] = [];
+      const credentials: { identifiant: string; mot_de_passe: string }[] = [];
+
+      // Create team members if provided
+      if (Array.isArray(membres) && membres.length > 0) {
+        for (const m of membres) {
+          if (!m.prenom || !m.nom) continue;
+
+          const prenom = m.prenom.trim();
+          const nomMembre = m.nom.trim();
+          const role = m.role || 'technicien';
+
+          // Generate login: prenom.nom (lowercase, no spaces, no accents)
+          const identifiantBase = `${prenom}.${nomMembre}`
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')  // remove combining diacritical marks (accents)
+            .replace(/[^a-z0-9.]/g, '')
+            .replace(/\.\./g, '.')
+            .replace(/^\.|\.$/g, '');
+
+          // Ensure unique identifiant
+          let identifiant = identifiantBase;
+          let suffix = 1;
+          while (true) {
+            const { rows: existing } = await pool.query(
+              `SELECT id FROM utilisateurs WHERE identifiant = $1`, [identifiant]
+            );
+            if (existing.length === 0) break;
+            identifiant = `${identifiantBase}.${suffix}`;
+            suffix++;
+          }
+
+          // Generate temporary password
+          const motDePasse = `rmasc${Math.random().toString(36).slice(-6)}`;
+          const motDePasseHash = await bcrypt.hash(motDePasse, 10);
+
+          const email = `${identifiant}@rmasc.dz`;
+          const { rows: userRows } = await pool.query(
+            `INSERT INTO utilisateurs (equipe_id, prenom, nom, identifiant, email, mot_de_passe_hash, role, telephone, actif)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::role_utilisateur, $8, TRUE)
+             RETURNING id, prenom, nom, identifiant, role::text AS role, telephone, actif`,
+            [equipe.id, prenom, nomMembre, identifiant, email, motDePasseHash, role, m.telephone || null]
+          );
+
+          if (userRows.length > 0) {
+            createdMembers.push(userRows[0]);
+            credentials.push({ identifiant, mot_de_passe: motDePasse });
+          }
+        }
+      }
+
+      logger.info('Équipe créée par admin', {
+        equipeId: equipe.id, nom: equipe.nom, type: equipe.type,
+        membresCount: createdMembers.length,
+      });
+
+      res.status(201).json({
+        ok: true,
+        equipe,
+        membres: createdMembers,
+        credentials,
+        message: `Équipe "${nom}" créée avec ${createdMembers.length} membre${createdMembers.length > 1 ? 's' : ''}.`,
+      });
+    } catch (err: any) {
+      if (err.code === '23505') {
+        return res.status(409).json({ erreur: 'Ce nom d\'équipe existe déjà.' });
+      }
+      logger.error('Erreur création équipe', { erreur: err.message });
       res.status(500).json({ erreur: err.message });
     }
   });

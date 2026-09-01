@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Loader2, Save, X, CheckCircle, AlertTriangle, Settings,
   Wrench, Zap, Shield, Clock, RefreshCw, ArrowRightLeft, Phone,
-  Edit3, ChevronDown, ChevronUp, Calendar, User, MapPin,
+  Edit3, ChevronDown, ChevronUp, Calendar, User, MapPin, Plus, Copy, Eye, EyeOff,
 } from 'lucide-react';
 import {
-  fetchTeamsManagement, updateTeam, updateTeamMembers,
+  fetchTeamsManagement, updateTeam, updateTeamMembers, createTeam,
   fetchSystemConfig, updateSystemConfig,
   fetchMissionsReassign, manageRepos,
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
@@ -55,6 +55,14 @@ export default function TeamManagementPage() {
   const [memberForms, setMemberForms] = useState<Record<string, { prenom: string; nom: string; telephone: string }>>({});
   const [configForm, setConfigForm] = useState<Record<string, string>>({});
   const [reassignForm, setReassignForm] = useState<Record<string, string>>({});
+
+  // Create team modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ nom: '', type: 'mecanique', couleur_hex: '#2196F3', jours_repos: '' });
+  const [createMembers, setCreateMembers] = useState<{ prenom: string; nom: string; telephone: string; role: string }[]>([]);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createdResult, setCreatedResult] = useState<{ equipe: any; credentials: { identifiant: string; mot_de_passe: string }[] } | null>(null);
+  const [showCredentials, setShowCredentials] = useState(true);
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setToast({ type, text });
@@ -182,6 +190,55 @@ export default function TeamManagementPage() {
     setSaving(false);
   };
 
+  // ─── CREATE TEAM ─────────────────────────────────────────────────
+  const openCreateModal = () => {
+    setCreateForm({ nom: '', type: 'mecanique', couleur_hex: '#2196F3', jours_repos: '' });
+    setCreateMembers([]);
+    setCreatedResult(null);
+    setShowCreateModal(true);
+  };
+  const addCreateMember = () => {
+    setCreateMembers([...createMembers, { prenom: '', nom: '', telephone: '', role: 'technicien' }]);
+  };
+  const removeCreateMember = (idx: number) => {
+    setCreateMembers(createMembers.filter((_, i) => i !== idx));
+  };
+  const updateCreateMember = (idx: number, field: string, value: string) => {
+    const updated = [...createMembers];
+    (updated[idx] as any)[field] = value;
+    setCreateMembers(updated);
+  };
+  const handleCreateTeam = async () => {
+    if (!createForm.nom.trim()) { showToast('error', 'Nom de l\'équipe requis.'); return; }
+    setCreateLoading(true);
+    try {
+      const membres = createMembers.filter(m => m.prenom.trim() && m.nom.trim());
+      const result = await createTeam({
+        nom: createForm.nom.trim(),
+        type: createForm.type,
+        couleur_hex: createForm.couleur_hex,
+        jours_repos: createForm.jours_repos ? parseInt(createForm.jours_repos) || undefined : undefined,
+        membres: membres.length > 0 ? membres : undefined,
+      });
+      setCreatedResult({ equipe: result.equipe, credentials: result.credentials || [] });
+      showToast('success', result.message || '✅ Équipe créée.');
+      await loadAll();
+    } catch (e: any) {
+      showToast('error', e.message || 'Erreur lors de la création.');
+    }
+    setCreateLoading(false);
+  };
+  const copyCredentials = (identifiant: string, motDePasse: string) => {
+    navigator.clipboard.writeText(`${identifiant} / ${motDePasse}`);
+    showToast('success', '📋 Identifiants copiés !');
+  };
+  const copyAllCredentials = () => {
+    if (!createdResult?.credentials.length) return;
+    const text = createdResult.credentials.map(c => `${c.identifiant} / ${c.mot_de_passe}`).join('\n');
+    navigator.clipboard.writeText(text);
+    showToast('success', '📋 Tous les identifiants copiés !');
+  };
+
   // ─── REASSIGN ─────────────────────────────────────────────────────
   const handleReassign = async (missionId: string) => {
     const newEquipeId = reassignForm[missionId];
@@ -247,10 +304,16 @@ export default function TeamManagementPage() {
           <h1 className="text-xl font-bold text-stone-800">Team Management</h1>
           <p className="text-sm text-stone-400 mt-0.5">Gérez les équipes, membres et configuration</p>
         </div>
-        <button onClick={loadAll}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-medium text-stone-500 hover:text-stone-700 hover:border-stone-300 transition-all">
-          <RefreshCw size={15} /> Actualiser
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={loadAll}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-medium text-stone-500 hover:text-stone-700 hover:border-stone-300 transition-all">
+            <RefreshCw size={15} /> Actualiser
+          </button>
+          <button onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl text-sm font-bold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-200">
+            <Plus size={16} /> Nouvelle Équipe
+          </button>
+        </div>
       </div>
 
       {/* ═══ SECTION 1: REST DAYS CONFIG ═══ */}
@@ -655,6 +718,196 @@ export default function TeamManagementPage() {
           </div>
         )}
       </div>
+
+      {/* ═══ MODAL: CRÉER UNE ÉQUIPE ═══ */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg p-6 sm:m-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                  <Plus size={18} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-stone-800">Nouvelle Équipe</h3>
+                  <p className="text-xs text-stone-400">Créer une équipe avec ses membres</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowCreateModal(false); setCreatedResult(null); }}
+                className="text-stone-300 hover:text-stone-500 transition-colors">
+                <X size={22} />
+              </button>
+            </div>
+
+            {createdResult ? (
+              /* ═══ CREDENTIALS DISPLAY ═══ */
+              <div className="space-y-4">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+                  <CheckCircle size={32} className="text-emerald-500 mx-auto mb-2" />
+                  <p className="font-bold text-emerald-700">✅ Équipe "{createdResult.equipe.nom}" créée !</p>
+                  <p className="text-xs text-emerald-600 mt-1">{createdResult.credentials.length} membre{createdResult.credentials.length > 1 ? 's' : ''} ajouté{createdResult.credentials.length > 1 ? 's' : ''}</p>
+                </div>
+
+                {createdResult.credentials.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-stone-500 uppercase">Identifiants de connexion</p>
+                      <button onClick={copyAllCredentials}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">
+                        <Copy size={12} /> Tout copier
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {createdResult.credentials.map((c, i) => (
+                        <div key={i} className="bg-stone-50 border border-stone-100 rounded-xl p-3 flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-stone-700 truncate">{c.identifiant.split('.')[0]} — Membre {i + 1}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[10px] font-mono bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded">{c.identifiant}</span>
+                              <span className="text-stone-300">/</span>
+                              <span className="text-[10px] font-mono bg-amber-50 text-amber-600 px-2 py-0.5 rounded">{showCredentials ? c.mot_de_passe : '••••••••'}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 ml-2">
+                            <button onClick={() => setShowCredentials(!showCredentials)}
+                              className="w-7 h-7 rounded-lg bg-stone-100 flex items-center justify-center text-stone-400 hover:text-stone-600 transition-colors">
+                              {showCredentials ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                            <button onClick={() => copyCredentials(c.identifiant, c.mot_de_passe)}
+                              className="w-7 h-7 rounded-lg bg-stone-100 flex items-center justify-center text-stone-400 hover:text-indigo-500 transition-colors">
+                              <Copy size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                      <p className="text-[10px] text-amber-600 font-semibold">⚠️ Communiquez ces identifiants aux membres. Ils pourront se connecter sur leur téléphone avec ces identifiants.</p>
+                    </div>
+                  </>
+                )}
+
+                <button onClick={() => { setShowCreateModal(false); setCreatedResult(null); }}
+                  className="w-full bg-stone-800 text-white py-3 rounded-2xl font-bold hover:bg-stone-900 transition-all">
+                  Fermer
+                </button>
+              </div>
+            ) : (
+              /* ═══ CREATE FORM ═══ */
+              <div className="space-y-5">
+                {/* Team Info */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Nom de l'équipe *</label>
+                    <input value={createForm.nom} onChange={e => setCreateForm({ ...createForm, nom: e.target.value })}
+                      placeholder="Ex: Équipe Alpha, Team Casablanca..."
+                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all"
+                      style={{ fontSize: '16px' }} />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Type d'équipe *</label>
+                    <div className="flex gap-2">
+                      {Object.entries(TYPE_META).map(([k, v]) => {
+                        const Icon = v.icon;
+                        return (
+                          <button key={k} onClick={() => setCreateForm({ ...createForm, type: k })}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-semibold border-2 transition-all ${
+                              createForm.type === k ? `${v.bg} text-white border-transparent shadow-md` : 'bg-white text-stone-400 border-stone-200 hover:border-stone-300'
+                            }`}>
+                            <Icon size={14} /> {v.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Couleur</label>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {COLORS_PRESET.map(c => (
+                          <button key={c} onClick={() => setCreateForm({ ...createForm, couleur_hex: c })}
+                            className={`w-7 h-7 rounded-full border-2 transition-all ${
+                              createForm.couleur_hex === c ? 'border-stone-800 scale-110 shadow-md' : 'border-transparent hover:scale-105'
+                            }`} style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Jours de repos</label>
+                      <input type="number" min={0} max={30} value={createForm.jours_repos}
+                        onChange={e => setCreateForm({ ...createForm, jours_repos: e.target.value })}
+                        placeholder="Global (3j)"
+                        className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none focus:border-indigo-400 text-center"
+                        style={{ fontSize: '16px' }} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Members */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-stone-500">Membres de l'équipe</label>
+                    <button onClick={addCreateMember}
+                      className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
+                      <Plus size={12} /> Ajouter un membre
+                    </button>
+                  </div>
+
+                  {createMembers.length === 0 && (
+                    <p className="text-xs text-stone-300 italic text-center py-4 bg-stone-50 rounded-xl border border-dashed border-stone-200">
+                      Aucun membre ajouté. Vous pourrez en ajouter plus tard.
+                    </p>
+                  )}
+
+                  <div className="space-y-2">
+                    {createMembers.map((m, i) => (
+                      <div key={i} className="bg-stone-50 border border-stone-100 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-stone-400">MEMBRE {i + 1}</span>
+                          <button onClick={() => removeCreateMember(i)}
+                            className="text-stone-300 hover:text-rose-500 transition-colors">
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={m.prenom} onChange={e => updateCreateMember(i, 'prenom', e.target.value)}
+                            placeholder="Prénom *" className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none focus:border-indigo-400" style={{ fontSize: '16px' }} />
+                          <input value={m.nom} onChange={e => updateCreateMember(i, 'nom', e.target.value)}
+                            placeholder="Nom *" className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none focus:border-indigo-400" style={{ fontSize: '16px' }} />
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={m.telephone} onChange={e => updateCreateMember(i, 'telephone', e.target.value)}
+                            placeholder="Téléphone" className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none focus:border-indigo-400" style={{ fontSize: '16px' }} />
+                          <select value={m.role} onChange={e => updateCreateMember(i, 'role', e.target.value)}
+                            className="px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none focus:border-indigo-400">
+                            <option value="technicien">🔧 Technicien</option>
+                            <option value="ingenieur">📐 Ingénieur</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => setShowCreateModal(false)}
+                    className="flex-1 py-3 bg-stone-100 rounded-2xl text-sm font-semibold text-stone-500 hover:bg-stone-200 transition-all">
+                    Annuler
+                  </button>
+                  <button onClick={handleCreateTeam} disabled={!createForm.nom.trim() || createLoading}
+                    className="flex-[2] py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl text-sm font-bold hover:from-indigo-600 hover:to-purple-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-200">
+                    {createLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                    Créer l'équipe
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -240,6 +240,12 @@ export interface SystemConfig {
 export async function fetchTeamsManagement(): Promise<TeamData[]> {
   return apiFetch('/admin/teams');
 }
+export async function createTeam(data: {
+  nom: string; type: string; couleur_hex?: string; jours_repos?: number | null;
+  membres?: { prenom: string; nom: string; telephone?: string; role?: string }[];
+}): Promise<{ ok: boolean; equipe: TeamData; membres?: any[]; credentials?: { identifiant: string; mot_de_passe: string }[]; message: string }> {
+  return apiFetch(`/admin/teams`, { method: 'POST', body: JSON.stringify(data) });
+}
 export async function updateTeam(id: string, data: { nom?: string; type?: string; couleur_hex?: string; actif?: boolean; jours_repos?: number | null }) {
   return apiFetch(`/admin/teams/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
