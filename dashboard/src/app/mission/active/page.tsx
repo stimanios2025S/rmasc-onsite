@@ -92,6 +92,7 @@ export default function MissionActivePage() {
   const [estEnRoute, setEstEnRoute] = useState(false);
   const [estArriveChantier, setEstArriveChantier] = useState(false);
   const [peutTransférer, setPeutTransférer] = useState(false);
+  const [justFinishedDay, setJustFinishedDay] = useState(false);
 
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
@@ -158,11 +159,11 @@ export default function MissionActivePage() {
 
   // Countdown repos
   useEffect(() => {
-    if (equipeStatus?.statut_equipe !== 'EN_REPOS') return;
+    if (equipeStatus?.statut_equipe !== 'EN_REPOS') { setJustFinishedDay(false); return; }
     const tick = () => {
       const dispo = new Date(equipeStatus.disponible_a_partir_de).getTime();
       const diff = dispo - Date.now();
-      if (diff <= 0) { setCompteur('Disponible maintenant !'); loadMission(); return; }
+      if (diff <= 0) { setCompteur('Disponible maintenant !'); setJustFinishedDay(false); loadMission(); return; }
       setCompteur(`${Math.floor(diff / 86400000)}j ${Math.floor((diff % 86400000) / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`);
     };
     tick();
@@ -213,8 +214,17 @@ export default function MissionActivePage() {
             if (type === 'matinal') {
               setEstEnRoute(true);
               startGpsTracking(); // Start continuous GPS tracking
+              setJustFinishedDay(false);
+            } else {
+              setJustFinishedDay(true);
+              setEstEnRoute(false);
+              setEstArriveChantier(false);
+              // Clear mission immediately so UI transitions smoothly to repos celebration
+              setMission(null);
+              setChecklist(null);
+              setMissionDetail(null);
             }
-            loadMission();
+            loadMission(true);
           } else {
             setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
           }
@@ -708,22 +718,69 @@ export default function MissionActivePage() {
 
   // ═══ STATE B: EN REPOS ═══
   if (equipeStatus?.statut_equipe === 'EN_REPOS') {
+    const isDispoNow = compteur === 'Disponible maintenant !';
     return (
       <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
         <div className="flex flex-col items-center justify-center py-14 px-6">
-          <div className="w-28 h-28 rounded-full bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center mb-6 shadow-inner">
-            <Clock size={56} className="text-amber-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-stone-800 mb-1">Période de Repos</h2>
-          <p className="text-4xl font-black text-amber-500 mb-3">{compteur || 'Calcul...'}</p>
-          <p className="text-sm text-stone-400 text-center">
-            Repos obligatoire de 3 jours après une mission.<br />
-            Disponible à partir du <strong className="text-stone-600">{dispoDate}</strong>
-          </p>
-          <div className="mt-8 w-full max-w-xs bg-amber-50/80 border border-amber-100 rounded-2xl p-4 text-center">
-            <p className="text-xs text-amber-600 font-semibold">Règle applicable</p>
-            <p className="text-xs text-stone-400 mt-1">3 jours de repos obligatoires après chaque mission terminée.</p>
-          </div>
+          {justFinishedDay ? (
+            /* ═══ DAY COMPLETE CELEBRATION ═══ */
+            <>
+              <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center mb-6 shadow-inner animate-bounce">
+                <Sunset size={56} className="text-indigo-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-stone-800 mb-1">Bonne Journée ! 🎉</h2>
+              <p className="text-sm text-stone-400 text-center mb-4">
+                Votre journée de travail est terminée.<br />
+                Bon repos ! Vous méritez un break.
+              </p>
+              <div className="w-full max-w-xs bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-4 text-center mb-4">
+                <p className="text-[10px] text-indigo-400 uppercase font-semibold mb-1">Prochaine disponibilité</p>
+                <p className="text-lg font-bold text-indigo-600">{compteur || 'Calcul...'}</p>
+                <p className="text-[10px] text-stone-400 mt-1">Repos obligatoire de 3 jours</p>
+              </div>
+              <button onClick={() => setJustFinishedDay(false)}
+                className="text-xs font-medium text-stone-400 hover:text-stone-600 transition-all">
+                Voir le compteur de repos →
+              </button>
+            </>
+          ) : isDispoNow ? (
+            /* ═══ AVAILABLE — SHOW POINTAGE MATINAL ═══ */
+            <>
+              <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center mb-6 shadow-inner">
+                <Sunrise size={56} className="text-emerald-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-stone-800 mb-1">Disponible ! ✅</h2>
+              <p className="text-sm text-stone-400 text-center mb-6">
+                Votre période de repos est terminée.<br />
+                Prêt pour une nouvelle journée ?
+              </p>
+              <button onClick={() => handlePointageJour('matinal')} disabled={gpsLoading}
+                className="w-full max-w-xs bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-5 rounded-2xl text-lg font-black shadow-lg shadow-blue-200 hover:shadow-xl hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+                {gpsLoading ? <Loader2 size={22} className="animate-spin" /> : <Sunrise size={22} />}
+                🌅 Pointer l'arrivée
+              </button>
+              <p className="text-[10px] text-stone-300 mt-3 text-center">
+                Le pointage matinal démarre votre journée de travail
+              </p>
+            </>
+          ) : (
+            /* ═══ NORMAL REPOS COUNTDOWN ═══ */
+            <>
+              <div className="w-28 h-28 rounded-full bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center mb-6 shadow-inner">
+                <Clock size={56} className="text-amber-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-stone-800 mb-1">Période de Repos</h2>
+              <p className="text-4xl font-black text-amber-500 mb-3">{compteur || 'Calcul...'}</p>
+              <p className="text-sm text-stone-400 text-center">
+                Repos obligatoire de 3 jours après une mission.<br />
+                Disponible à partir du <strong className="text-stone-600">{dispoDate}</strong>
+              </p>
+              <div className="mt-8 w-full max-w-xs bg-amber-50/80 border border-amber-100 rounded-2xl p-4 text-center">
+                <p className="text-xs text-amber-600 font-semibold">Règle applicable</p>
+                <p className="text-xs text-stone-400 mt-1">3 jours de repos obligatoires après chaque mission terminée.</p>
+              </div>
+            </>
+          )}
         </div>
       </TechnicianShell>
     );
