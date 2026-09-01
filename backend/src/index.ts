@@ -734,6 +734,7 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
               TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
               TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
               TO_CHAR(om.date_fin_effectif,'YYYY-MM-DD HH24:MI') AS date_fin,
+              TO_CHAR(om.date_echeance,'YYYY-MM-DD') AS date_echeance,
               COALESCE(e.nom, 'Aucune équipe') AS equipe_nom,
               CASE WHEN om.date_fin_effectif IS NOT NULL AND om.duree_estimee_jours IS NOT NULL
                    THEN EXTRACT(DAY FROM om.date_fin_effectif - om.date_debut_effectif) - om.duree_estimee_jours
@@ -754,6 +755,7 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
       let progression = 0;
       let etapeActuelle = '';
       let etapeSuivante = '';
+      let etapePrecedente = '';
       let sousTacheActuelle = '';
       if (m.checklist_etapes) {
         const etapes = Array.isArray(m.checklist_etapes) ? m.checklist_etapes : JSON.parse(m.checklist_etapes || '[]');
@@ -773,17 +775,23 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
             break;
           }
         }
-        // Étape suivante = après la dernière complétée
-        const lastDone = [...etapes].reverse().find((e: any) => e.done);
-        if (lastDone) {
-          const idx = etapes.findIndex((e: any) => e.id === lastDone.id);
-          if (idx >= 0 && idx + 1 < etapes.length && etapes.every((e: any, i: number) => i <= idx ? (e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done))) : true)) {
-            etapeSuivante = etapes[idx + 1].label;
+        // Étape précédente = celle juste avant l'étape actuelle
+        if (etapeActuelle) {
+          const currentIdx = etapes.findIndex((e: any) => e.label === etapeActuelle);
+          if (currentIdx > 0) {
+            etapePrecedente = etapes[currentIdx - 1].label;
+          }
+        }
+        // Étape suivante = celle juste après l'étape actuelle
+        if (etapeActuelle) {
+          const currentIdx = etapes.findIndex((e: any) => e.label === etapeActuelle);
+          if (currentIdx >= 0 && currentIdx + 1 < etapes.length) {
+            etapeSuivante = etapes[currentIdx + 1].label;
           }
         }
       }
-      if (m.statut === 'termine') { progression = 100; etapeActuelle = ''; etapeSuivante = ''; }
-      return { ...m, progression, etapeActuelle, etapeSuivante, sousTacheActuelle };
+      if (m.statut === 'termine') { progression = 100; etapeActuelle = ''; etapeSuivante = ''; etapePrecedente = ''; }
+      return { ...m, progression, etapeActuelle, etapeSuivante, etapePrecedente, sousTacheActuelle };
     });
 
     res.json({ chantier, missions });

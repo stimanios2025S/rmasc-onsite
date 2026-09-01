@@ -763,7 +763,15 @@ export default function ChantiersPage() {
                 <h3 className="font-bold text-lg">{detailChantier.chantier?.nom_chantier}</h3>
                 <p className="text-white/70 text-xs font-mono">{detailChantier.chantier?.reference_commande_erp}</p>
               </div>
-              <button onClick={() => setDetailChantier(null)} className="p-2 hover:bg-white/10 rounded-xl"><X size={20} /></button>
+              <div className="flex items-center gap-3">
+                {detailChantier.chantier?.date_echeance && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 text-xs font-semibold">
+                    <Clock size={12} />
+                    Échéance: {new Date(detailChantier.chantier.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </div>
+                )}
+                <button onClick={() => setDetailChantier(null)} className="p-2 hover:bg-white/10 rounded-xl"><X size={20} /></button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="grid grid-cols-2 gap-3 mb-6">
@@ -827,7 +835,8 @@ export default function ChantiersPage() {
                             <div className="flex items-start gap-2">
                               <span className="w-1.5 h-1.5 mt-1 rounded-full bg-indigo-400 flex-shrink-0" />
                               <div className="text-[11px]">
-                                <p className="text-stone-400 font-medium">Étape en cours:</p>
+                                {m.etapePrecedente && <p className="text-stone-400">Précédent: <span className="text-emerald-600 line-through">{m.etapePrecedente}</span></p>}
+                                <p className="text-stone-400 font-medium mt-0.5">Étape en cours:</p>
                                 <p className="text-stone-700 font-semibold">{m.etapeActuelle}{m.sousTacheActuelle && <span className="text-indigo-500"> ({m.sousTacheActuelle})</span>}</p>
                                 {m.etapeSuivante && <p className="text-stone-400 mt-0.5">Suivant: <span className="text-stone-600">{m.etapeSuivante}</span></p>}
                               </div>
@@ -837,6 +846,7 @@ export default function ChantiersPage() {
                         <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
                           {m.date_debut && <span>Début: {m.date_debut}</span>}
                           {m.date_fin && <span>Fin: {m.date_fin}</span>}
+                          {m.date_echeance && <span className="font-semibold text-amber-500">📅 Échéance: {m.date_echeance}</span>}
                           {m.retard_jours !== null && m.retard_jours > 0 && (
                             <span className="text-rose-500 font-bold">⏱ +{m.retard_jours}j retard</span>
                           )}
