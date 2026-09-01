@@ -59,10 +59,10 @@ export function creerUploadRouter(pool: Pool): Router {
 
   // Multer error handler — returns JSON instead of generic 500
   router.use((err: any, _req: Request, res: Response, next: any) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        res.status(413).json({ erreur: 'Fichier trop volumineux (max 50 Mo).' }); return;
-      }
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ erreur: 'Fichier trop volumineux (max 50 Mo).' }); return;
+    }
+    if (err && err.code && err.code.startsWith('LIMIT_')) {
       res.status(400).json({ erreur: `Erreur upload: ${err.message}` }); return;
     }
     if (err && err.message && err.message.startsWith('Type de fichier')) {
