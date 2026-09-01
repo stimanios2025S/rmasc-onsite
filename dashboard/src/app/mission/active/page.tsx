@@ -283,18 +283,25 @@ export default function MissionActivePage() {
 
   /* ═══ NEW: ARRIVÉE — Confirmer avec vérification GPS ═══ */
   const handleArriveeSite = async () => {
-    if (!mission || !equipeId || !technicienId) return;
+    if (!mission || !equipeId) {
+      setPointageMsg({ type: 'error', text: 'Session invalide. Reconnectez-vous.' });
+      return;
+    }
     setArriveeLoading(true); setPointageMsg(null);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
           const res = await fetch('/api/tracking/arrivee', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
-              equipeId, missionId: mission.id, technicienId,
+              equipeId, missionId: mission.id, technicienId: technicienId || '',
               latitude: pos.coords.latitude, longitude: pos.coords.longitude,
             }),
           });
+          clearTimeout(timeoutId);
           const data = await res.json();
           if (data.ok) {
             setPointageMsg({ type: 'success', text: data.message });
@@ -302,17 +309,22 @@ export default function MissionActivePage() {
             setEstEnRoute(false);
             setGpsInZone(true);
             setGpsDistance(data.distance);
-            stopGpsTracking(); // Stop road tracking, we're on site
-            loadMission();
+            stopGpsTracking();
+            loadMission(true);
           } else if (data.distance !== undefined) {
-            // Not in zone
             setGpsInZone(false);
             setGpsDistance(data.distance);
             setPointageMsg({ type: 'error', text: data.message });
           } else {
-            setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+            setPointageMsg({ type: 'error', text: data.erreur || 'Erreur lors de l\'arrivée.' });
           }
-        } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
+        } catch (err: any) {
+          if (err?.name === 'AbortError') {
+            setPointageMsg({ type: 'error', text: '⏳ Serveur lent — réessayez.' });
+          } else {
+            setPointageMsg({ type: 'error', text: 'Erreur de connexion.' });
+          }
+        }
         setArriveeLoading(false);
       },
       () => { setPointageMsg({ type: 'error', text: 'Activez la géolocalisation.' }); setArriveeLoading(false); },
