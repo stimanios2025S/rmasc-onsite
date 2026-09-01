@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect, useRef, useMemo, createPortal } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,

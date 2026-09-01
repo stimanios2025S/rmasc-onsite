@@ -226,7 +226,7 @@ export default function MissionActivePage() {
             }
             loadMission(true);
           } else {
-            setPointageMsg({ type: 'error', text: data.erreur || 'Erreur' });
+            setPointageMsg({ type: 'error', text: data.message || data.erreur || 'Erreur' });
           }
         } catch { setPointageMsg({ type: 'error', text: 'Erreur de connexion.' }); }
         setGpsLoading(false);

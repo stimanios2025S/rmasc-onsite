@@ -81,13 +81,12 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
               Math.sin(dLng / 2) ** 2;
             const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             const rayon = parseFloat(c.rayon_geofencing) || 100;
-            if (distance > rayon) {
+            if (distance > rayon * 1.5) {
               return res.status(403).json({
-                erreur: false,
+                erreur: `Vous êtes à ${Math.round(distance)}m du chantier "${c.nom_chantier}". Vous devez être sur le site pour terminer la journée (rayon: ${rayon}m).`,
                 autorise: false,
                 distance: Math.round(distance),
                 rayon: Math.round(rayon),
-                message: `Vous êtes à ${Math.round(distance)}m du chantier "${c.nom_chantier}". Vous devez être sur le site pour terminer la journée (rayon: ${rayon}m).`,
               });
             }
           }
