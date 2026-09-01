@@ -275,6 +275,22 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
        JOIN ordres_de_mission om ON om.id = jp.ordre_mission_id
        JOIN chantiers c ON c.id = om.chantier_id
        LEFT JOIN equipes e ON e.id = om.equipe_id
+       UNION ALL
+       SELECT 'pointage_jour' AS type, 'basse'::text AS priorite,
+              CASE pj.type_pointage
+                WHEN 'matinal' THEN '🌅 Pointage matinal — ' || COALESCE(eq.nom, 'Équipe')
+                WHEN 'fin_journee' THEN '🌙 Fin de journée — ' || COALESCE(eq.nom, 'Équipe')
+                ELSE pj.type_pointage || ' — ' || COALESCE(eq.nom, 'Équipe')
+              END AS message,
+              COALESCE(c2.nom_chantier, 'N/A') AS nom_chantier,
+              eq.nom AS equipe_nom,
+              TO_CHAR(pj.horodatage,'YYYY-MM-DD HH24:MI') AS moment,
+              NULL AS photo_url, pj.mission_id, NULL AS blocage_id
+       FROM pointages_jour pj
+       LEFT JOIN equipes eq ON eq.id = pj.equipe_id
+       LEFT JOIN ordres_de_mission om2 ON om2.id = pj.mission_id
+       LEFT JOIN chantiers c2 ON c2.id = om2.chantier_id
+       WHERE pj.horodatage > NOW() - INTERVAL '7 days'
        ORDER BY moment DESC LIMIT 50`
     );
     res.json(rows);

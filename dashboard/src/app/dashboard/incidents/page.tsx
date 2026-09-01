@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { fetchIncidents, annulerBlocage, type IncidentData } from '@/lib/api';
+import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   AlertTriangle, Loader2, Clock, Filter, Search, Ban, ExternalLink,
   PauseCircle, MapPin, Camera, User, ChevronDown, CheckCircle, PlayCircle,
@@ -21,12 +22,13 @@ const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: s
   pause:    { label: 'Pause',         icon: PauseCircle,   color: 'text-amber-600',   bg: 'bg-amber-50' },
   reprise:  { label: 'Reprise',       icon: PlayCircle,    color: 'text-emerald-600',  bg: 'bg-emerald-50' },
   pointage: { label: 'Pointage',      icon: MapPin,        color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+  pointage_jour: { label: 'Pointage Jour', icon: Clock,   color: 'text-purple-600',  bg: 'bg-purple-50' },
   materiel: { label: 'Matériel',      icon: Package,       color: 'text-sky-600',     bg: 'bg-sky-50' },
 };
 
-const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Reprises', 'Matériel', 'Pointages'];
+const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Reprises', 'Matériel', 'Pointages', 'Pointages Jour'];
 const FILTRE_MAP: Record<string, string | null> = {
-  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Reprises: 'reprise', 'Matériel': 'materiel', Pointages: 'pointage',
+  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Reprises: 'reprise', 'Matériel': 'materiel', Pointages: 'pointage', 'Pointages Jour': 'pointage_jour',
 };
 
 function timeAgo(d: string): string {
@@ -58,6 +60,11 @@ export default function IncidentsPage() {
     }
     setLoading(false);
   }, []);
+
+  // Auto-refresh on real-time events (blocages, fin de journée, retards, etc.)
+  useSyncEvents({
+    onDataChanged: () => load(),
+  });
 
   useEffect(() => { load(); }, [load]);
 
@@ -93,6 +100,7 @@ export default function IncidentsPage() {
   const reprises = incidents.filter(i => i.type === 'reprise');
   const materiels = incidents.filter(i => i.type === 'materiel');
   const pointages = incidents.filter(i => i.type === 'pointage');
+  const pointagesJour = incidents.filter(i => i.type === 'pointage_jour');
   const critiques = incidents.filter(i => i.priorite === 'critique');
 
   if (loading) return (
@@ -120,7 +128,7 @@ export default function IncidentsPage() {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 sm:gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 mb-6">
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-stone-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-stone-400 uppercase mb-1">Total</p>
           <p className="text-2xl font-bold text-stone-700">{incidents.length}</p>
@@ -148,6 +156,10 @@ export default function IncidentsPage() {
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-indigo-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-indigo-400 uppercase mb-1">Pointages</p>
           <p className="text-2xl font-bold text-indigo-500">{pointages.length}</p>
+        </div>
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-purple-100 shadow-sm p-4">
+          <p className="text-[10px] font-semibold text-purple-400 uppercase mb-1">Journée</p>
+          <p className="text-2xl font-bold text-purple-500">{pointagesJour.length}</p>
         </div>
       </div>
 

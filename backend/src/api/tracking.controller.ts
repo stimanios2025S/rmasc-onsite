@@ -143,9 +143,56 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           message: `${equipeNom} en route${chantierNom ? ' vers ' + chantierNom : ''}`,
         });
       } else {
+        // ═══ FIN DE JOURNÉE: Set team to EN_REPOS and mission to termine ═══
+        try {
+          // Terminate the active mission for this team
+          if (missionId) {
+            await pool.query(
+              `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW()
+               WHERE id = $1 AND statut IN ('en_cours','en_route','en_pause')`,
+              [missionId]
+            );
+          } else {
+            // If no missionId passed, find and terminate the active mission
+            await pool.query(
+              `UPDATE ordres_de_mission SET statut = 'termine', date_fin_effectif = NOW()
+               WHERE equipe_id = $1 AND statut IN ('en_cours','en_route','en_pause')
+               RETURNING id`,
+              [equipeId]
+            );
+          }
+
+          // Set team to EN_REPOS with 3-day rest
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = NOW() + INTERVAL '3 days'
+             WHERE id = $1`,
+            [equipeId]
+          );
+        } catch (finErr: any) {
+          logger.error('Erreur fin de journée — repos', { erreur: finErr.message, equipeId });
+        }
+
+        // Look up team name and chantier for the SSE notification
+        let equipeNom = 'Équipe';
+        let chantierNom = '';
+        try {
+          const infoRes = await pool.query(
+            `SELECT e.nom AS equipe_nom, c.nom_chantier
+             FROM equipes e
+             LEFT JOIN ordres_de_mission om ON om.equipe_id = e.id AND om.statut IN ('en_cours','en_route')
+             LEFT JOIN chantiers c ON c.id = om.chantier_id
+             WHERE e.id = $1`, [equipeId]
+          );
+          if (infoRes.rows.length > 0) {
+            equipeNom = infoRes.rows[0].equipe_nom || 'Équipe';
+            chantierNom = infoRes.rows[0].nom_chantier || '';
+          }
+        } catch {}
+
         eventBus.emit('equipe_terminee', {
           equipeId, missionId,
-          message: 'Équipe a terminé la journée',
+          equipeNom, chantierNom,
+          message: `${equipeNom} a terminé la journée${chantierNom ? ' — ' + chantierNom : ''}`,
         });
       }
 
