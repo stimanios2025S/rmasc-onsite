@@ -633,5 +633,116 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
     }
   });
 
+  // ═══ SEARCH: Chantier Intelligence — Recherche intelligente ════════════
+  // GET /api/admin/teams/chantier-search?q=term
+  // Returns matching chantiers with blocages, retards, pointages, missions
+  router.get('/chantier-search', async (req, res) => {
+    try {
+      const q = ((req.query.q as string) || '').trim();
+      if (q.length < 1) return res.json({ results: [] });
+
+      // Search chantiers by name, reference, client, address (fuzzy, case-insensitive)
+      const { rows: chantiers } = await pool.query(`
+        SELECT c.id, c.nom_chantier, c.reference_commande_erp, c.adresse,
+               c.client_nom, c.client_telephone, c.statut,
+               c.date_echeance, c.complexe,
+               ST_Y(c.coordonnees::geometry) AS latitude,
+               ST_X(c.coordonnees::geometry) AS longitude,
+               c.rayon_geofencing
+        FROM chantiers c
+        WHERE c.nom_chantier ILIKE $1
+           OR c.reference_commande_erp ILIKE $1
+           OR c.client_nom ILIKE $1
+           OR c.adresse ILIKE $1
+        ORDER BY c.nom_chantier ASC
+        LIMIT 20
+      `, [`%${q}%`]);
+
+      if (chantiers.length === 0) return res.json({ results: [] });
+
+      const chantierIds = chantiers.map(c => c.id);
+
+      // Fetch missions for these chantiers
+      const { rows: missions } = await pool.query(`
+        SELECT om.id, om.chantier_id, om.phase, om.statut, om.date_creation,
+               om.date_declenchement, om.date_debut_effectif, om.date_fin_effectif,
+               om.duree_estimee_jours,
+               e.nom AS equipe_nom, e.type::text AS equipe_type
+        FROM ordres_de_mission om
+        LEFT JOIN equipes e ON e.id = om.equipe_id
+        WHERE om.chantier_id = ANY($1)
+        ORDER BY om.date_creation DESC
+      `, [chantierIds]);
+
+      // Fetch blocages for these chantiers
+      const { rows: blocages } = await pool.query(`
+        SELECT b.id, b.ordre_mission_id, b.raison_blocage, b.priorite, b.statut,
+               b.date_creation, b.date_resolution, b.step_id, b.motif_retard,
+               b.photo_proof_url, om.chantier_id
+        FROM blocages_et_requisitions b
+        JOIN ordres_de_mission om ON om.id = b.ordre_mission_id
+        WHERE om.chantier_id = ANY($1)
+        ORDER BY b.date_creation DESC
+      `, [chantierIds]);
+
+      // Fetch retards for these chantiers
+      const { rows: retards } = await pool.query(`
+        SELECT nr.id, nr.chantier_id, nr.mission_id, nr.equipe_id, nr.motif,
+               nr.date_creation, nr.lue, nr.photo_url,
+               e.nom AS equipe_nom
+        FROM notifications_retard nr
+        LEFT JOIN equipes e ON e.id = nr.equipe_id
+        WHERE nr.chantier_id = ANY($1)
+        ORDER BY nr.date_creation DESC
+      `, [chantierIds]);
+
+      // Fetch recent pointages for these chantiers (last 30 days)
+      const { rows: pointages } = await pool.query(`
+        SELECT pj.equipe_id, pj.type_pointage, pj.horodatage, pj.dans_rayon,
+               pj.distance_chantier_m,
+               e.nom AS equipe_nom,
+               om.chantier_id
+        FROM pointages_jour pj
+        JOIN equipes e ON e.id = pj.equipe_id
+        LEFT JOIN ordres_de_mission om ON om.id = pj.mission_id
+        WHERE om.chantier_id = ANY($1)
+          AND pj.horodatage >= NOW() - INTERVAL '30 days'
+        ORDER BY pj.horodatage DESC
+      `, [chantierIds]);
+
+      // Assemble results
+      const results = chantiers.map(c => {
+        const cMissions = missions.filter(m => m.chantier_id === c.id);
+        const cBlocages = blocages.filter(b => b.chantier_id === c.id);
+        const cRetards = retards.filter(r => r.chantier_id === c.id);
+        const cPointages = pointages.filter(p => p.chantier_id === c.id);
+
+        return {
+          ...c,
+          missions: cMissions,
+          blocages: cBlocages,
+          retards: cRetards,
+          pointages: cPointages,
+          stats: {
+            totalMissions: cMissions.length,
+            missionsTerminees: cMissions.filter(m => m.statut === 'termine').length,
+            missionsEnCours: cMissions.filter(m => m.statut === 'en_cours').length,
+            blocagesOuverts: cBlocages.filter(b => b.statut === 'ouvert' || b.statut === 'en_cours').length,
+            blocagesTotal: cBlocages.length,
+            retardsTotal: cRetards.length,
+            retardsNonLus: cRetards.filter(r => !r.lue).length,
+            totalPointages: cPointages.length,
+            pointagesConformes: cPointages.filter(p => p.dans_rayon).length,
+          },
+        };
+      });
+
+      res.json({ results });
+    } catch (err: any) {
+      logger.error('Erreur recherche chantier', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }

@@ -293,3 +293,46 @@ export async function fetchTimesheet(date?: string): Promise<TimesheetData> {
   const q = date ? `?date=${date}` : '';
   return apiFetch(`/admin/teams/timesheet${q}`);
 }
+
+// ═══ CHANTIER SEARCH — Recherche intelligente ═══════════════════════════
+export interface ChantierSearchBlocage {
+  id: string; ordre_mission_id: string; raison_blocage: string; priorite: string;
+  statut: string; date_creation: string; date_resolution: string | null;
+  step_id: string | null; motif_retard: string | null; photo_proof_url: string | null;
+}
+export interface ChantierSearchRetard {
+  id: string; chantier_id: string; mission_id: string; equipe_id: string;
+  motif: string; date_creation: string; lue: boolean; photo_url: string | null;
+  equipe_nom: string | null;
+}
+export interface ChantierSearchMission {
+  id: string; chantier_id: string; phase: string; statut: string;
+  date_creation: string; date_declenchement: string | null;
+  date_debut_effectif: string | null; date_fin_effectif: string | null;
+  duree_estimee_jours: number | null;
+  equipe_nom: string | null; equipe_type: string | null;
+}
+export interface ChantierSearchPointage {
+  equipe_id: string; type_pointage: string; horodatage: string;
+  dans_rayon: boolean; distance_chantier_m: number | null;
+  equipe_nom: string; chantier_id: string;
+}
+export interface ChantierSearchResult {
+  id: string; nom_chantier: string; reference_commande_erp: string | null;
+  adresse: string | null; client_nom: string | null; client_telephone: string | null;
+  statut: string; date_echeance: string | null; complexe: string | null;
+  latitude: number | null; longitude: number | null; rayon_geofencing: number | null;
+  missions: ChantierSearchMission[];
+  blocages: ChantierSearchBlocage[];
+  retards: ChantierSearchRetard[];
+  pointages: ChantierSearchPointage[];
+  stats: {
+    totalMissions: number; missionsTerminees: number; missionsEnCours: number;
+    blocagesOuverts: number; blocagesTotal: number;
+    retardsTotal: number; retardsNonLus: number;
+    totalPointages: number; pointagesConformes: number;
+  };
+}
+export async function searchChantiers(q: string): Promise<{ results: ChantierSearchResult[] }> {
+  return apiFetch(`/admin/teams/chantier-search?q=${encodeURIComponent(q)}`);
+}
