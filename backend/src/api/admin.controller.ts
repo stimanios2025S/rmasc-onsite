@@ -415,7 +415,28 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       );
 
       if (missionRes.rows.length === 0) {
-        return res.status(400).json({ erreur: 'Aucune mission active à réassigner.' });
+        // No active mission — create the initial mecanique mission for this chantier
+        try {
+          const { rows: newMission } = await pool.query(
+            `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_creation)
+             VALUES ($1, $2, 'mecanique', 'en_attente', NOW())
+             RETURNING id`,
+            [req.params.id, equipe_id]
+          );
+          // Set team to EN_MISSION
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`,
+            [equipe_id]
+          );
+          // Update chantier statut
+          await pool.query(
+            `UPDATE chantiers SET statut = 'en_cours' WHERE id = $1`,
+            [req.params.id]
+          );
+          return res.json({ message: `Équipe "${nouvelleEquipe.nom}" assignée au chantier. Mission mécanique créée.` });
+        } catch (createErr: any) {
+          return res.status(500).json({ erreur: 'Erreur création mission: ' + createErr.message });
+        }
       }
       const mission = missionRes.rows[0];
 
