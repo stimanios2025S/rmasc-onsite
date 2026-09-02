@@ -214,17 +214,41 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
           const mRes = await pool.query(`SELECT phase FROM ordres_de_mission WHERE id = $1`, [req.params.id]);
           if (mRes.rows.length > 0) {
             const phase = mRes.rows[0].phase;
-            const clRes = await pool.query(
-              `INSERT INTO checklists_phases (mission_id, phase, etapes)
-               VALUES ($1, $2, generer_checklist($2))
-               RETURNING id, mission_id, phase, etapes, complete, date_mise_a_jour`,
-              [req.params.id, phase]
-            );
-            if (clRes.rows.length > 0) {
-              const row = clRes.rows[0];
-              if (typeof row.etapes === 'string') { try { row.etapes = JSON.parse(row.etapes); } catch (_) {} }
-              if (!Array.isArray(row.etapes)) row.etapes = [];
-              return res.json(row);
+            let etapes: any[] = [];
+            // Try generer_checklist first, fallback to hardcoded
+            try {
+              const clRes = await pool.query(
+                `INSERT INTO checklists_phases (mission_id, phase, etapes)
+                 VALUES ($1, $2, generer_checklist($2))
+                 RETURNING id, mission_id, phase, etapes, complete, date_mise_a_jour`,
+                [req.params.id, phase]
+              );
+              if (clRes.rows.length > 0) {
+                const row = clRes.rows[0];
+                if (typeof row.etapes === 'string') { try { row.etapes = JSON.parse(row.etapes); } catch (_) {} }
+                if (!Array.isArray(row.etapes)) row.etapes = [];
+                return res.json(row);
+              }
+            } catch (_) {
+              // generer_checklist failed — use hardcoded etapes
+              if (phase === 'mecanique') {
+                etapes = [{"id":"m1","label":"Arrivage au chantier","done":false},{"id":"m2","label":"Plombage de gaine","done":false},{"id":"m3","label":"Montage guidage/guiderail","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},{"id":"m4","label":"Montage de moteur et plombage de moteur","done":false},{"id":"m5","label":"Installation arcade et contrepoids","done":false},{"id":"m6","label":"Install régulateur de vitesse et poulies","done":false},{"id":"m7","label":"Install câbles de suspension et lingue","done":false},{"id":"m8","label":"Installation des plateaux","done":false},{"id":"m9","label":"Installation des portes","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},{"id":"m10","label":"Installation de cabine","done":false},{"id":"m11","label":"Installation des portes cabine","done":false},{"id":"m12","label":"Charger le contrepoids","done":false}];
+              } else if (phase === 'electrique') {
+                etapes = [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}];
+              } else {
+                etapes = [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+              }
+              const fbRes = await pool.query(
+                `INSERT INTO checklists_phases (mission_id, phase, etapes)
+                 VALUES ($1, $2, $3)
+                 RETURNING id, mission_id, phase, etapes, complete, date_mise_a_jour`,
+                [req.params.id, phase, JSON.stringify(etapes)]
+              );
+              if (fbRes.rows.length > 0) {
+                const row = fbRes.rows[0];
+                if (!Array.isArray(row.etapes)) row.etapes = etapes;
+                return res.json(row);
+              }
             }
           }
         } catch (_) { /* fallback to null */ }
