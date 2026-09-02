@@ -4,7 +4,7 @@ import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fet
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
-  User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot, Info,
+  User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
 
@@ -272,7 +272,6 @@ export default function ChantiersPage() {
   });
   const [dxfFile, setDxfFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [equipeIdToAssign, setEquipeIdToAssign] = useState('');
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
@@ -337,17 +336,15 @@ export default function ChantiersPage() {
         pdfUrl: pdfUrl || undefined,
         ficheTechnique: form.fiche_technique || undefined,
         date_echeance: form.date_echeance || undefined,
-        forceEquipeId: equipeIdToAssign || undefined,
       });
-      // Backend auto-assigns first DISPONIBLE team if no forceEquipeId provided
+      // Backend auto-assigns first DISPONIBLE team
       if (res.equipeNom) {
-        setMessage({ type: 'success', text: `Chantier créé et équipe "${res.equipeNom}" assignée !` });
+        setMessage({ type: 'success', text: `Chantier créé et équipe "${res.equipeNom}" assignée automatiquement !` });
       } else {
         setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
       }
       setShowWizard(false);
       setStep(1);
-      setEquipeIdToAssign('');
       resetForm();
       await loadChantiers();
     } catch (e: any) {
@@ -365,7 +362,6 @@ export default function ChantiersPage() {
     });
     setDxfFile(null);
     setPdfFile(null);
-    setEquipeIdToAssign('');
   }
 
   function ouvrirEdition(c: ChantierData) {
@@ -633,18 +629,18 @@ export default function ChantiersPage() {
           <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh]">
             {/* Barre de progression */}
             <div className="shrink-0 flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 border-b border-stone-100">
-              {[1, 2, 3, 4].map(s => (
+              {[1, 2, 3].map(s => (
                 <div key={s} className="flex items-center flex-1 last:flex-none">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step > s ? 'bg-emerald-500 text-white' : step === s ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-stone-200 text-stone-400'}`}>
                     {step > s ? <CheckCircle size={18} /> : s}
                   </div>
                   <span className={`ml-3 text-xs font-semibold hidden sm:block ${step >= s ? 'text-stone-800' : 'text-stone-300'}`}>
-                    {s === 1 ? 'Client' : s === 2 ? 'Complexité' : s === 3 ? 'Documents' : 'Équipe'}
+                    {s === 1 ? 'Client' : s === 2 ? 'Complexité' : 'Documents'}
                   </span>
-                  {s < 4 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
+                  {s < 3 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
                 </div>
               ))}
-              <button onClick={() => { setShowWizard(false); resetForm(); setEquipeIdToAssign(''); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
+              <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
             </div>
 
             {/* Contenu scrollable */}
@@ -831,50 +827,6 @@ export default function ChantiersPage() {
                 </div>
               )}
 
-              {/* STEP 4: ÉQUIPE */}
-              {step === 4 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users size={18} className="text-indigo-500" />
-                    <h4 className="font-bold text-stone-700">Assigner une Équipe</h4>
-                  </div>
-                  <p className="text-xs text-stone-400 mb-4">Recherchez et sélectionnez l'équipe qui réalisera ce chantier</p>
-
-                  <TeamSearchBar
-                    equipes={equipes}
-                    selectedId={equipeIdToAssign}
-                    onSelect={setEquipeIdToAssign}
-                    placeholder="Rechercher une équipe par nom, type, membre..."
-                  />
-
-                  {!equipeIdToAssign && (
-                    <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3">
-                      <Info size={18} className="text-indigo-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold text-indigo-700">Assignation automatique</p>
-                        <p className="text-[10px] text-indigo-500 mt-0.5">Si aucune équipe n'est sélectionnée, le système assignera automatiquement la première équipe DISPONIBLE.</p>
-                      </div>
-                    </div>
-                  )}
-                  {equipeIdToAssign && (() => {
-                    const eq = equipes.find(e => e.id === equipeIdToAssign);
-                    if (!eq) return null;
-                    return (
-                      <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${eq.type === 'mecanique' ? 'bg-blue-100 text-blue-600' : eq.type === 'electrique' ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                          <Users size={18} />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-bold text-indigo-800">{eq.nom}</p>
-                          <p className="text-[10px] text-indigo-500">{TYPE_LABELS[eq.type] || eq.type} · {eq.statut_equipe === 'DISPONIBLE' ? '✅ Disponible' : '🔄 En mission'}</p>
-                          {eq.membres_noms && <p className="text-[10px] text-indigo-400 mt-0.5">👤 {eq.membres_noms}</p>}
-                        </div>
-                        <CheckCircle size={18} className="text-indigo-500 shrink-0" />
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
             </div>
 
             {/* Boutons */}
@@ -885,7 +837,7 @@ export default function ChantiersPage() {
                   <ChevronLeft size={18} /> Retour
                 </button>
               ) : <div className="min-w-[100px]" />}
-              {step < 4 ? (
+              {step < 3 ? (
                 <button type="button" onClick={() => setStep(step + 1)}
                   disabled={(step === 1 && (!form.nom_projet || !form.latitude || !form.longitude))}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-stone-800 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-stone-900 disabled:opacity-40 transition-all shadow-lg">
