@@ -4,7 +4,7 @@ import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fet
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
-  User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
+  User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot, Info,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
 
@@ -337,15 +337,11 @@ export default function ChantiersPage() {
         pdfUrl: pdfUrl || undefined,
         ficheTechnique: form.fiche_technique || undefined,
         date_echeance: form.date_echeance || undefined,
+        forceEquipeId: equipeIdToAssign || undefined,
       });
-      // Auto-assign team if selected
-      if (equipeIdToAssign && res.chantierId) {
-        try {
-          await reassignerEquipe(res.chantierId, equipeIdToAssign);
-          setMessage({ type: 'success', text: 'Chantier créé et équipe assignée !' });
-        } catch (assignErr: any) {
-          setMessage({ type: 'success', text: `Chantier créé. Assignation: ${assignErr.message || 'erreur'}` });
-        }
+      // Backend auto-assigns first DISPONIBLE team if no forceEquipeId provided
+      if (res.equipeNom) {
+        setMessage({ type: 'success', text: `Chantier créé et équipe "${res.equipeNom}" assignée !` });
       } else {
         setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
       }
@@ -852,11 +848,11 @@ export default function ChantiersPage() {
                   />
 
                   {!equipeIdToAssign && (
-                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-                      <AlertTriangle size={18} className="text-amber-500 mt-0.5 shrink-0" />
+                    <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3">
+                      <Info size={18} className="text-indigo-500 mt-0.5 shrink-0" />
                       <div>
-                        <p className="text-xs font-semibold text-amber-700">Aucune équipe sélectionnée</p>
-                        <p className="text-[10px] text-amber-500 mt-0.5">Vous pourrez assigner une équipe plus tard depuis la page du chantier.</p>
+                        <p className="text-xs font-semibold text-indigo-700">Assignation automatique</p>
+                        <p className="text-[10px] text-indigo-500 mt-0.5">Si aucune équipe n'est sélectionnée, le système assignera automatiquement la première équipe DISPONIBLE.</p>
                       </div>
                     </div>
                   )}
