@@ -284,7 +284,7 @@ export default function MissionActivePage() {
   /* ═══ NEW: ARRIVÉE — Confirmer avec vérification GPS ═══ */
   const handleArriveeSite = async () => {
     if (!mission || !equipeId) {
-      setPointageMsg({ type: 'error', text: 'Session invalide. Reconnectez-vous.' });
+      setPointageMsg({ type: 'error', text: 'Aucune mission active. Reconnectez-vous si nécessaire.' });
       return;
     }
     setArriveeLoading(true); setPointageMsg(null);
@@ -554,7 +554,7 @@ export default function MissionActivePage() {
   /* ═══ BLOCAGE ═══ */
   const handleBlocage = async () => {
     if (!mission) { setPointageMsg({ type: 'error', text: 'Aucune mission active.' }); return; }
-    if (!technicienId) { setPointageMsg({ type: 'error', text: 'Session invalide. Reconnectez-vous.' }); return; }
+    if (!equipeId) { setPointageMsg({ type: 'error', text: 'Session invalide. Reconnectez-vous.' }); return; }
     setBlocageLoading(true);
     try {
       let photoUrl: string | null = null;
@@ -576,7 +576,7 @@ export default function MissionActivePage() {
       const res = await fetch('/api/mission/blocage', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          missionId: mission.id, declarePar: technicienId, raison: raisonFinale,
+          missionId: mission.id, declarePar: technicienId || equipeId, raison: raisonFinale,
           idPieceERP: blocageForm.pieceERP || null, priorite: blocageForm.priorite,
           stepId: blocageForm.stepId || null, motifRetard: blocageForm.motifRetard || null, photoProofUrl: photoUrl,
         }),
@@ -1224,12 +1224,24 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ MISSION BLOQUÉE ═══ */}
+      {/* ═══ MISSION BLOQUÉE — with unblock option ═══ */}
       {aBloque && (
-        <div className="mx-4 mb-4 bg-gradient-to-r from-rose-50 to-red-50 rounded-3xl p-5 text-center border border-rose-200">
-          <AlertTriangle size={32} className="text-rose-400 mx-auto mb-2" />
-          <p className="font-bold text-stone-700">Mission Bloquée</p>
-          <p className="text-sm text-stone-400">En attente de résolution par El Ghani</p>
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-rose-500 to-red-500 rounded-3xl p-5 shadow-lg shadow-rose-200">
+            <div className="flex items-center gap-3 mb-3">
+              <Ban size={24} className="text-white" />
+              <div>
+                <p className="font-bold text-white text-sm">⛔ Mission Bloquée</p>
+                <p className="text-white/70 text-xs">En attente de résolution du blocage</p>
+              </div>
+            </div>
+            <p className="text-white/60 text-xs mb-3">Le problème a été signalé. Si le problème est résolu, vous pouvez annuler le blocage.</p>
+            <button onClick={handleAnnulerBlocageEquipe} disabled={blocageLoading}
+              className="w-full bg-white text-rose-600 py-3 rounded-2xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+              {blocageLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              ✅ Problème Résolu — Reprendre le Travail
+            </button>
+          </div>
         </div>
       )}
 
@@ -1276,27 +1288,6 @@ export default function MissionActivePage() {
             className="w-full bg-white border-2 border-amber-200 text-amber-600 py-3.5 rounded-2xl font-bold hover:bg-amber-50 transition-all flex items-center justify-center gap-2">
             <Timer size={16} /> Signaler un Retard
           </button>
-        </div>
-      )}
-
-      {/* ═══ MISSION BLOQUÉE — waiting for admin ═══ */}
-      {aBloque && (isEnCours || isArrive) && (
-        <div className="mx-4 mb-4">
-          <div className="bg-gradient-to-r from-rose-500 to-red-500 rounded-3xl p-5 shadow-lg shadow-rose-200">
-            <div className="flex items-center gap-3 mb-3">
-              <Ban size={24} className="text-white" />
-              <div>
-                <p className="font-bold text-white text-sm">⛔ Mission Bloquée</p>
-                <p className="text-white/70 text-xs">En attente de résolution du blocage</p>
-              </div>
-            </div>
-            <p className="text-white/60 text-xs mb-3">Le problème a été signalé. Vous pouvez annuler le blocage si le problème est résolu.</p>
-            <button onClick={handleAnnulerBlocageEquipe} disabled={blocageLoading}
-              className="w-full bg-white text-rose-600 py-3 rounded-2xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-              {blocageLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-              ✅ Problème Résolu — Reprendre le Travail
-            </button>
-          </div>
         </div>
       )}
 
