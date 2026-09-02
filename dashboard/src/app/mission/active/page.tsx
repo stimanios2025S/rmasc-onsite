@@ -804,7 +804,8 @@ export default function MissionActivePage() {
   const aBloque = mission?.statut === 'bloque';
   const progression = checklist ? Math.round((checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100) : 0;
 
-  // New lifecycle states
+  // New lifecycle states — derive from BOTH local state AND fetched data (pointages/mission status)
+  // so the UI stays correct even after page reload
   const missionStatut = mission?.statut || '';
   const isEnRoute = estEnRoute || missionStatut === 'en_route';
   const isArrive = estArriveChantier || estArrive || missionStatut === 'en_cours' || missionStatut === 'en_pause';

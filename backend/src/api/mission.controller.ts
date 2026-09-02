@@ -28,7 +28,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id
          JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.equipe_id = $1 AND om.statut IN ('en_attente','en_route','en_cours','bloque')
+         WHERE om.equipe_id = $1 AND om.statut IN ('en_attente','en_route','en_cours','en_pause','bloque')
          ORDER BY om.date_creation DESC LIMIT 1`,
         [equipe_id]
       );
