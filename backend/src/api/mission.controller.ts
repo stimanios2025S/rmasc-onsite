@@ -28,7 +28,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id
          JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.equipe_id = $1 AND om.statut IN ('en_attente','en_cours','bloque')
+         WHERE om.equipe_id = $1 AND om.statut IN ('en_attente','en_route','en_cours','bloque')
          ORDER BY om.date_creation DESC LIMIT 1`,
         [equipe_id]
       );
@@ -208,7 +208,28 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
          FROM checklists_phases WHERE mission_id = $1 ORDER BY date_mise_a_jour DESC LIMIT 1`,
         [req.params.id]
       );
-      if (rows.length === 0) return res.json(null);
+      if (rows.length === 0) {
+        // Auto-create checklist if missing (trigger may have failed)
+        try {
+          const mRes = await pool.query(`SELECT phase FROM ordres_de_mission WHERE id = $1`, [req.params.id]);
+          if (mRes.rows.length > 0) {
+            const phase = mRes.rows[0].phase;
+            const clRes = await pool.query(
+              `INSERT INTO checklists_phases (mission_id, phase, etapes)
+               VALUES ($1, $2, generer_checklist($2))
+               RETURNING id, mission_id, phase, etapes, complete, date_mise_a_jour`,
+              [req.params.id, phase]
+            );
+            if (clRes.rows.length > 0) {
+              const row = clRes.rows[0];
+              if (typeof row.etapes === 'string') { try { row.etapes = JSON.parse(row.etapes); } catch (_) {} }
+              if (!Array.isArray(row.etapes)) row.etapes = [];
+              return res.json(row);
+            }
+          }
+        } catch (_) { /* fallback to null */ }
+        return res.json(null);
+      }
       // Ensure etapes is always a parsed array (some pg drivers return JSONB as string)
       const row = rows[0];
       if (typeof row.etapes === 'string') {

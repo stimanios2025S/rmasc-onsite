@@ -430,6 +430,38 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         missionNextId = existingNext.rows[0].id;
         equipeNextNom = existingNext.rows[0].equipe_nom || 'Aucune';
         logger.info(`Transfert: mission ${nextPhase} créée par trigger`, { missionNextId, equipeNextNom });
+
+        // Ensure checklist exists for the trigger-created mission (trigger doesn't create one)
+        try {
+          const clCheck = await pool.query(
+            `SELECT 1 FROM checklists_phases WHERE mission_id = $1 LIMIT 1`,
+            [missionNextId]
+          );
+          if (clCheck.rows.length === 0) {
+            await pool.query(
+              `INSERT INTO checklists_phases (mission_id, phase, etapes)
+               VALUES ($1, $2, generer_checklist($2))`,
+              [missionNextId, nextPhase]
+            );
+            logger.info('Checklist créée pour mission trigger', { missionNextId, phase: nextPhase });
+          }
+        } catch (clErr: any) {
+          logger.error('Erreur création checklist pour mission trigger', { erreur: clErr.message, missionNextId });
+          // Fallback: manual checklist
+          try {
+            const fallbackEtapes = nextPhase === 'electrique'
+              ? [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}]
+              : [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+            await pool.query(
+              `INSERT INTO checklists_phases (mission_id, phase, etapes)
+               VALUES ($1, $2, $3)`,
+              [missionNextId, nextPhase, JSON.stringify(fallbackEtapes)]
+            );
+            logger.info('Checklist fallback créée pour mission trigger', { missionNextId, phase: nextPhase });
+          } catch (fbErr: any) {
+            logger.error('Échec total création checklist fallback', { erreur: fbErr.message });
+          }
+        }
       } else {
         // Trigger didn't create it (no team available or trigger missing) — create manually
         const equipeNextRes = await pool.query(
