@@ -573,7 +573,7 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
       equipeResult = await pool.query(
         `SELECT e.id, e.nom FROM equipes e
          WHERE e.type = 'mecanique' AND e.actif = TRUE
-           AND e.statut_equipe = 'DISPONIBLE' AND e.disponible_a_partir_de <= NOW()
+           AND e.statut_equipe = 'DISPONIBLE' AND (e.disponible_a_partir_de IS NULL OR e.disponible_a_partir_de <= NOW())
          ORDER BY (SELECT COUNT(*) FROM ordres_de_mission om
                    WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC,
                   e.date_creation ASC
