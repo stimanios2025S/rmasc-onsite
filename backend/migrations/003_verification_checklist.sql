@@ -1,4 +1,5 @@
 -- Update generer_checklist to include comprehensive verification steps from both PDFs
+DROP FUNCTION IF EXISTS generer_checklist(text);
 CREATE OR REPLACE FUNCTION generer_checklist(p_phase TEXT)
 RETURNS JSONB AS $$
 BEGIN
