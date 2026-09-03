@@ -184,7 +184,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     try {
       const missionId = req.params.id;
       const missionRes = await pool.query(
-        `SELECT om.id, om.phase, om.statut, om.date_declenchement, om.date_debut,
+        `SELECT om.id, om.phase, om.statut, om.date_declenchement, om.date_debut_effectif,
                 c.nom_chantier, c.adresse, c.client_nom, c.reference_erp,
                 e.nom AS equipe_nom,
                 cl.etapes, cl.complete
