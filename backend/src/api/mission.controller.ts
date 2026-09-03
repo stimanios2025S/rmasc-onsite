@@ -206,82 +206,107 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       const passedSteps = etapes.filter((e: any) => e.done).length;
       const failedSteps = totalSteps - passedSteps;
       const score = totalSteps > 0 ? Math.round((passedSteps / totalSteps) * 100) : 0;
-      const verdict = score >= 90 ? 'CONFORME' : score >= 70 ? 'CONFORME AVEC RÉSERVES' : 'NON CONFORME';
+      const verdict = score >= 90 ? 'CONFORME' : score >= 70 ? 'CONFORME AVEC RESERVES' : 'NON CONFORME';
       const verdictColor = score >= 90 ? '#16a34a' : score >= 70 ? '#d97706' : '#dc2626';
       const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 
-      const etapesHtml = etapes.map((e: any, i: number) => `
-    <div class="step">
-      <div class="step-icon ${e.done ? 'pass' : 'fail'}">${e.done ? '✓' : '✗'}</div>
-      <div style="flex:1">
-        <div class="step-label">${i + 1}. ${e.label}</div>
-        ${e.note ? '<div class="step-note">' + e.note + '</div>' : ''}
-      </div>
-      <span class="step-status ${e.done ? 'pass' : 'fail'}">${e.done ? 'Conforme' : 'Non conforme'}</span>
-    </div>`).join('');
+      // Build steps HTML safely
+      const etapesRows = etapes.map((e: any, i: number) => {
+        const statusClass = e.done ? 'pass' : 'fail';
+        const icon = e.done ? '&#10003;' : '&#10007;';
+        const statusLabel = e.done ? 'Conforme' : 'Non conforme';
+        const noteHtml = e.note ? '<div class="step-note">' + String(e.note).replace(/</g, '&lt;') + '</div>' : '';
+        return '<div class="step">'
+          + '<div class="step-icon ' + statusClass + '">' + icon + '</div>'
+          + '<div class="step-body">'
+          + '<div class="step-label">' + (i + 1) + '. ' + String(e.label).replace(/</g, '&lt;') + '</div>'
+          + noteHtml
+          + '</div>'
+          + '<span class="step-status ' + statusClass + '">' + statusLabel + '</span>'
+          + '</div>';
+      }).join('\n');
 
-      const statsText = passedSteps + ' conforme' + (passedSteps > 1 ? 's' : '') + ' sur ' + totalSteps + ' points vérifiés' + (failedSteps > 0 ? ' — ' + failedSteps + ' non conforme' + (failedSteps > 1 ? 's' : '') : '');
+      const statsText = passedSteps + ' conforme' + (passedSteps > 1 ? 's' : '') + ' sur ' + totalSteps + ' points verifies'
+        + (failedSteps > 0 ? ' &mdash; ' + failedSteps + ' non conforme' + (failedSteps > 1 ? 's' : '') : '');
 
-      const html = '<!DOCTYPE html>\n<html lang="fr">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>Rapport de Vérification — ' + m.nom_chantier + '</title>\n' +
-'@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");\n' +
-'* { margin: 0; padding: 0; box-sizing: border-box; }\n' +
-'body { font-family: "Inter", sans-serif; color: #1a1a2e; background: #fff; padding: 40px; max-width: 900px; margin: 0 auto; }\n' +
-'.header { text-align: center; border-bottom: 3px solid #1a1a2e; padding-bottom: 24px; margin-bottom: 32px; }\n' +
-'.header h1 { font-size: 22px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }\n' +
-'.header .subtitle { font-size: 13px; color: #666; margin-top: 4px; }\n' +
-'.meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 32px; margin-bottom: 28px; padding: 16px 20px; background: #f8f9fa; border-radius: 8px; }\n' +
-'.meta-item { display: flex; flex-direction: column; }\n' +
-'.meta-item .label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #888; }\n' +
-'.meta-item .value { font-size: 14px; font-weight: 600; color: #1a1a2e; }\n' +
-'.score-banner { text-align: center; padding: 20px; border-radius: 12px; margin-bottom: 28px; }\n' +
-'.score-banner .score { font-size: 48px; font-weight: 800; }\n' +
-'.score-banner .verdict { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }\n' +
-'.score-banner .stats { font-size: 12px; color: #555; margin-top: 8px; }\n' +
-'.section { margin-bottom: 24px; }\n' +
-'.section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 8px 16px; background: #1a1a2e; color: #fff; border-radius: 6px; margin-bottom: 12px; }\n' +
-'.step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #eee; }\n' +
-'.step:last-child { border-bottom: none; }\n' +
-'.step-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }\n' +
-'.step-icon.pass { background: #dcfce7; color: #16a34a; }\n' +
-'.step-icon.fail { background: #fee2e2; color: #dc2626; }\n' +
-'.step-label { font-size: 13px; font-weight: 500; color: #333; flex: 1; }\n' +
-'.step-note { font-size: 11px; color: #888; font-style: italic; margin-top: 2px; }\n' +
-'.step-status { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }\n' +
-'.step-status.pass { background: #dcfce7; color: #16a34a; }\n' +
-'.step-status.fail { background: #fee2e2; color: #dc2626; }\n' +
-'.footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #eee; font-size: 11px; color: #999; }\n' +
-'@media print { body { padding: 20px; } .no-print { display: none !important; } }\n' +
-'</style>\n</head>\n<body>\n' +
-'  <div class="header">\n    <h1>Rapport de Verification</h1>\n    <div class="subtitle">RMASC OnSite &mdash; Diagnostic d\'installation</div>\n  </div>\n\n' +
-'  <div class="meta">\n' +
-'    <div class="meta-item"><span class="label">Chantier</span><span class="value">' + m.nom_chantier + '</span></div>\n' +
-'    <div class="meta-item"><span class="label">Reference ERP</span><span class="value">' + m.reference_erp + '</span></div>\n' +
-'    <div class="meta-item"><span class="label">Adresse</span><span class="value">' + m.adresse + '</span></div>\n' +
-'    <div class="meta-item"><span class="label">Client</span><span class="value">' + m.client_nom + '</span></div>\n' +
-'    <div class="meta-item"><span class="label">Equipe Verification</span><span class="value">' + m.equipe_nom + '</span></div>\n' +
-'    <div class="meta-item"><span class="label">Date du rapport</span><span class="value">' + now + '</span></div>\n' +
-'  </div>\n\n' +
-'  <div class="score-banner" style="background: ' + verdictColor + '15; border: 2px solid ' + verdictColor + ';">\n' +
-'    <div class="score" style="color: ' + verdictColor + ';">' + score + '%</div>\n' +
-'    <div class="verdict" style="color: ' + verdictColor + ';">' + verdict + '</div>\n' +
-'    <div class="stats">' + statsText + '</div>\n' +
-'  </div>\n\n' +
-'  <div class="section">\n' +
-'    <div class="section-title">Points de verification (' + totalSteps + ')</div>\n' +
-'    ' + etapesHtml + '\n' +
-'  </div>\n\n' +
-'  <div class="footer">\n' +
-'    Rapport genere automatiquement par RMASC OnSite &mdash; ' + now + '<br>\n' +
-'    Ce document est un diagnostic interne. Valide par l\'equipe de verification.\n' +
-'  </div>\n\n' +
-'  <div class="no-print" style="text-align:center; margin-top:24px;">\n' +
-'    <button onclick="window.print()" style="padding:12px 32px; background:#1a1a2e; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">\n' +
-'      Imprimer / Sauvegarder en PDF\n' +
-'    </button>\n  </div>\n</body>\n</html>';
+      const html = [
+        '<!DOCTYPE html>',
+        '<html lang="fr">',
+        '<head>',
+        '<meta charset="UTF-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '<title>Rapport Verification &mdash; ' + String(m.nom_chantier).replace(/</g, '&lt;') + '</title>',
+        '<link rel="preconnect" href="https://fonts.googleapis.com">',
+        '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">',
+        '<style>',
+        '* { margin: 0; padding: 0; box-sizing: border-box; }',
+        'body { font-family: "Inter", sans-serif; color: #1a1a2e; background: #fff; padding: 40px; max-width: 900px; margin: 0 auto; }',
+        '.header { text-align: center; border-bottom: 3px solid #1a1a2e; padding-bottom: 24px; margin-bottom: 32px; }',
+        '.header h1 { font-size: 22px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }',
+        '.header .subtitle { font-size: 13px; color: #666; margin-top: 4px; }',
+        '.meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 32px; margin-bottom: 28px; padding: 16px 20px; background: #f8f9fa; border-radius: 8px; }',
+        '.meta-item { display: flex; flex-direction: column; }',
+        '.meta-item .label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #888; }',
+        '.meta-item .value { font-size: 14px; font-weight: 600; color: #1a1a2e; }',
+        '.score-banner { text-align: center; padding: 20px; border-radius: 12px; margin-bottom: 28px; }',
+        '.score-banner .score { font-size: 48px; font-weight: 800; }',
+        '.score-banner .verdict { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }',
+        '.score-banner .stats { font-size: 12px; color: #555; margin-top: 8px; }',
+        '.section { margin-bottom: 24px; }',
+        '.section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 8px 16px; background: #1a1a2e; color: #fff; border-radius: 6px; margin-bottom: 12px; }',
+        '.step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #eee; }',
+        '.step:last-child { border-bottom: none; }',
+        '.step-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }',
+        '.step-icon.pass { background: #dcfce7; color: #16a34a; }',
+        '.step-icon.fail { background: #fee2e2; color: #dc2626; }',
+        '.step-body { flex: 1; }',
+        '.step-label { font-size: 13px; font-weight: 500; color: #333; }',
+        '.step-note { font-size: 11px; color: #888; font-style: italic; margin-top: 2px; }',
+        '.step-status { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }',
+        '.step-status.pass { background: #dcfce7; color: #16a34a; }',
+        '.step-status.fail { background: #fee2e2; color: #dc2626; }',
+        '.footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #eee; font-size: 11px; color: #999; }',
+        '.print-btn { display: inline-block; padding: 12px 32px; background: #1a1a2e; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }',
+        '@media print { body { padding: 20px; } .no-print { display: none !important; } }',
+        '</style>',
+        '</head>',
+        '<body>',
+        '<div class="header">',
+        '<h1>Rapport de Verification</h1>',
+        '<div class="subtitle">RMASC OnSite &mdash; Diagnostic d\'installation</div>',
+        '</div>',
+        '<div class="meta">',
+        '<div class="meta-item"><span class="label">Chantier</span><span class="value">' + String(m.nom_chantier || '').replace(/</g, '&lt;') + '</span></div>',
+        '<div class="meta-item"><span class="label">Reference ERP</span><span class="value">' + String(m.reference_erp || '').replace(/</g, '&lt;') + '</span></div>',
+        '<div class="meta-item"><span class="label">Adresse</span><span class="value">' + String(m.adresse || '').replace(/</g, '&lt;') + '</span></div>',
+        '<div class="meta-item"><span class="label">Client</span><span class="value">' + String(m.client_nom || '').replace(/</g, '&lt;') + '</span></div>',
+        '<div class="meta-item"><span class="label">Equipe Verification</span><span class="value">' + String(m.equipe_nom || '').replace(/</g, '&lt;') + '</span></div>',
+        '<div class="meta-item"><span class="label">Date du rapport</span><span class="value">' + now + '</span></div>',
+        '</div>',
+        '<div class="score-banner" style="background:' + verdictColor + '15;border:2px solid ' + verdictColor + '">',
+        '<div class="score" style="color:' + verdictColor + '">' + score + '%</div>',
+        '<div class="verdict" style="color:' + verdictColor + '">' + verdict + '</div>',
+        '<div class="stats">' + statsText + '</div>',
+        '</div>',
+        '<div class="section">',
+        '<div class="section-title">Points de verification (' + totalSteps + ')</div>',
+        etapesRows,
+        '</div>',
+        '<div class="footer">',
+        'Rapport genere automatiquement par RMASC OnSite &mdash; ' + now + '<br>',
+        'Ce document est un diagnostic interne. Valide par l\'equipe de verification.',
+        '</div>',
+        '<div class="no-print" style="text-align:center;margin-top:24px">',
+        '<button class="print-btn" onclick="window.print()">Imprimer / Sauvegarder en PDF</button>',
+        '</div>',
+        '</body>',
+        '</html>',
+      ].join('\n');
 
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
     } catch (err: any) {
+      logger.error('Erreur generation rapport', { erreur: err.message, stack: err.stack });
       res.status(500).send('Erreur lors de la generation du rapport: ' + err.message);
     }
   });
