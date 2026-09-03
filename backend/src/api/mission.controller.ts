@@ -191,7 +191,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id
          JOIN equipes e ON e.id = om.equipe_id
-         LEFT JOIN checklists_phases cl ON cl.mission_id = om.id AND cl.phase = om.phase
+         LEFT JOIN checklists_phases cl ON cl.mission_id = om.id AND cl.phase = om.phase::text
          WHERE om.id = $1`, [missionId]
       );
       if (missionRes.rows.length === 0) return res.status(404).send('Mission introuvable.');
