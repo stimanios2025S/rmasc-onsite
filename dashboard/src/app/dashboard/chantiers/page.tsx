@@ -5,8 +5,11 @@ import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
   User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
+  Navigation, Radio, Wifi,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
+import TrackingMap from '@/components/TrackingMap';
+import type { TeamPosition } from '@/components/MapView';
 
 /* ═══════════════════════════════════════════════════════════════
    TEAM SEARCH BAR — Portal-based dropdown, never clipped
@@ -280,8 +283,12 @@ export default function ChantiersPage() {
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
   const [reassignLoading, setReassignLoading] = useState(false);
+  const [teamPositions, setTeamPositions] = useState<TeamPosition[]>([]);
+  const [trackChantier, setTrackChantier] = useState<ChantierData | null>(null);
+  const [trackPositions, setTrackPositions] = useState<TeamPosition[]>([]);
+  const trackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => { loadChantiers(); loadEquipes(); }, []);
+  useEffect(() => { loadChantiers(); loadEquipes(); loadTeamPositions(); }, []);
 
   async function loadChantiers() {
     try { setChantiers(await fetchChantiers()); } catch (_) { }
@@ -291,6 +298,44 @@ export default function ChantiersPage() {
   async function loadEquipes() {
     try { setEquipes(await fetchEquipes()); } catch (_) { }
   }
+
+  async function loadTeamPositions() {
+    try {
+      const res = await fetch('/api/tracking/equipes');
+      if (res.ok) setTeamPositions(await res.json());
+    } catch (_) { }
+  }
+
+  // Poll team positions every 10s
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (document.visibilityState === 'visible') loadTeamPositions();
+    }, 10000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // When tracking a chantier, poll positions every 5s for real-time
+  useEffect(() => {
+    if (trackChantier) {
+      const poll = async () => {
+        try {
+          const res = await fetch('/api/tracking/equipes');
+          if (res.ok) {
+            const all = await res.json();
+            setTrackPositions(all.filter((p: TeamPosition) =>
+              p.chantier_id === trackChantier.id || p.destination === trackChantier.nom
+            ));
+          }
+        } catch (_) { }
+      };
+      poll();
+      trackIntervalRef.current = setInterval(poll, 5000);
+    } else {
+      if (trackIntervalRef.current) clearInterval(trackIntervalRef.current);
+      setTrackPositions([]);
+    }
+    return () => { if (trackIntervalRef.current) clearInterval(trackIntervalRef.current); };
+  }, [trackChantier?.id]);
 
   async function handleReassigner(chantierId: string, nouvelleEquipeId: string) {
     setReassignLoading(true);
@@ -519,7 +564,7 @@ export default function ChantiersPage() {
                 </div>
               </div>
 
-              {/* ═══ ÉQUIPE ASSIGNÉE ═══ */}
+              {/* ═══ ÉQUIPE ASSIGNÉE + STATUS BADGES ═══ */}
               <div className="mb-3">
                 {c.equipe_actuelle && c.equipe_actuelle !== 'Aucune équipe' && c.equipe_actuelle !== 'Aucune' ? (
                   <div className="flex items-center gap-2 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl px-3 py-2">
@@ -533,9 +578,14 @@ export default function ChantiersPage() {
                       </div>
                       <p className="text-xs font-bold text-indigo-800 truncate">{c.equipe_actuelle}</p>
                     </div>
-                    {(c.en_cours ?? 0) > 0 && (
-                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <CircleDot size={8} /> Sur site
+                    {(c as any).mission_statut === 'bloque' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 shrink-0 flex items-center gap-1 animate-pulse">
+                        🚫 Bloqué
+                      </span>
+                    )}
+                    {(c as any).mission_statut === 'en_pause' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 shrink-0 flex items-center gap-1">
+                        ⏸ Pause
                       </span>
                     )}
                     {(c as any).mission_statut === 'en_route' && (
@@ -543,9 +593,19 @@ export default function ChantiersPage() {
                         🚗 En route
                       </span>
                     )}
-                    {(c as any).mission_statut === 'en_pause' && (
-                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 shrink-0 flex items-center gap-1">
-                        ⏸ Pause
+                    {(c.en_cours ?? 0) > 0 && (c as any).mission_statut !== 'en_pause' && (c as any).mission_statut !== 'bloque' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
+                        <CircleDot size={8} /> Sur site
+                      </span>
+                    )}
+                    {(c as any).mission_statut === 'en_attente' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-stone-500 bg-stone-100 border border-stone-200 shrink-0 flex items-center gap-1">
+                        ⏳ En attente
+                      </span>
+                    )}
+                    {(c as any).mission_statut === 'termine' && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
+                        ✅ Terminé
                       </span>
                     )}
                     {phase && (
@@ -617,6 +677,28 @@ export default function ChantiersPage() {
                   {(c.terminee ?? 0) > 0 && <span className="text-emerald-500">✅ {c.terminee}</span>}
                 </span>
               </div>
+
+              {/* ═══ TRACKING + ITINÉRAIRE BUTTONS ═══ */}
+              {c.lat && c.lng && c.equipe_actuelle && c.equipe_actuelle !== 'Aucune équipe' && c.equipe_actuelle !== 'Aucune' && (
+                <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => setTrackChantier(c)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold transition-all ${
+                      trackChantier?.id === c.id
+                        ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
+                        : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200'
+                    }`}>
+                    <Radio size={12} className={trackChantier?.id === c.id ? 'animate-pulse' : ''} />
+                    {trackChantier?.id === c.id ? 'Suivi en cours' : '📍 Suivi GPS'}
+                  </button>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 transition-all"
+                    onClick={(e) => e.stopPropagation()}>
+                    <Navigation size={12} /> Itinéraire
+                  </a>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1106,6 +1188,94 @@ export default function ChantiersPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ LIVE TRACKING PANEL ═══ */}
+      {trackChantier && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setTrackChantier(null); }}>
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="shrink-0 flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Radio size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">{trackChantier.nom}</h3>
+                  <p className="text-xs text-white/70">
+                    {trackPositions.length > 0
+                      ? `${trackPositions.length} équipée(s) en direct`
+                      : 'Aucune position GPS active'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Temps réel
+                </span>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${trackChantier.lat},${trackChantier.lng}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold transition-all">
+                  <Navigation size={14} /> Itinéraire
+                </a>
+                <button onClick={() => setTrackChantier(null)} className="p-2 hover:bg-white/15 rounded-xl transition-all">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Map Container */}
+            <div className="flex-1 min-h-[350px] sm:min-h-[450px]">
+              <TrackingMap
+                chantier={trackChantier}
+                positions={trackPositions}
+              />
+            </div>
+
+            {/* Worker List */}
+            {trackPositions.length > 0 && (
+              <div className="shrink-0 border-t border-stone-100 bg-stone-50 px-5 py-3 max-h-[140px] overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {trackPositions.map(tp => {
+                    const timeSince = Math.round((Date.now() - new Date(tp.last_update).getTime()) / 60000);
+                    const statutColor = tp.mission_statut === 'en_route' ? 'bg-sky-100 text-sky-700 border-sky-200'
+                      : tp.mission_statut === 'en_pause' ? 'bg-amber-100 text-amber-700 border-amber-200'
+                      : tp.mission_statut === 'bloque' ? 'bg-rose-100 text-rose-700 border-rose-200'
+                      : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+                    return (
+                      <div key={tp.equipe_id} className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-stone-100 shadow-sm">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${timeSince < 2 ? 'bg-emerald-400 animate-pulse' : timeSince < 10 ? 'bg-amber-400' : 'bg-stone-300'}`} />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-stone-800 truncate">{tp.equipe_nom}</p>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${statutColor}`}>
+                              {tp.mission_statut === 'en_route' ? '🚗 En route' : tp.mission_statut === 'en_pause' ? '⏸ Pause' : tp.mission_statut === 'bloque' ? '🚫 Bloqué' : '🏗️ Travail'}
+                            </span>
+                            {tp.distance_destination_m && (
+                              <span className="text-[9px] text-stone-400">📐 {tp.distance_destination_m}m</span>
+                            )}
+                          </div>
+                        </div>
+                        {tp.distance_destination_m && tp.mission_statut === 'en_route' && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&origin=${tp.latitude},${tp.longitude}&destination=${trackChantier.lat},${trackChantier.lng}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all shrink-0"
+                            title="Itinéraire depuis cette équipe">
+                            <Navigation size={12} />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

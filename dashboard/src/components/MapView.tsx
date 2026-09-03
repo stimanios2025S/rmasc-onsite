@@ -20,6 +20,7 @@ export interface TeamPosition {
   batterie_pct: number | null;
   last_update: string;
   mission_id: string | null;
+  chantier_id?: string | null;
   destination: string | null;
   mission_statut: string | null;
   statut_equipe: string | null;

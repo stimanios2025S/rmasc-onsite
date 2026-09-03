@@ -195,10 +195,10 @@ app.get('/api/chantiers', async (_req, res) => {
        ),
        active_mission AS (
          SELECT DISTINCT ON (om.chantier_id)
-           om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle
+           om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
-         WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause')
+         WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause','bloque','termine')
          ORDER BY om.chantier_id, om.date_creation DESC
        )
        SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
@@ -213,6 +213,7 @@ app.get('/api/chantiers', async (_req, res) => {
               COALESCE(ms.terminee, 0) AS terminee,
               COALESCE(am.equipe_actuelle, 'Aucune équipe') AS equipe_actuelle,
               am.phase_actuelle,
+              am.mission_statut,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
               TO_CHAR(c.date_echeance,'YYYY-MM-DD') AS date_echeance
        FROM chantiers c
