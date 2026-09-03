@@ -7,7 +7,7 @@ import {
   CheckCircle, LogOut, Navigation, Camera, X, Send, Loader2,
   ChevronRight, Phone, Package, FileText, ClipboardList, Timer,
   Radio, User, Hammer, Coffee, Store, Sunrise, Sunset, ArrowRightLeft,
-  Ban,
+  Ban, BookOpen,
 } from 'lucide-react';
 import TechnicianMap from '@/components/TechnicianMap';
 
@@ -1111,6 +1111,31 @@ export default function MissionActivePage() {
               </a>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ═══ GUIDE D'INSTALLATION ═══ */}
+      {(isMecanique || isElectrique) && (
+        <div className="mx-4 mb-4">
+          <a
+            href={isMecanique ? '/uploads/guides/guide-mecanique.pdf' : '/uploads/guides/guide-electrique.pdf'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${isMecanique ? 'from-blue-500 to-blue-600' : 'from-orange-500 to-orange-600'} flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
+                <BookOpen size={20} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-stone-800 text-sm">📖 Guide d'installation</p>
+                <p className="text-xs text-stone-400">
+                  {isMecanique ? 'Guide mécanique — étapes & bonnes pratiques' : 'Guide électrique — étapes & bonnes pratiques'}
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-stone-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
+            </div>
+          </a>
         </div>
       )}
 
