@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
+import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../config/checklists';
 
 /**
  * Tracking Controller — GPS en route, pointage jour, pause, transfert
@@ -450,8 +451,8 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           // Fallback: manual checklist
           try {
             const fallbackEtapes = nextPhase === 'electrique'
-              ? [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}]
-              : [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+              ? ELECTRICAL_STEPS.map(s => ({ ...s }))
+              : VERIFICATION_STEPS.map(s => ({ ...s }));
             await pool.query(
               `INSERT INTO checklists_phases (mission_id, phase, etapes)
                VALUES ($1, $2, $3)`,
@@ -499,8 +500,8 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
             // Fallback: create checklist with hardcoded steps so the mission is never without one
             try {
               const fallbackEtapes = nextPhase === 'electrique'
-                ? [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}]
-                : [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+                ? ELECTRICAL_STEPS.map(s => ({ ...s }))
+                : VERIFICATION_STEPS.map(s => ({ ...s }));
               await pool.query(
                 `INSERT INTO checklists_phases (mission_id, phase, etapes)
                  VALUES ($1, $2, $3)`,
@@ -662,8 +663,8 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         // Try fallback: manual checklist insert without generer_checklist function
         try {
           const fallbackEtapes = nextPhase === 'electrique'
-            ? [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}]
-            : [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+            ? ELECTRICAL_STEPS.map(s => ({ ...s }))
+            : VERIFICATION_STEPS.map(s => ({ ...s }));
           await pool.query(
             `INSERT INTO checklists_phases (mission_id, phase, etapes)
              VALUES ($1, $2, $3)`,

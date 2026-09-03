@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { validerCoordonnees } from '../services/geocalcul/calculs-geo';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
+import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../config/checklists';
 import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
@@ -232,11 +233,11 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
             } catch (_) {
               // generer_checklist failed — use hardcoded etapes
               if (phase === 'mecanique') {
-                etapes = [{"id":"m1","label":"Arrivage au chantier","done":false},{"id":"m2","label":"Plombage de gaine","done":false},{"id":"m3","label":"Montage guidage/guiderail","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},{"id":"m4","label":"Montage de moteur et plombage de moteur","done":false},{"id":"m5","label":"Installation arcade et contrepoids","done":false},{"id":"m6","label":"Install régulateur de vitesse et poulies","done":false},{"id":"m7","label":"Install câbles de suspension et lingue","done":false},{"id":"m8","label":"Installation des plateaux","done":false},{"id":"m9","label":"Installation des portes","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},{"id":"m10","label":"Installation de cabine","done":false},{"id":"m11","label":"Installation des portes cabine","done":false},{"id":"m12","label":"Charger le contrepoids","done":false}];
+                etapes = MECHANICAL_STEPS.map(s => ({ ...s }));
               } else if (phase === 'electrique') {
-                etapes = [{"id":"e1","label":"Installation armoire","done":false},{"id":"e2","label":"Installation pendentif","done":false},{"id":"e3","label":"Installation boîte inspection","done":false},{"id":"e4","label":"Installation bouton appel palier","done":false},{"id":"e5","label":"Installation bouton appel cabine","done":false},{"id":"e6","label":"Installation de colonne montante","done":false},{"id":"e7","label":"Raccordement machine","done":false},{"id":"e8","label":"Raccordement toit cabine et inspection","done":false},{"id":"e9","label":"Raccordement colonne","done":false},{"id":"e10","label":"Installation des aimants","done":false},{"id":"e11","label":"Les essais et réglages","done":false}];
+                etapes = ELECTRICAL_STEPS.map(s => ({ ...s }));
               } else {
-                etapes = [{"id":"v1","label":"Vérification et réception provisoire","done":false},{"id":"v2","label":"Réception définitive avec le client","done":false}];
+                etapes = VERIFICATION_STEPS.map(s => ({ ...s }));
               }
               const fbRes = await pool.query(
                 `INSERT INTO checklists_phases (mission_id, phase, etapes)

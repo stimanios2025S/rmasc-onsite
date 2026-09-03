@@ -1344,6 +1344,19 @@ export default function MissionActivePage() {
         </div>
       )}
 
+      {/* ═══ RAPPORT DE VÉRIFICATION (Verification phase only) ═══ */}
+      {(isEnCours || isArrive) && mission?.phase === 'verification' && (
+        <div className="mx-4 mb-4">
+          <button
+            onClick={() => window.open(`https://onsite.sarl-rmasc.com/api/mission/${mission?.id}/rapport`, '_blank', 'noopener,noreferrer')}
+            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-4 rounded-2xl font-bold shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+          >
+            <FileText size={20} />
+            📄 Générer le Rapport de Vérification
+          </button>
+        </div>
+      )}
+
       {/* ═══ TERMINER LA MISSION (Verification phase — fin de chantier) ═══ */}
       {(isEnCours || isArrive) && mission?.phase === 'verification' && checklist?.complete && (
         <div className="mx-4 mb-4">

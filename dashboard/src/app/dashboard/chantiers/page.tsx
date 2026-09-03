@@ -1187,6 +1187,18 @@ export default function ChantiersPage() {
                   </div>
                 </div>
               )}
+
+              {/* Rapport de vérification */}
+              {detailChantier.missions?.some((m: any) => m.phase === 'verification') && (
+                <div className="mt-4">
+                  {detailChantier.missions.filter((m: any) => m.phase === 'verification').map((m: any) => (
+                    <a key={m.id} href={`https://onsite.sarl-rmasc.com/api/mission/${m.id}/rapport`} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-4 py-2.5 rounded-xl transition-all">
+                      <FileText size={14} /> 📋 Rapport de Vérification
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
