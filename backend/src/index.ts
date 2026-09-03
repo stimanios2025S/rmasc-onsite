@@ -180,6 +180,15 @@ const UPLOADS_DIR = path.resolve(__dirname, '../public/uploads');
 if (!require('fs').existsSync(UPLOADS_DIR)) require('fs').mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// Explicit guide PDF routes — bypass SPA fallback
+const GUIDES_DIR = path.join(UPLOADS_DIR, 'guides');
+app.get('/api/guides/:filename', (req, res) => {
+  const filePath = path.join(GUIDES_DIR, req.params.filename);
+  res.sendFile(filePath, (err) => {
+    if (err) res.status(404).json({ erreur: 'Guide non trouvé.' });
+  });
+});
+
 // Route API chantiers (avec coordonnées pour la carte) — OPTIMISÉ: 1 query au lieu de 5+8
 app.get('/api/chantiers', async (_req, res) => {
   try {

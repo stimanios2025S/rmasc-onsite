@@ -1117,11 +1117,14 @@ export default function MissionActivePage() {
       {/* ═══ GUIDE D'INSTALLATION ═══ */}
       {(isMecanique || isElectrique) && (
         <div className="mx-4 mb-4">
-          <a
-            href={isMecanique ? '/uploads/guides/guide-mecanique.pdf' : '/uploads/guides/guide-electrique.pdf'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group"
+          <button
+            onClick={() => {
+              const url = isMecanique
+                ? 'https://onsite.sarl-rmasc.com/api/guides/guide-mecanique.pdf'
+                : 'https://onsite.sarl-rmasc.com/api/guides/guide-electrique.pdf';
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }}
+            className="block w-full bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5 hover:shadow-md transition-all group text-left"
           >
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${isMecanique ? 'from-blue-500 to-blue-600' : 'from-orange-500 to-orange-600'} flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
@@ -1135,7 +1138,7 @@ export default function MissionActivePage() {
               </div>
               <ChevronRight size={18} className="text-stone-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
             </div>
-          </a>
+          </button>
         </div>
       )}
 
