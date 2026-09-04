@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { validerCoordonnees } from '../services/geocalcul/calculs-geo';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
-import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../config/checklists';
+import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS, getChecklistForPhase } from '../config/checklists';
 import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
@@ -185,7 +185,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       const missionId = req.params.id;
       const missionRes = await pool.query(
         `SELECT om.id, om.phase, om.statut, om.date_declenchement, om.date_debut_effectif,
-                c.nom_chantier, c.adresse, c.client_nom, c.reference_erp,
+                c.nom_chantier, c.adresse, c.client_nom, c.reference_commande_erp AS reference_erp,
                 e.nom AS equipe_nom,
                 cl.etapes, cl.complete
          FROM ordres_de_mission om
@@ -200,6 +200,25 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       let etapes: any[] = [];
       if (m.etapes) {
         etapes = typeof m.etapes === 'string' ? JSON.parse(m.etapes) : m.etapes;
+      }
+
+      // If no checklist found, auto-generate from config defaults
+      if (!Array.isArray(etapes) || etapes.length === 0) {
+        etapes = getChecklistForPhase(m.phase).map((s: any) => ({ ...s }));
+        // Try to persist the auto-generated checklist for future use (only if none exists)
+        try {
+          const existingCl = await pool.query(
+            `SELECT 1 FROM checklists_phases WHERE mission_id = $1 AND phase = $2 LIMIT 1`,
+            [missionId, m.phase]
+          );
+          if (existingCl.rows.length === 0) {
+            await pool.query(
+              `INSERT INTO checklists_phases (mission_id, phase, etapes, complete)
+               VALUES ($1, $2, $3, FALSE)`,
+              [missionId, m.phase, JSON.stringify(etapes)]
+            );
+          }
+        } catch (_) { /* non-critical — report will still render */ }
       }
 
       const totalSteps = etapes.length;

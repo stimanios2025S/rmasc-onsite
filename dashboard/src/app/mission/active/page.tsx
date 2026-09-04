@@ -1344,8 +1344,8 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ RAPPORT DE VÉRIFICATION (Verification phase only) ═══ */}
-      {(isEnCours || isArrive) && mission?.phase === 'verification' && (
+      {/* ═══ RAPPORT DE VÉRIFICATION (Verification phase — always accessible) ═══ */}
+      {mission?.phase === 'verification' && (
         <div className="mx-4 mb-4">
           <button
             onClick={() => window.open(`https://onsite.sarl-rmasc.com/api/mission/${mission?.id}/rapport`, '_blank', 'noopener,noreferrer')}
