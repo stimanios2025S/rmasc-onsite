@@ -925,6 +925,13 @@ DECLARE
     v_date_planifiee TIMESTAMPTZ;
 BEGIN
     IF NEW.statut = 'termine' AND OLD.statut IS DISTINCT FROM 'termine' THEN
+        -- Chantier terminé : la vérification est la dernière phase.
+        -- Le chantier passe en réception officielle et libère la grille.
+        IF NEW.phase::text = 'verification' THEN
+            UPDATE chantiers SET statut = 'reception_officielle', date_modification = NOW()
+            WHERE id = NEW.chantier_id AND statut NOT IN ('reception_officielle', 'termine');
+            RETURN NEW;
+        END IF;
         v_prochaine_phase := CASE NEW.phase::text
             WHEN 'mecanique' THEN 'electrique'::phase_mission
             WHEN 'electrique' THEN 'verification'::phase_mission
@@ -993,7 +1000,28 @@ $v20$ LANGUAGE plpgsql`);
       AFTER UPDATE OF statut ON ordres_de_mission
       FOR EACH ROW WHEN (NEW.statut = 'termine' AND (OLD.statut IS DISTINCT FROM 'termine'))
       EXECUTE FUNCTION declencher_phase_suivante()`);
+    // v21 : réception officielle auto quand la vérification se termine
+    // (le chantier quitte la grille des actifs → filtre "Terminés")
+    await pool.query(`CREATE OR REPLACE FUNCTION passer_chantier_reception()
+      RETURNS TRIGGER AS $v21$
+      BEGIN
+        IF NEW.statut = 'termine' AND OLD.statut IS DISTINCT FROM 'termine'
+           AND NEW.phase::text = 'verification' THEN
+          UPDATE chantiers SET statut = 'reception_officielle', date_modification = NOW()
+          WHERE id = NEW.chantier_id AND statut NOT IN ('reception_officielle', 'termine');
+        END IF;
+        RETURN NEW;
+      END
+      $v21$ LANGUAGE plpgsql`);
+    const trigCheck = await pool.query(
+      `SELECT 1 FROM pg_trigger WHERE tgname = 'trg_chantier_reception' AND NOT tgisinternal`);
+    if (trigCheck.rows.length === 0) {
+      await pool.query(`CREATE TRIGGER trg_chantier_reception
+        AFTER UPDATE OF statut ON ordres_de_mission
+        FOR EACH ROW EXECUTE FUNCTION passer_chantier_reception()`);
+    }
     logger.info('Migration v20 OK — planning par phase actif');
+    logger.info('Migration v21 OK — réception auto à la fin de vérification');
   } catch (e: any) {
     logger.error('Migration v20 échouée (non bloquant)', { erreur: e.message });
   }

@@ -17,3 +17,29 @@ ALTER TABLE chantiers
 
 ALTER TABLE chantiers
   ADD COLUMN IF NOT EXISTS date_debut_verification TIMESTAMPTZ NULL;
+
+-- v21 : quand la vérification se termine, le chantier passe en réception
+-- officielle (il quitte la grille des actifs). Idempotent.
+CREATE OR REPLACE FUNCTION passer_chantier_reception()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.statut = 'termine' AND OLD.statut IS DISTINCT FROM 'termine'
+     AND NEW.phase::text = 'verification' THEN
+    UPDATE chantiers SET statut = 'reception_officielle', date_modification = NOW()
+    WHERE id = NEW.chantier_id AND statut NOT IN ('reception_officielle', 'termine');
+  END IF;
+  RETURN NEW;
+END
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_chantier_reception'
+  ) THEN
+    CREATE TRIGGER trg_chantier_reception
+      AFTER UPDATE OF statut ON ordres_de_mission
+      FOR EACH ROW EXECUTE FUNCTION passer_chantier_reception();
+  END IF;
+END
+$$;

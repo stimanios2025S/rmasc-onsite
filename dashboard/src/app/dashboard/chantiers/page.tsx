@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
-  MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
+  MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight, ChevronDown,
   User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
   Navigation, Radio, Wifi, ArrowRightLeft,
 } from 'lucide-react';
@@ -264,6 +264,7 @@ export default function ChantiersPage() {
   const [loading, setLoading] = useState(true);
   const [filtreStatut, setFiltreStatut] = useState('Tous');
   const [recherche, setRecherche] = useState('');
+  const [showTermines, setShowTermines] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [step, setStep] = useState(1);
   const [creant, setCreant] = useState(false);
@@ -495,17 +496,45 @@ export default function ChantiersPage() {
     setDetailLoading(false);
   }
 
-  const filtres = ['Tous', 'En cours', 'Bloqués', 'Planifiés', 'Terminés'];
+  const filtres = [
+    { key: 'Tous', label: 'Tous' },
+    { key: 'En cours', label: 'En cours' },
+    { key: 'Bloqués', label: 'Bloqués' },
+    { key: 'Planifiés', label: 'Planifiés' },
+    { key: 'Terminés', label: 'Terminés' },
+  ];
+  const TERMINES = ['termine', 'reception_officielle'];
+  const estTermine = (c: ChantierData) => TERMINES.includes(c.statut);
   const statMap: Record<string, string[]> = {
     'En cours': ['en_cours'], 'Bloqués': ['bloque'], 'Planifiés': ['planifie'],
     // Un chantier fini a le statut 'reception_officielle' (ou 'termine') — les deux vont dans "Terminés"
-    'Terminés': ['termine', 'reception_officielle'],
+    'Terminés': TERMINES,
   };
+  const norm = (s: string) =>
+    (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const filtered = chantiers.filter(c => {
     if (filtreStatut !== 'Tous' && !statMap[filtreStatut]?.includes(c.statut)) return false;
-    if (recherche && !c.nom.toLowerCase().includes(recherche.toLowerCase()) && !c.ref.toLowerCase().includes(recherche.toLowerCase())) return false;
+    if (recherche.trim()) {
+      const q = norm(recherche.trim());
+      const hay = [c.nom, c.ref, c.client_nom || '', c.adresse || '', c.equipe_actuelle || '', c.phase_actuelle || '']
+        .map(norm).join(' ');
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
+  // Actifs d'abord (la grille se libère dès qu'un chantier se termine),
+  // terminés regroupés en bas. Les compteurs alimentent les onglets.
+  const actifs = filtered.filter(c => !estTermine(c));
+  const termines = filtered.filter(c => estTermine(c));
+  const nbActifs = chantiers.filter(c => !estTermine(c)).length;
+  const nbTermines = chantiers.length - nbActifs;
+  const compteur: Record<string, number> = {
+    'Tous': chantiers.length,
+    'En cours': chantiers.filter(c => c.statut === 'en_cours').length,
+    'Bloqués': chantiers.filter(c => c.statut === 'bloque').length,
+    'Planifiés': chantiers.filter(c => c.statut === 'planifie').length,
+    'Terminés': nbTermines,
+  };
 
   if (loading) {
     return (
@@ -518,7 +547,7 @@ export default function ChantiersPage() {
   }
 
   return (
-    <AdminShell title="Chantiers" subtitle={`${chantiers.length} chantier${chantiers.length > 1 ? 's' : ''}`}
+    <AdminShell title="Chantiers" subtitle={`${nbActifs} actif${nbActifs > 1 ? 's' : ''}${nbTermines > 0 ? ` • ${nbTermines} terminé${nbTermines > 1 ? 's' : ''}` : ''}`}
       actions={<button onClick={() => setShowWizard(true)}
         className="flex items-center gap-2 bg-stone-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all">
         <Plus size={16} /> Ajouter un Chantier
@@ -532,26 +561,57 @@ export default function ChantiersPage() {
         </div>
       )}
 
-      {/* Recherche + Filtres */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="flex items-center gap-2 bg-white/80 rounded-2xl px-4 py-2 border border-stone-100 shadow-sm flex-1">
-          <Search size={16} className="text-stone-300" />
-          <input placeholder="Rechercher un chantier..." value={recherche} onChange={e => setRecherche(e.target.value)}
-            className="bg-transparent text-sm text-stone-600 outline-none flex-1 placeholder:text-stone-300" />
+      {/* ═══ BARRE DE RECHERCHE PRO + FILTRES AVEC COMPTEURS ═══ */}
+      <div className="flex flex-col xl:flex-row gap-3 mb-6">
+        <div className={`flex items-center gap-3 bg-white rounded-2xl pl-4 pr-2 py-2 border shadow-sm flex-1 transition-all ${recherche ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-stone-200/80 hover:border-stone-300'}`}>
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all ${recherche ? 'bg-indigo-500 text-white' : 'bg-stone-100 text-stone-400'}`}>
+            <Search size={15} />
+          </div>
+          <input placeholder="Rechercher : nom, client, référence, adresse, équipe, phase…"
+            value={recherche} onChange={e => setRecherche(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setRecherche(''); }}
+            className="bg-transparent text-sm text-stone-700 outline-none flex-1 placeholder:text-stone-300 min-w-0" />
+          {recherche ? (
+            <button onClick={() => setRecherche('')} title="Effacer (Échap)"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-all shrink-0">
+              <X size={13} /> Effacer
+            </button>
+          ) : (
+            <span className="hidden sm:flex items-center gap-1.5 pr-2 text-[10px] text-stone-300 font-medium shrink-0">
+              <kbd className="px-1.5 py-0.5 rounded-md bg-stone-100 border border-stone-200 font-mono">Échap</kbd> pour effacer
+            </span>
+          )}
         </div>
-        <div className="flex bg-white/80 rounded-2xl border border-stone-100 shadow-sm p-1 gap-1 flex-wrap">
+        <div className="flex bg-white rounded-2xl border border-stone-200/80 shadow-sm p-1 gap-1 flex-wrap">
           {filtres.map(f => (
-            <button key={f} onClick={() => setFiltreStatut(f)}
-              className={`px-4 py-1.5 rounded-xl text-xs font-medium transition-all ${filtreStatut === f ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}>{f}</button>
+            <button key={f.key} onClick={() => setFiltreStatut(f.key)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${filtreStatut === f.key ? 'bg-stone-900 text-white shadow' : 'text-stone-400 hover:text-stone-700 hover:bg-stone-50'}`}>
+              {f.label}
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${filtreStatut === f.key ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-400'}`}>
+                {compteur[f.key] ?? 0}
+              </span>
+            </button>
           ))}
         </div>
       </div>
+      {recherche.trim() && (
+        <p className="text-xs text-stone-400 -mt-3 mb-4">
+          🔎 {filtered.length} résultat{filtered.length > 1 ? 's' : ''} pour « <span className="font-semibold text-stone-600">{recherche.trim()}</span> »
+        </p>
+      )}
 
-      {/* Grille de chantiers */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.length === 0 ? (
-          <p className="col-span-full text-center text-stone-400 py-16">Aucun chantier trouvé.</p>
-        ) : filtered.map(c => {
+      {/* ═══ GRILLE ACTIFS — se libère dès qu'un chantier se termine ═══ */}
+      {actifs.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">
+              Chantiers actifs ({actifs.length})
+            </h2>
+            <div className="flex-1 h-px bg-stone-200/70" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {actifs.map(c => {
           const Icon = PHASE_ICON[c.phase_actuelle || 'mecanique'] || Wrench;
           const phase = c.phase_actuelle || 'mecanique';
           return (
@@ -746,9 +806,96 @@ export default function ChantiersPage() {
             </div>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
 
-      {/* ═══ WIZARD MODAL (3 étapes, responsive) ═══ */}
+      {/* ═══ ÉTAT VIDE GLOBAL ═══ */}
+      {filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white/60 rounded-3xl border border-dashed border-stone-200">
+          {recherche.trim() ? (
+            <>
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                <Search size={24} className="text-indigo-300" />
+              </div>
+              <p className="text-sm font-semibold text-stone-500">Aucun résultat pour « {recherche.trim()} »</p>
+              <button onClick={() => setRecherche('')}
+                className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-full transition-all">
+                Effacer la recherche
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center">
+                <Building2 size={24} className="text-stone-300" />
+              </div>
+              <p className="text-sm text-stone-400">Aucun chantier dans cette catégorie.</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══ GRILLE TERMINÉS — repliable, libère la place aux nouveaux ═══ */}
+      {termines.length > 0 && (
+        <div className="mt-2 bg-emerald-50/40 border border-emerald-100 rounded-3xl overflow-hidden">
+          <button onClick={() => setShowTermines(v => !v)}
+            className="w-full flex items-center gap-2 px-5 py-4 hover:bg-emerald-50/60 transition-all text-left">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+              Terminés — réceptionnés ({termines.length})
+            </h2>
+            <div className="flex-1" />
+            <span className="text-[10px] font-semibold text-emerald-500">
+              {showTermines ? 'Masquer' : 'Afficher'}
+            </span>
+            <ChevronDown size={16} className={`text-emerald-500 transition-transform ${showTermines ? 'rotate-180' : ''}`} />
+          </button>
+          {showTermines && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-4 pb-4">
+              {termines.map(c => (
+                <div key={c.id} onClick={() => ouvrirDetail(c.id)}
+                  className="bg-white/80 rounded-3xl border border-emerald-100 shadow-sm p-5 hover:shadow-md transition-all cursor-pointer opacity-90 hover:opacity-100">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-3 h-3 mt-0.5 rounded-full shrink-0 bg-emerald-400" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-stone-700">{c.nom}</p>
+                        <p className="text-[10px] text-stone-400 font-mono">{c.ref}</p>
+                        <p className="flex items-center gap-1 text-[11px] font-semibold text-stone-400 mt-1 truncate">
+                          <MapPin size={12} className="shrink-0" />
+                          {c.adresse || 'Lieu non renseigné'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 shrink-0 flex items-center gap-1">
+                      ✅ Terminé
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-stone-400 mb-3">
+                    <span>{c.client_nom || 'Client inconnu'}</span>
+                    {c.terminee ? <><span className="text-stone-300">•</span><span className="text-emerald-500 font-medium">✅ {c.terminee} phase{c.terminee > 1 ? 's' : ''}</span></> : null}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-stone-400">
+                    <span className="flex items-center gap-1">📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => ouvrirDetail(c.id)} title="Voir le rapport"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-bold transition-all">
+                        <FileText size={11} /> Rapport
+                      </button>
+                      <button onClick={() => handleSupprimer(c.id, c.nom)} title="Supprimer"
+                        className="p-2 rounded-lg bg-stone-50 text-stone-300 hover:text-rose-600 hover:bg-rose-50 transition-all">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ WIZARD MODAL (4 étapes, responsive) ═══ */}
       {showWizard && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowWizard(false); }}>
