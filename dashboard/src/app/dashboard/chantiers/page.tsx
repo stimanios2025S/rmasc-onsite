@@ -273,13 +273,14 @@ export default function ChantiersPage() {
     latitude: '', longitude: '', rayon_geofencing: '50',
     complexite: 'MOYENNE', fiche_technique: '', dxf_url: '', pdf_url: '',
     date_echeance: '',
+    date_debut_mecanique: '', date_debut_electrique: '', date_debut_verification: '',
   });
   const [dxfFile, setDxfFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '', date_echeance: '' });
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '', date_echeance: '', date_debut_mecanique: '', date_debut_electrique: '', date_debut_verification: '' });
   const [saving, setSaving] = useState(false);
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
@@ -382,6 +383,9 @@ export default function ChantiersPage() {
         pdfUrl: pdfUrl || undefined,
         ficheTechnique: form.fiche_technique || undefined,
         date_echeance: form.date_echeance || undefined,
+        date_debut_mecanique: form.date_debut_mecanique || undefined,
+        date_debut_electrique: form.date_debut_electrique || undefined,
+        date_debut_verification: form.date_debut_verification || undefined,
       });
       // Backend auto-assigns first DISPONIBLE team
       if (res.equipeNom) {
@@ -405,6 +409,7 @@ export default function ChantiersPage() {
       latitude: '', longitude: '', rayon_geofencing: '50',
       complexite: 'MOYENNE', fiche_technique: '', dxf_url: '', pdf_url: '',
       date_echeance: '',
+      date_debut_mecanique: '', date_debut_electrique: '', date_debut_verification: '',
     });
     setDxfFile(null);
     setPdfFile(null);
@@ -424,6 +429,9 @@ export default function ChantiersPage() {
       rayonGeofencing: 50,
       equipe_id: currentEquipe?.id || '',
       date_echeance: c.date_echeance ? c.date_echeance.slice(0, 16) : '',
+      date_debut_mecanique: (c.date_debut_mecanique || '').slice(0, 16),
+      date_debut_electrique: (c.date_debut_electrique || '').slice(0, 16),
+      date_debut_verification: (c.date_debut_verification || '').slice(0, 16),
     });
   }
 
@@ -440,6 +448,9 @@ export default function ChantiersPage() {
         complexite: editForm.complexite,
         rayon_geofencing: editForm.rayonGeofencing || 50,
         date_echeance: editForm.date_echeance || undefined,
+        date_debut_mecanique: editForm.date_debut_mecanique || '',
+        date_debut_electrique: editForm.date_debut_electrique || '',
+        date_debut_verification: editForm.date_debut_verification || '',
       });
       // Si l'équipe a changé, réassigner
       if (editForm.equipe_id && editForm.equipe_id !== equipes.find(e => e.nom === editChantier.equipe_actuelle)?.id) {
@@ -658,6 +669,27 @@ export default function ChantiersPage() {
                 )}
               </div>
 
+              {/* Planning prévu par phase */}
+              {(c.date_debut_mecanique || c.date_debut_electrique || c.date_debut_verification) && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {c.date_debut_mecanique && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      🔧 {new Date(c.date_debut_mecanique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                  {c.date_debut_electrique && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                      ⚡ {new Date(c.date_debut_electrique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                  {c.date_debut_verification && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      🛡️ {new Date(c.date_debut_verification).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {(c.dxf || c.pdf) && (
                 <div className="flex flex-wrap gap-2 mb-3">
                   {c.dxf && (
@@ -723,15 +755,15 @@ export default function ChantiersPage() {
           <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh]">
             {/* Barre de progression */}
             <div className="shrink-0 flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 border-b border-stone-100">
-              {[1, 2, 3].map(s => (
+              {[1, 2, 3, 4].map(s => (
                 <div key={s} className="flex items-center flex-1 last:flex-none">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step > s ? 'bg-emerald-500 text-white' : step === s ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-stone-200 text-stone-400'}`}>
                     {step > s ? <CheckCircle size={18} /> : s}
                   </div>
                   <span className={`ml-3 text-xs font-semibold hidden sm:block ${step >= s ? 'text-stone-800' : 'text-stone-300'}`}>
-                    {s === 1 ? 'Client' : s === 2 ? 'Complexité' : 'Documents'}
+                    {s === 1 ? 'Client' : s === 2 ? 'Complexité' : s === 3 ? 'Documents' : 'Planning'}
                   </span>
-                  {s < 3 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
+                  {s < 4 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
                 </div>
               ))}
               <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
@@ -921,6 +953,48 @@ export default function ChantiersPage() {
                 </div>
               )}
 
+              {/* STEP 4: PLANNING — dates de démarrage prévues par phase */}
+              {step === 4 && (
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock size={18} className="text-indigo-500" />
+                      <h4 className="font-bold text-stone-700">Planning des Phases</h4>
+                    </div>
+                    <p className="text-xs text-stone-400 mb-4">Date de démarrage prévue pour chaque équipe (optionnel — modifiable après création)</p>
+                    <div className="space-y-4">
+                      <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4">
+                        <label className="text-xs font-bold text-blue-700 mb-1.5 flex items-center gap-1.5">
+                          <Wrench size={13} /> 🔧 Mécanique — début prévu
+                        </label>
+                        <input value={form.date_debut_mecanique} onChange={e => setForm({ ...form, date_debut_mecanique: e.target.value })}
+                          type="datetime-local"
+                          className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-sm text-stone-700 outline-none focus:border-blue-400 transition-all" />
+                      </div>
+                      <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4">
+                        <label className="text-xs font-bold text-orange-700 mb-1.5 flex items-center gap-1.5">
+                          <Zap size={13} /> ⚡ Électrique — début prévu
+                        </label>
+                        <input value={form.date_debut_electrique} onChange={e => setForm({ ...form, date_debut_electrique: e.target.value })}
+                          type="datetime-local"
+                          className="w-full px-4 py-3 bg-white border border-orange-200 rounded-xl text-sm text-stone-700 outline-none focus:border-orange-400 transition-all" />
+                      </div>
+                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4">
+                        <label className="text-xs font-bold text-emerald-700 mb-1.5 flex items-center gap-1.5">
+                          <Shield size={13} /> 🛡️ Vérification — début prévu
+                        </label>
+                        <input value={form.date_debut_verification} onChange={e => setForm({ ...form, date_debut_verification: e.target.value })}
+                          type="datetime-local"
+                          className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl text-sm text-stone-700 outline-none focus:border-emerald-400 transition-all" />
+                      </div>
+                      <p className="text-[10px] text-stone-400 leading-relaxed bg-stone-50 rounded-xl px-3 py-2">
+                        💡 Laissez vide si pas de planning. Les dates sont informatives : elles n'empêchent jamais une équipe de commencer à travailler.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Boutons */}
@@ -931,7 +1005,7 @@ export default function ChantiersPage() {
                   <ChevronLeft size={18} /> Retour
                 </button>
               ) : <div className="min-w-[100px]" />}
-              {step < 3 ? (
+              {step < 4 ? (
                 <button type="button" onClick={() => setStep(step + 1)}
                   disabled={(step === 1 && (!form.nom_projet || !form.latitude || !form.longitude))}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-stone-800 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-stone-900 disabled:opacity-40 transition-all shadow-lg">
@@ -1017,6 +1091,40 @@ export default function ChantiersPage() {
                   type="datetime-local"
                   className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                 <p className="text-[10px] text-stone-400 mt-1">L'équipe doit terminer avant cette date</p>
+              </div>
+
+              {/* ═══ PLANNING DES PHASES (modifiable après création) ═══ */}
+              <div className="border-t border-stone-100 pt-4 mt-2">
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
+                  <Clock size={12} /> Planning — démarrage prévu par phase
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3">
+                    <label className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
+                      <Wrench size={11} /> 🔧 Mécanique
+                    </label>
+                    <input value={editForm.date_debut_mecanique} onChange={e => setEditForm({ ...editForm, date_debut_mecanique: e.target.value })}
+                      type="datetime-local"
+                      className="w-full px-2.5 py-2 bg-white border border-blue-200 rounded-lg text-xs text-stone-700 outline-none focus:border-blue-400 transition-all" />
+                  </div>
+                  <div className="bg-orange-50/60 border border-orange-100 rounded-xl p-3">
+                    <label className="text-[10px] font-bold text-orange-700 mb-1 flex items-center gap-1">
+                      <Zap size={11} /> ⚡ Électrique
+                    </label>
+                    <input value={editForm.date_debut_electrique} onChange={e => setEditForm({ ...editForm, date_debut_electrique: e.target.value })}
+                      type="datetime-local"
+                      className="w-full px-2.5 py-2 bg-white border border-orange-200 rounded-lg text-xs text-stone-700 outline-none focus:border-orange-400 transition-all" />
+                  </div>
+                  <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
+                    <label className="text-[10px] font-bold text-emerald-700 mb-1 flex items-center gap-1">
+                      <Shield size={11} /> 🛡️ Vérification
+                    </label>
+                    <input value={editForm.date_debut_verification} onChange={e => setEditForm({ ...editForm, date_debut_verification: e.target.value })}
+                      type="datetime-local"
+                      className="w-full px-2.5 py-2 bg-white border border-emerald-200 rounded-lg text-xs text-stone-700 outline-none focus:border-emerald-400 transition-all" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-stone-400 mt-1.5">💡 Vide = pas de planning. Les missions en attente reprennent la nouvelle date ; les missions démarrées ne sont jamais modifiées.</p>
               </div>
 
               {/* ═══ ÉQUIPE ASSIGNÉE ═══ */}
@@ -1170,7 +1278,12 @@ export default function ChantiersPage() {
                           </div>
                         )}
                         <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
-                          {m.date_debut && <span>Début: {m.date_debut}</span>}
+                          {m.date_declenchement && (
+                            <span className="font-semibold text-indigo-500">
+                              📅 Prévu: {new Date(m.date_declenchement).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                          {m.date_debut && <span>Début réel: {m.date_debut}</span>}
                           {m.date_fin && <span>Fin: {m.date_fin}</span>}
                           {m.date_echeance && <span className="font-semibold text-amber-500">📅 Échéance: {m.date_echeance}</span>}
                           {m.retard_jours !== null && m.retard_jours > 0 && (

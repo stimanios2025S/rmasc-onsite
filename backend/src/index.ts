@@ -224,7 +224,10 @@ app.get('/api/chantiers', async (_req, res) => {
               am.phase_actuelle,
               am.mission_statut,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
-              TO_CHAR(c.date_echeance,'YYYY-MM-DD') AS date_echeance
+              TO_CHAR(c.date_echeance,'YYYY-MM-DD') AS date_echeance,
+              TO_CHAR(c.date_debut_mecanique,'YYYY-MM-DD"T"HH24:MI') AS date_debut_mecanique,
+              TO_CHAR(c.date_debut_electrique,'YYYY-MM-DD"T"HH24:MI') AS date_debut_electrique,
+              TO_CHAR(c.date_debut_verification,'YYYY-MM-DD"T"HH24:MI') AS date_debut_verification
        FROM chantiers c
        LEFT JOIN mission_stats ms ON ms.chantier_id = c.id
        LEFT JOIN active_mission am ON am.chantier_id = c.id
@@ -292,6 +295,9 @@ app.get('/api/dashboard/all', async (_req, res) => {
                 cl.etapes AS checklist_etapes, cl.complete AS checklist_complete,
                 TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
                 TO_CHAR(c.date_echeance,'YYYY-MM-DD"T"HH24:MI') AS date_echeance,
+                TO_CHAR(c.date_debut_mecanique,'YYYY-MM-DD"T"HH24:MI') AS date_debut_mecanique,
+                TO_CHAR(c.date_debut_electrique,'YYYY-MM-DD"T"HH24:MI') AS date_debut_electrique,
+                TO_CHAR(c.date_debut_verification,'YYYY-MM-DD"T"HH24:MI') AS date_debut_verification,
                 bl.motifs_blocage, bl.nb_blocages, bl.blocage_ids
          FROM chantiers c
          LEFT JOIN ms ON ms.chantier_id=c.id
@@ -549,12 +555,17 @@ app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', verifierToken, async (req, res) => {
   try {
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId,
+            date_debut_mecanique, date_debut_electrique, date_debut_verification } = req.body;
     if (!nom) {
       return res.status(400).json({ erreur: 'nom requis.' });
     }
     const ref = reference_commande_erp || `MAN-${Date.now().toString().slice(-6)}`;
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
+    // Planning prévu par phase (optionnel, format ISO / datetime-local) — NULL = pas de planning
+    const planMeca = date_debut_mecanique || null;
+    const planElec = date_debut_electrique || null;
+    const planVerif = date_debut_verification || null;
 
     // Handle coordinates: validate not NaN (parseFloat('') returns NaN which breaks PostGIS)
     const latNum = (latitude != null && !isNaN(Number(latitude))) ? Number(latitude) : null;
@@ -563,11 +574,14 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO chantiers (reference_commande_erp, nom_chantier, adresse, coordonnees,
                               rayon_geofencing, statut, client_nom, complexite,
-                              dxf_url, pdf_url, fiche_technique, date_echeance)
-       VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11, $12)
+                              dxf_url, pdf_url, fiche_technique, date_echeance,
+                              date_debut_mecanique, date_debut_electrique, date_debut_verification)
+       VALUES ($1, $2, $3, ${hasCoords ? 'ST_SetSRID(ST_MakePoint($4, $5), 4326)' : 'NULL'}, $6, 'planifie', $7, $8, $9, $10, $11, $12,
+               $13::timestamptz, $14::timestamptz, $15::timestamptz)
        RETURNING id`,
       [ref, nom, adresse || null, lngNum, latNum, rayon_geofencing || 50, client_nom || null, validComplexity,
-       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null, date_echeance || null]
+       dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null, date_echeance || null,
+       planMeca, planElec, planVerif]
     );
     const chantierId = rows[0].id;
 
@@ -598,10 +612,10 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
       await pool.query(`UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = $1`, [equipe.id]);
       const missionResult = await pool.query(
         `INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours, date_echeance)
-         VALUES ($1, $2, 'mecanique', 'en_attente', NOW(),
+         VALUES ($1, $2, 'mecanique', 'en_attente', COALESCE($4::timestamptz, NOW()),
                  (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = 'mecanique'), $3)
          RETURNING id`,
-        [chantierId, equipe.id, date_echeance || null]
+        [chantierId, equipe.id, date_echeance || null, planMeca]
       );
       missionId = missionResult.rows[0].id;
       equipeNom = equipe.nom;
@@ -638,12 +652,18 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
 app.put('/api/chantiers/:id', verifierToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique, date_echeance } = req.body;
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, dxfUrl, pdfUrl, ficheTechnique, date_echeance,
+            date_debut_mecanique, date_debut_electrique, date_debut_verification } = req.body;
     if (!nom) return res.status(400).json({ erreur: 'nom requis.' });
 
     const validComplexity = ['FACILE','MOYENNE','DIFFICILE'].includes(complexite) ? complexite : 'MOYENNE';
     const lat = (latitude !== undefined && latitude !== null && !isNaN(latitude)) ? Number(latitude) : null;
     const lng = (longitude !== undefined && longitude !== null && !isNaN(longitude)) ? Number(longitude) : null;
+
+    // Planning : mise à jour seulement si la clé est fournie ('' = effacer le planning de cette phase)
+    const hasPlanMeca = date_debut_mecanique !== undefined;
+    const hasPlanElec = date_debut_electrique !== undefined;
+    const hasPlanVerif = date_debut_verification !== undefined;
 
     await pool.query(
       `UPDATE chantiers SET
@@ -655,12 +675,47 @@ app.put('/api/chantiers/:id', verifierToken, async (req, res) => {
                             THEN ST_SetSRID(ST_MakePoint($10, $9), 4326)
                             ELSE coordonnees END,
          date_echeance = $12,
+         date_debut_mecanique = CASE WHEN $13::boolean THEN NULLIF($14, '')::timestamptz ELSE date_debut_mecanique END,
+         date_debut_electrique = CASE WHEN $15::boolean THEN NULLIF($16, '')::timestamptz ELSE date_debut_electrique END,
+         date_debut_verification = CASE WHEN $17::boolean THEN NULLIF($18, '')::timestamptz ELSE date_debut_verification END,
          date_modification = NOW()
        WHERE id = $11`,
       [nom, client_nom || null, adresse || null, rayon_geofencing || 50, validComplexity,
        dxfUrl || null, pdfUrl || null, ficheTechnique ? JSON.stringify({ spec: ficheTechnique }) : null,
-       lat, lng, id, date_echeance || null]
+       lat, lng, id, date_echeance || null,
+       hasPlanMeca, date_debut_mecanique || null,
+       hasPlanElec, date_debut_electrique || null,
+       hasPlanVerif, date_debut_verification || null]
     );
+
+    // Re-synchroniser les missions EN ATTENTE (jamais commencées) avec le nouveau planning.
+    // Missions démarrées (en_route/en_cours/en_pause/bloque/termine) : jamais touchées.
+    try {
+      const planRes = await pool.query(
+        `SELECT date_debut_mecanique, date_debut_electrique, date_debut_verification
+         FROM chantiers WHERE id = $1`, [id]
+      );
+      const plan = planRes.rows[0];
+      if (plan) {
+        const syncs: Array<[string, any]> = [
+          ['mecanique', plan.date_debut_mecanique],
+          ['electrique', plan.date_debut_electrique],
+          ['verification', plan.date_debut_verification],
+        ];
+        for (const [phase, planDate] of syncs) {
+          if (planDate) {
+            await pool.query(
+              `UPDATE ordres_de_mission SET date_declenchement = $1
+               WHERE chantier_id = $2 AND phase = $3 AND statut = 'en_attente'`,
+              [planDate, id, phase]
+            );
+          }
+        }
+      }
+    } catch (syncErr: any) {
+      logger.error('Erreur sync planning missions', { erreur: syncErr.message, chantierId: id });
+    }
+
     res.json({ message: `Chantier "${nom}" mis à jour.` });
   } catch (err: any) {
     res.status(500).json({ erreur: err.message });
@@ -849,12 +904,108 @@ app.use((req, res) => {
   res.sendFile(path.join(DASHBOARD_OUT, 'index.html'));
 });
 
+// ─── Auto-migration v20 : dates de démarrage prévues par phase ───────
+// Idempotent — crée les colonnes si absentes, met à jour le trigger de
+// relais pour reprendre le planning. Ne bloque jamais le démarrage.
+async function appliquerMigrationV20() {
+  try {
+    await pool.query(`ALTER TABLE chantiers
+      ADD COLUMN IF NOT EXISTS date_debut_mecanique TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS date_debut_electrique TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS date_debut_verification TIMESTAMPTZ NULL`);
+    await pool.query(`
+CREATE OR REPLACE FUNCTION declencher_phase_suivante()
+RETURNS TRIGGER AS $v20$
+DECLARE
+    v_prochaine_phase phase_mission;
+    v_equipe_type type_equipe;
+    v_equipe_id UUID;
+    v_equipe_nom TEXT;
+    v_mission_id UUID;
+    v_date_planifiee TIMESTAMPTZ;
+BEGIN
+    IF NEW.statut = 'termine' AND OLD.statut IS DISTINCT FROM 'termine' THEN
+        v_prochaine_phase := CASE NEW.phase::text
+            WHEN 'mecanique' THEN 'electrique'::phase_mission
+            WHEN 'electrique' THEN 'verification'::phase_mission
+            ELSE NULL
+        END;
+        IF v_prochaine_phase IS NULL THEN
+            RETURN NEW;
+        END IF;
+        v_equipe_type := CASE v_prochaine_phase::text
+            WHEN 'mecanique' THEN 'mecanique'::type_equipe
+            WHEN 'electrique' THEN 'electrique'::type_equipe
+            WHEN 'verification' THEN 'mixte'::type_equipe
+        END;
+        IF EXISTS (
+            SELECT 1 FROM ordres_de_mission om
+            WHERE om.chantier_id = NEW.chantier_id
+              AND om.phase::text = v_prochaine_phase::text
+              AND om.statut NOT IN ('termine')
+        ) THEN
+            RETURN NEW;
+        END IF;
+        SELECT CASE v_prochaine_phase::text
+                 WHEN 'electrique' THEN c.date_debut_electrique
+                 WHEN 'verification' THEN c.date_debut_verification
+                 ELSE NULL
+               END
+          INTO v_date_planifiee
+          FROM chantiers c WHERE c.id = NEW.chantier_id;
+        v_date_planifiee := COALESCE(v_date_planifiee, NOW());
+        SELECT e.id, e.nom INTO v_equipe_id, v_equipe_nom
+        FROM equipes e
+        WHERE e.type::text = v_equipe_type::text
+          AND e.actif = TRUE
+          AND e.id <> NEW.equipe_id
+          AND e.disponible_a_partir_de <= NOW()
+        ORDER BY
+          CASE WHEN e.statut_equipe = 'DISPONIBLE' THEN 0 ELSE 1 END,
+          (SELECT COUNT(*) FROM ordres_de_mission om
+           WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente')) ASC,
+          e.date_creation ASC
+        LIMIT 1;
+        IF v_equipe_id IS NULL THEN
+            INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, notes)
+            VALUES (NEW.chantier_id, NULL, v_prochaine_phase::text, 'en_attente', v_date_planifiee,
+                    'Phase ' || v_prochaine_phase || ' — aucune equipe dispo')
+            RETURNING id INTO v_mission_id;
+        ELSE
+            UPDATE equipes SET statut_equipe = 'EN_MISSION' WHERE id = v_equipe_id;
+            INSERT INTO ordres_de_mission (chantier_id, equipe_id, phase, statut, date_declenchement, duree_estimee_jours, notes)
+            VALUES (NEW.chantier_id, v_equipe_id, v_prochaine_phase::text, 'en_attente', v_date_planifiee,
+                    (SELECT duree_estimee_jours FROM configuration_phases WHERE phase = v_prochaine_phase::text),
+                    'Declenche auto depuis phase ' || NEW.phase)
+            RETURNING id INTO v_mission_id;
+        END IF;
+        IF v_mission_id IS NOT NULL THEN
+            INSERT INTO checklists_phases (mission_id, phase, etapes)
+            VALUES (v_mission_id, v_prochaine_phase::text, generer_checklist(v_prochaine_phase::text));
+        END IF;
+        INSERT INTO roadmap_chantier (chantier_id, phase, equipe_id, statut, date_debut)
+        VALUES (NEW.chantier_id, v_prochaine_phase::text, v_equipe_id, 'EN_ATTENTE', NOW());
+    END IF;
+    RETURN NEW;
+END;
+$v20$ LANGUAGE plpgsql`);
+    await pool.query(`DROP TRIGGER IF EXISTS trg_mission_phase_suivante ON ordres_de_mission`);
+    await pool.query(`CREATE TRIGGER trg_mission_phase_suivante
+      AFTER UPDATE OF statut ON ordres_de_mission
+      FOR EACH ROW WHEN (NEW.statut = 'termine' AND (OLD.statut IS DISTINCT FROM 'termine'))
+      EXECUTE FUNCTION declencher_phase_suivante()`);
+    logger.info('Migration v20 OK — planning par phase actif');
+  } catch (e: any) {
+    logger.error('Migration v20 échouée (non bloquant)', { erreur: e.message });
+  }
+}
+
 // Démarrer le serveur
 const port = parseInt(PORT, 10);
 app.listen(port, () => {
   logger.info(`RMASC OnSite — Serveur démarré sur le port ${port}`);
   pool.query('SELECT 1')
-    .then(() => logger.info('PostgreSQL OK'))
+    .then(() => { logger.info('PostgreSQL OK'); return appliquerMigrationV20(); })
     .catch(e => logger.error('PostgreSQL', { erreur: e.message }));
   // Démarrer le worker SMS (file d'attente sms_outbox)
   const smsWorker = new SmsWorker(pool, smsService, logger);
