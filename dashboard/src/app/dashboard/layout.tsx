@@ -1,12 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { estConnecte, getUtilisateur } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
 import { Loader2 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
@@ -30,6 +31,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Loader2 size={36} className="animate-spin text-indigo-500" />
       </div>
     );
+  }
+
+  // Redesign full-bleed (Customer Journeys) : pas de sidebar ni de cadre global
+  if (pathname === '/dashboard') {
+    return <>{children}</>;
   }
 
   return (
