@@ -55,16 +55,17 @@ BEGIN
     RETURN '[
       {"id":"m1","label":"Arrivage au chantier","done":false},
       {"id":"m2","label":"Plombage de gaine","done":false},
-      {"id":"m3","label":"Montage guidage/guiderail","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},
-      {"id":"m4","label":"Montage de moteur et plombage de moteur","done":false},
-      {"id":"m5","label":"Installation arcade et contrepoids","done":false},
-      {"id":"m6","label":"Install régulateur de vitesse et poulies","done":false},
-      {"id":"m7","label":"Install câbles de suspension et lingue","done":false},
-      {"id":"m8","label":"Installation des plateaux","done":false},
-      {"id":"m9","label":"Installation des portes","done":false,"subtasks":[{"label":"Départ","done":false},{"label":"50%","done":false},{"label":"100%","done":false}]},
-      {"id":"m10","label":"Installation de cabine","done":false},
+      {"id":"m3","label":"Installation des rails guides","done":false},
+      {"id":"m4","label":"Mise en place de châssis moteur et le moteur","done":false},
+      {"id":"m5","label":"Installation de l'arcade avec plateau + le contrepoids","done":false},
+      {"id":"m6","label":"L'élingue et l'attelage","done":false},
+      {"id":"m7","label":"Installation de régulateur de vitesse et la poulie bandée","done":false},
+      {"id":"m8","label":"L'inspection","done":false},
+      {"id":"m9","label":"Installation des portes paliers","done":false},
+      {"id":"m10","label":"Installation de la cabine","done":false},
       {"id":"m11","label":"Installation des portes cabine","done":false},
-      {"id":"m12","label":"Charger le contrepoids","done":false}
+      {"id":"m12","label":"L'équilibrage du contrepoids — PCP = P. cabine 1/2 la charge nominale","done":false},
+      {"id":"m13","label":"Installation de l'échelle et les ressorts dans la cuve","done":false}
     ]'::jsonb;
   ELSIF phase = 'electrique' THEN
     RETURN '[
