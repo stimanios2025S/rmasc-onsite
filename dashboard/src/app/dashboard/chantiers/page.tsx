@@ -416,7 +416,7 @@ export default function ChantiersPage() {
     setEditForm({
       nom: c.nom,
       client_nom: c.client_nom || '',
-      adresse: '',
+      adresse: c.adresse || '',
       latitude: c.lat?.toString() || '',
       longitude: c.lng?.toString() || '',
       complexite: c.complexite || 'MOYENNE',
@@ -484,11 +484,13 @@ export default function ChantiersPage() {
   }
 
   const filtres = ['Tous', 'En cours', 'Bloqués', 'Planifiés', 'Terminés'];
-  const statMap: Record<string, string> = {
-    'En cours': 'en_cours', 'Bloqués': 'bloque', 'Planifiés': 'planifie', 'Terminés': 'termine',
+  const statMap: Record<string, string[]> = {
+    'En cours': ['en_cours'], 'Bloqués': ['bloque'], 'Planifiés': ['planifie'],
+    // Un chantier fini a le statut 'reception_officielle' (ou 'termine') — les deux vont dans "Terminés"
+    'Terminés': ['termine', 'reception_officielle'],
   };
   const filtered = chantiers.filter(c => {
-    if (filtreStatut !== 'Tous' && c.statut !== statMap[filtreStatut]) return false;
+    if (filtreStatut !== 'Tous' && !statMap[filtreStatut]?.includes(c.statut)) return false;
     if (recherche && !c.nom.toLowerCase().includes(recherche.toLowerCase()) && !c.ref.toLowerCase().includes(recherche.toLowerCase())) return false;
     return true;
   });
@@ -626,6 +628,14 @@ export default function ChantiersPage() {
                   </div>
                 )}
               </div>
+
+              {/* ═══ LIEU / POSITION DU CHANTIER ═══ */}
+              {c.adresse && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700 bg-stone-50 border border-stone-100 rounded-xl px-3 py-2 mb-3">
+                  <MapPin size={13} className="text-rose-500 shrink-0" />
+                  <span className="truncate">{c.adresse}</span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 text-xs text-stone-500 mb-3">
                 <span>{c.client_nom || 'Client inconnu'}</span>
@@ -958,6 +968,12 @@ export default function ChantiersPage() {
               <div>
                 <label className="text-xs font-semibold text-stone-500 mb-1 block">Nom du chantier</label>
                 <input value={editForm.nom} onChange={e => setEditForm({ ...editForm, nom: e.target.value })}
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">📍 Lieu / Position du chantier</label>
+                <input value={editForm.adresse} onChange={e => setEditForm({ ...editForm, adresse: e.target.value })}
+                  placeholder="Ex: Bouira, Alger, Oran..."
                   className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
               <div className="grid grid-cols-2 gap-4">
