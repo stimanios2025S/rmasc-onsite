@@ -13,6 +13,7 @@ import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../confi
  *   POST /api/tracking/pointage-jour — Pointage matinal / fin journée
  *   POST /api/tracking/pause         — Début/fin de pause ou retour shop
  *   POST /api/tracking/arrivee       — Confirmer arrivée sur site (GPS check)
+ *   POST /api/tracking/sortie-auto   — Sortie auto GPS (quitte le site sans pause)
  *   POST /api/tracking/transferer    — Transfert méca → élec
  *   GET  /api/tracking/equipes       — Positions temps réel (admin carte)
  *   GET  /api/tracking/journee       — Résumé journée d'une équipe
@@ -346,6 +347,107 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         distance: Math.round(distance),
         dansRayon: true,
         message: `✅ Arrivée confirmée sur "${c.nom_chantier}" (${Math.round(distance)}m du point GPS)`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── 4b. SORTIE AUTO GPS — Le worker quitte le site sans pause ────
+  // Le frontend (GPS continu sur site, 30s) appelle cet endpoint quand 2
+  // positions consécutives sont hors rayon SANS pause ouverte.
+  // Règle métier : 1 seul pointage d'arrivée ; toute sortie = départ auto ;
+  // le worker doit repointer (arrivée) à son retour. La mission reste
+  // en_cours (le chantier continue) — seule la présence est coupée.
+  // Idempotent : si le dernier pointage est déjà un départ, on ne fait rien.
+  router.post('/sortie-auto', async (req, res) => {
+    try {
+      const { equipeId, missionId, technicienId, latitude, longitude, distance } = req.body;
+      if (!equipeId || !missionId || latitude === undefined || longitude === undefined) {
+        return res.status(400).json({ erreur: 'equipeId, missionId, latitude, longitude requis.' });
+      }
+
+      // 1. Mission doit être active (en_cours ou en_route) — sinon rien à couper
+      const missionRes = await pool.query(
+        `SELECT om.id, om.statut, om.chantier_id, om.equipe_id,
+                c.nom_chantier, e.nom AS equipe_nom,
+                c.rayon_geofencing
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         WHERE om.id = $1`,
+        [missionId]
+      );
+      if (missionRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Mission introuvable.' });
+      }
+      const m = missionRes.rows[0];
+      if (!['en_cours', 'en_route'].includes(m.statut)) {
+        return res.json({ ok: true, deja_traite: true, message: 'Mission non active — aucune sortie à enregistrer.' });
+      }
+
+      // 2. Pause ouverte ? → sortie légitime (aller-retour autorisé), pas de départ auto
+      const pauseRes = await pool.query(
+        `SELECT 1 FROM pauses_journee
+         WHERE equipe_id = $1 AND date_fin IS NULL
+         LIMIT 1`,
+        [equipeId]
+      );
+      if (pauseRes.rows.length > 0) {
+        return res.json({ ok: true, en_pause: true, message: 'Pause ouverte — sortie autorisée, présence conservée.' });
+      }
+
+      // 3. Anti-doublon : le dernier pointage de cette mission est-il déjà un départ ?
+      const dernierRes = await pool.query(
+        `SELECT type_pointage FROM journal_pointage_gps
+         WHERE ordre_mission_id = $1
+         ORDER BY horodatage DESC LIMIT 1`,
+        [missionId]
+      );
+      if (dernierRes.rows.length > 0 && dernierRes.rows[0].type_pointage === 'depart') {
+        return res.json({ ok: true, deja_traite: true, message: 'Départ déjà enregistré — repointez à votre retour.' });
+      }
+
+      // 4. Enregistrer le départ automatique (source = auto_gps)
+      const distArrondi = distance !== undefined && distance !== null ? Math.round(Number(distance)) : null;
+      let techId = technicienId || null;
+      if (!techId) {
+        // Secours : premier utilisateur actif de l'équipe (le départ doit toujours être tracé)
+        try {
+          const uRes = await pool.query(
+            `SELECT id FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE ORDER BY date_creation LIMIT 1`,
+            [equipeId]
+          );
+          if (uRes.rows.length > 0) techId = uRes.rows[0].id;
+        } catch (_) { /* ignore — on signale quand même via SSE */ }
+      }
+      if (techId) {
+        await pool.query(
+          `INSERT INTO journal_pointage_gps (ordre_mission_id, utilisateur_id, type_pointage, horodatage, position_gps, source)
+           VALUES ($1, $2, 'depart', NOW(), ST_SetSRID(ST_MakePoint($3, $4), 4326), 'auto_gps')`,
+          [missionId, techId, longitude, latitude]
+        );
+      }
+
+      logger.warn('Sortie auto GPS — présence coupée', {
+        missionId, equipeId, distance: distArrondi, chantier: m.nom_chantier,
+      });
+
+      // 6. SSE temps réel → admin (timesheet/incidents se rechargent) + worker (bannière)
+      eventBus.emit('sortie_auto', {
+        equipeId, missionId,
+        equipeNom: m.equipe_nom || 'Équipe',
+        chantierNom: m.nom_chantier || '',
+        distance: distArrondi,
+        rayon: m.rayon_geofencing ? Number(m.rayon_geofencing) : null,
+        message: `${m.equipe_nom || 'Équipe'} a quitté "${m.nom_chantier || 'le chantier'}" sans pause — repointage requis`,
+      });
+
+      res.json({
+        ok: true,
+        sortie_auto: true,
+        distance: distArrondi,
+        message: `🚶 Sortie détectée à ${distArrondi !== null ? distArrondi + 'm' : 'distance inconnue'} du chantier. Repointez à votre retour.`,
       });
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });

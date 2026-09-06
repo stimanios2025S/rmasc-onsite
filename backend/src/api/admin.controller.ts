@@ -277,6 +277,21 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
        JOIN ordres_de_mission om ON om.id = jp.ordre_mission_id
        JOIN chantiers c ON c.id = om.chantier_id
        LEFT JOIN equipes e ON e.id = om.equipe_id
+       WHERE jp.horodatage > NOW() - INTERVAL '7 days'
+         AND NOT (jp.type_pointage = 'depart' AND COALESCE(jp.source, 'manuel') = 'auto_gps')
+       UNION ALL
+       SELECT 'sortie_auto' AS type, 'haute'::text AS priorite,
+              '🚶 Sortie auto GPS (sans pause) — ' || u.prenom || ' ' || u.nom AS message,
+              c.nom_chantier, e.nom AS equipe_nom,
+              TO_CHAR(jp.horodatage,'YYYY-MM-DD HH24:MI') AS moment,
+              NULL AS photo_url, jp.ordre_mission_id AS mission_id, NULL AS blocage_id
+       FROM journal_pointage_gps jp
+       JOIN utilisateurs u ON u.id = jp.utilisateur_id
+       JOIN ordres_de_mission om ON om.id = jp.ordre_mission_id
+       JOIN chantiers c ON c.id = om.chantier_id
+       LEFT JOIN equipes e ON e.id = om.equipe_id
+       WHERE jp.type_pointage = 'depart' AND COALESCE(jp.source, 'manuel') = 'auto_gps'
+         AND jp.horodatage > NOW() - INTERVAL '7 days'
        UNION ALL
        SELECT 'pointage_jour' AS type, 'basse'::text AS priorite,
               CASE pj.type_pointage

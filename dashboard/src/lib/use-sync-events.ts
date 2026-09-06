@@ -5,7 +5,7 @@ import { getToken } from './auth';
 
 export interface SyncEvent {
   type: 'demande_recue' | 'chantier_cree' | 'mission_assignee' | 'mission_terminee' | 'blocage_signale' | 'blocage_annule' | 'equipe_disponible' | 'data_changed'
-    | 'equipe_position' | 'equipe_en_route' | 'equipe_arrivee' | 'equipe_en_pause' | 'equipe_reprise' | 'equipe_terminee'
+    | 'equipe_position' | 'equipe_en_route' | 'equipe_arrivee' | 'equipe_en_pause' | 'equipe_reprise' | 'equipe_terminee' | 'sortie_auto'
     | 'mission_transferee' | 'pointage_jour';
   payload: Record<string, any>;
   timestamp: string;
@@ -117,6 +117,7 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): UseSyncEvents
           case 'equipe_en_pause':
           case 'equipe_reprise':
           case 'equipe_terminee':
+          case 'sortie_auto':
           case 'pointage_jour':
             opts.onDataChanged?.(event.payload);
             break;

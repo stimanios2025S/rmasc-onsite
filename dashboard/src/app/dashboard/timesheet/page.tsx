@@ -22,6 +22,7 @@ const EVENT_STYLE: Record<string, { bg: string; border: string; dot: string }> =
   pointage_fin: { bg: 'bg-indigo-50', border: 'border-indigo-200', dot: 'bg-indigo-400' },
   arrivee: { bg: 'bg-emerald-50', border: 'border-emerald-200', dot: 'bg-emerald-400' },
   depart: { bg: 'bg-stone-50', border: 'border-stone-200', dot: 'bg-stone-400' },
+  sortie_auto: { bg: 'bg-rose-50', border: 'border-rose-200', dot: 'bg-rose-500' },
   pause: { bg: 'bg-orange-50', border: 'border-orange-200', dot: 'bg-orange-400' },
   retour_shop: { bg: 'bg-sky-50', border: 'border-sky-200', dot: 'bg-sky-400' },
 };

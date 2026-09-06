@@ -23,13 +23,14 @@ const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: s
   pause:    { label: 'Pause',         icon: PauseCircle,   color: 'text-amber-600',   bg: 'bg-amber-50' },
   reprise:  { label: 'Reprise',       icon: PlayCircle,    color: 'text-emerald-600',  bg: 'bg-emerald-50' },
   pointage: { label: 'Pointage',      icon: MapPin,        color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+  sortie_auto: { label: 'Sortie Auto GPS', icon: MapPin,  color: 'text-rose-600',     bg: 'bg-rose-50' },
   pointage_jour: { label: 'Pointage Jour', icon: Clock,   color: 'text-purple-600',  bg: 'bg-purple-50' },
   materiel: { label: 'Matériel',      icon: Package,       color: 'text-sky-600',     bg: 'bg-sky-50' },
 };
 
-const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Reprises', 'Matériel', 'Pointages', 'Pointages Jour'];
+const FILTRES = ['Tous', 'Blocages', 'Retards', 'Pauses', 'Reprises', 'Matériel', 'Pointages', 'Pointages Jour', 'Sorties Auto'];
 const FILTRE_MAP: Record<string, string | null> = {
-  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Reprises: 'reprise', 'Matériel': 'materiel', Pointages: 'pointage', 'Pointages Jour': 'pointage_jour',
+  Tous: null, Blocages: 'blocage', Retards: 'retard', Pauses: 'pause', Reprises: 'reprise', 'Matériel': 'materiel', Pointages: 'pointage', 'Pointages Jour': 'pointage_jour', 'Sorties Auto': 'sortie_auto',
 };
 
 function timeAgo(d: string): string {
@@ -102,6 +103,7 @@ export default function IncidentsPage() {
   const materiels = incidents.filter(i => i.type === 'materiel');
   const pointages = incidents.filter(i => i.type === 'pointage');
   const pointagesJour = incidents.filter(i => i.type === 'pointage_jour');
+  const sortiesAuto = incidents.filter(i => i.type === 'sortie_auto');
   const critiques = incidents.filter(i => i.priorite === 'critique');
 
   if (loading) return (
@@ -128,7 +130,7 @@ export default function IncidentsPage() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-2 sm:gap-3 mb-6">
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-stone-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-stone-400 uppercase mb-1">Total</p>
           <p className="text-2xl font-bold text-stone-700">{incidents.length}</p>
@@ -160,6 +162,10 @@ export default function IncidentsPage() {
         <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-purple-100 shadow-sm p-4">
           <p className="text-[10px] font-semibold text-purple-400 uppercase mb-1">Journée</p>
           <p className="text-2xl font-bold text-purple-500">{pointagesJour.length}</p>
+        </div>
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-rose-100 shadow-sm p-4">
+          <p className="text-[10px] font-semibold text-rose-400 uppercase mb-1">Sorties Auto</p>
+          <p className="text-2xl font-bold text-rose-500">{sortiesAuto.length}</p>
         </div>
       </div>
 

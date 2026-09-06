@@ -1020,8 +1020,12 @@ $v20$ LANGUAGE plpgsql`);
         AFTER UPDATE OF statut ON ordres_de_mission
         FOR EACH ROW EXECUTE FUNCTION passer_chantier_reception()`);
     }
+    // v22 : sortie auto GPS (pointage unique) — colonne source sur le journal
+    await pool.query(`ALTER TABLE journal_pointage_gps ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manuel'`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_journal_mission_recent ON journal_pointage_gps (ordre_mission_id, horodatage DESC)`);
     logger.info('Migration v20 OK — planning par phase actif');
     logger.info('Migration v21 OK — réception auto à la fin de vérification');
+    logger.info('Migration v22 OK — sortie auto GPS');
   } catch (e: any) {
     logger.error('Migration v20 échouée (non bloquant)', { erreur: e.message });
   }

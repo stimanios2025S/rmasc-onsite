@@ -168,7 +168,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     try {
       const { rows } = await pool.query(
         `SELECT id, type_pointage AS "type", TO_CHAR(horodatage,'YYYY-MM-DD HH24:MI:SS') AS horodatage,
-                distance_chantier_m AS distance, dans_rayon AS conforme
+                distance_chantier_m AS distance, dans_rayon AS conforme,
+                COALESCE(source, 'manuel') AS source
          FROM journal_pointage_gps WHERE ordre_mission_id = $1
          ORDER BY horodatage DESC`,
         [req.params.id]

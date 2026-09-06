@@ -20,7 +20,7 @@ interface MissionInfo {
   complexite?: string; dxf_url?: string | null; pdf_url?: string | null;
   fiche_technique?: Record<string, unknown> | null;
 }
-interface PointageRec { id: string; type: string; horodatage: string; distance: number; conforme: boolean; }
+interface PointageRec { id: string; type: string; horodatage: string; distance: number; conforme: boolean; source?: string; }
 interface EquipeStatus { statut_equipe: string; disponible_a_partir_de: string; nom: string; type: string; }
 interface EtapeChecklist { id: string; label: string; done: boolean; subtasks?: { label: string; done: boolean }[]; }
 interface ChecklistData { id: string; mission_id: string; phase: string; etapes: EtapeChecklist[]; complete: boolean; }
@@ -93,6 +93,12 @@ export default function MissionActivePage() {
   const [estArriveChantier, setEstArriveChantier] = useState(false);
   const [peutTransférer, setPeutTransférer] = useState(false);
   const [justFinishedDay, setJustFinishedDay] = useState(false);
+
+  // ─── Sortie auto GPS : 1 seul pointage, sortie = départ auto, repointage requis ───
+  const [sortieAuto, setSortieAuto] = useState(false); // worker hors site sans pause → doit repointer
+  const horsZoneCountRef = useRef(0); // positions consécutives hors rayon (sur site)
+  const sortieAutoSentRef = useRef(false); // anti-doublon d'envoi
+  const missionSiteRef = useRef<MissionInfo | null>(null); // mission suivie par le watcher sur site
 
   const equipeId = user?.equipeId;
   const technicienId = user?.id;
@@ -276,6 +282,115 @@ export default function MissionActivePage() {
     setTrackingActive(false);
   }, []);
 
+  /* ═══ SORTIE AUTO GPS — surveillance sur site (30s) ═══
+     1 seul pointage d'arrivée. Quand le worker est ARRIVÉ (en_cours) et que
+     le GPS montre 2 positions consécutives hors rayon SANS pause ouverte →
+     départ auto enregistré côté serveur, et le portail bascule en mode
+     "repointage requis". Pause / retour shop déclarés = sortie autorisée
+     (le watcher est suspendu tant que la pause est ouverte). */
+  const RAYON_MARGE = 1.5; // même tolérance que fin_journee (rayon × 1.5)
+  const distanceToSite = useCallback((lat: number, lng: number, site: MissionInfo) => {
+    if (!site.latitude || !site.longitude) return 0;
+    const R = 6371000;
+    const dLa = (lat - site.latitude) * Math.PI / 180;
+    const dLn = (lng - site.longitude) * Math.PI / 180;
+    const a = Math.sin(dLa / 2) ** 2
+      + Math.cos(site.latitude * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dLn / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }, []);
+
+  const siteWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopSiteWatcher = useCallback(() => {
+    if (siteWatcherRef.current) { clearInterval(siteWatcherRef.current); siteWatcherRef.current = null; }
+  }, []);
+
+  const envoyerSortieAuto = useCallback(async (lat: number, lng: number, dist: number) => {
+    const site = missionSiteRef.current;
+    if (!site || sortieAutoSentRef.current) return;
+    sortieAutoSentRef.current = true; // anti-doublon immédiat
+    try {
+      const res = await fetch('/api/tracking/sortie-auto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipeId, missionId: site.id, technicienId: technicienId || '',
+          latitude: lat, longitude: lng, distance: Math.round(dist),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.sortie_auto) {
+        // Sortie confirmée → le worker doit repointer
+        horsZoneCountRef.current = 0;
+        if (siteWatcherRef.current) { clearInterval(siteWatcherRef.current); siteWatcherRef.current = null; }
+        setSortieAuto(true);
+        setEstArriveChantier(false);
+        setPointageMsg({ type: 'error', text: data.message || '🚶 Sortie détectée — repointez à votre retour.' });
+        loadMission(true);
+      } else if (data.en_pause) {
+        // Pause ouverte entre-temps → sortie légitime, on réarme doucement
+        sortieAutoSentRef.current = false;
+        horsZoneCountRef.current = 0;
+      } else {
+        // deja_traite / mission non active / bloquée → ne pas spammer
+        horsZoneCountRef.current = 0;
+      }
+    } catch {
+      sortieAutoSentRef.current = false; // réessayer au prochain cycle
+    }
+  }, [equipeId, technicienId, loadMission]);
+
+  const startSiteWatcher = useCallback((site: MissionInfo) => {
+    if (siteWatcherRef.current) return; // déjà en surveillance
+    missionSiteRef.current = site;
+    horsZoneCountRef.current = 0;
+    sortieAutoSentRef.current = false;
+
+    const check = () => {
+      // Pause ouverte (locale) → sortie autorisée, compteur remis à zéro
+      if (missionRef.current?.statut === 'en_pause') { horsZoneCountRef.current = 0; return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const s = missionSiteRef.current;
+          if (!s || sortieAutoSentRef.current) return;
+          const dist = distanceToSite(pos.coords.latitude, pos.coords.longitude, s);
+          const rayon = (s.rayon_geofencing || 50) * RAYON_MARGE;
+          setGpsDistance(Math.round(dist));
+          if (dist <= rayon) {
+            horsZoneCountRef.current = 0; // de retour / toujours dedans
+            setGpsInZone(true);
+          } else {
+            setGpsInZone(false);
+            horsZoneCountRef.current += 1;
+            if (horsZoneCountRef.current >= 2) {
+              envoyerSortieAuto(pos.coords.latitude, pos.coords.longitude, dist);
+            }
+          }
+        },
+        () => { /* GPS indisponible ce cycle — on ne coupe jamais sans preuve */ },
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+    };
+
+    check(); // premier contrôle immédiat
+    siteWatcherRef.current = setInterval(check, 30000); // puis toutes les 30s
+  }, [distanceToSite, envoyerSortieAuto]);
+
+  // Démarrer / arrêter la surveillance selon l'état réel de la mission
+  useEffect(() => {
+    const surSite = mission?.statut === 'en_cours' && !sortieAuto;
+    if (surSite && mission) {
+      startSiteWatcher(mission);
+    } else {
+      stopSiteWatcher();
+      if (mission?.statut !== 'en_cours') missionSiteRef.current = null;
+    }
+    return () => { /* le watcher survit aux re-renders, stop explicite ci-dessus */ };
+  }, [mission?.id, mission?.statut, sortieAuto, startSiteWatcher, stopSiteWatcher]);
+
+  // Arrêt définitif à la fermeture du portail
+  useEffect(() => {
+    return () => { if (siteWatcherRef.current) clearInterval(siteWatcherRef.current); };
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => { if (trackingIntervalRef.current) clearInterval(trackingIntervalRef.current); };
@@ -309,6 +424,10 @@ export default function MissionActivePage() {
             setEstEnRoute(false);
             setGpsInZone(true);
             setGpsDistance(data.distance);
+            // Repointage après sortie auto → on réarme la surveillance
+            setSortieAuto(false);
+            sortieAutoSentRef.current = false;
+            horsZoneCountRef.current = 0;
             stopGpsTracking();
             loadMission(true);
           } else if (data.distance !== undefined) {
@@ -801,15 +920,30 @@ export default function MissionActivePage() {
   // ═══ STATE A: MISSION ACTIVE ═══
   const estArrive = pointages.some(p => p.type === 'arrivee');
   const estDepart = pointages.some(p => p.type === 'depart');
+  // Sortie auto GPS persistée (rechargement page) : dernier pointage = départ auto
+  // → le worker doit repointer même s'il rouvre le portail
+  useEffect(() => {
+    if (pointages.length === 0 || !mission) return;
+    const dernier = [...pointages].sort((a: any, b: any) =>
+      new Date(b.horodatage).getTime() - new Date(a.horodatage).getTime())[0] as any;
+    if (dernier?.type === 'depart' && (dernier as any).source === 'auto_gps'
+        && (mission.statut === 'en_cours' || mission.statut === 'en_route')) {
+      setSortieAuto(true);
+      setEstArriveChantier(false);
+    } else if (dernier?.type === 'arrivee') {
+      setSortieAuto(false);
+    }
+  }, [pointages, mission?.id, mission?.statut]); // eslint-disable-line react-hooks/exhaustive-deps
   const aBloque = mission?.statut === 'bloque';
   const progression = checklist ? Math.round((checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100) : 0;
 
   // New lifecycle states — derive from BOTH local state AND fetched data (pointages/mission status)
   // so the UI stays correct even after page reload
   const missionStatut = mission?.statut || '';
-  const isEnRoute = estEnRoute || missionStatut === 'en_route';
-  const isArrive = estArriveChantier || estArrive || missionStatut === 'en_cours' || missionStatut === 'en_pause';
-  const isEnCours = missionStatut === 'en_cours' || missionStatut === 'en_pause';
+  const isEnRoute = (estEnRoute || missionStatut === 'en_route') && !sortieAuto;
+  // Sortie auto → présence coupée : le worker n'est plus "arrivé" tant qu'il ne repointe pas
+  const isArrive = !sortieAuto && (estArriveChantier || estArrive || missionStatut === 'en_cours' || missionStatut === 'en_pause');
+  const isEnCours = !sortieAuto && (missionStatut === 'en_cours' || missionStatut === 'en_pause');
   const isTermine = estDepart || missionStatut === 'termine';
   const isMecanique = mission?.phase === 'mecanique';
   const isElectrique = mission?.phase === 'electrique';
@@ -1204,8 +1338,30 @@ export default function MissionActivePage() {
         </div>
       )}
 
+      {/* ═══ SORTIE AUTO GPS — repointage requis ═══ */}
+      {sortieAuto && !isTermine && !aBloque && (
+        <div className="mx-4 mb-4">
+          <div className="bg-gradient-to-r from-rose-500 to-red-500 rounded-3xl p-6 text-center shadow-lg shadow-rose-200">
+            <Navigation size={40} className="text-white/80 mx-auto mb-3" />
+            <p className="text-white font-bold text-lg mb-1">🚶 Sortie détectée</p>
+            <p className="text-white/70 text-sm mb-4">
+              Vous avez quitté le site sans pause déclarée — votre présence a été coupée{gpsDistance !== null ? ` (${gpsDistance}m)` : ''}.
+              Repointez votre arrivée pour reprendre le travail.
+            </p>
+            <button onClick={handleArriveeSite} disabled={arriveeLoading}
+              className="w-full bg-white text-rose-600 py-4 rounded-2xl text-lg font-black shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-3">
+              {arriveeLoading ? <Loader2 size={22} className="animate-spin" /> : <MapPin size={22} />}
+              📍 Pointer mon retour
+            </button>
+            <p className="text-white/60 text-[10px] text-center mt-2">
+              Astuce : déclarez ☕ Pause ou 🏪 Retour Shop avant de quitter pour garder votre présence.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ═══ GPS TRACKING BAR (en route) ═══ */}
-      {isEnRoute && !isArrive && (
+      {isEnRoute && !isArrive && !sortieAuto && (
         <div className="mx-4 mb-4">
           <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-5 shadow-lg shadow-amber-200">
             <div className="flex items-center justify-between mb-3">
@@ -1404,18 +1560,23 @@ export default function MissionActivePage() {
         <div className="mx-4 mb-4">
           <h3 className="text-xs font-semibold text-stone-400 uppercase mb-2 px-1">Journal des Pointages</h3>
           <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm divide-y divide-stone-50">
-            {pointages.map(p => (
+            {pointages.map(p => {
+              const estAuto = (p as any).source === 'auto_gps';
+              return (
               <div key={p.id} className="px-5 py-3.5 flex items-center gap-3">
                 <div className={`w-2.5 h-2.5 rounded-full ${p.conforme ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-stone-700">{p.type === 'arrivee' ? 'Arrivée' : 'Départ'} — {p.distance}m du chantier</p>
+                  <p className="text-sm font-semibold text-stone-700">
+                    {p.type === 'arrivee' ? 'Arrivée' : estAuto ? '🚶 Sortie auto GPS' : 'Départ'} — {p.distance}m du chantier
+                  </p>
                   <p className="text-xs text-stone-400">{new Date(p.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${p.conforme ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                  {p.conforme ? 'Conforme' : 'Hors zone'}
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${estAuto ? 'bg-rose-50 text-rose-600' : p.conforme ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                  {estAuto ? 'Sortie auto' : p.conforme ? 'Conforme' : 'Hors zone'}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

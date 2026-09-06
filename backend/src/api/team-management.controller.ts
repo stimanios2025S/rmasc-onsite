@@ -533,12 +533,13 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         ORDER BY p.equipe_id, p.date_debut
       `, [dateStart, dateEnd]);
 
-      // All GPS arrivals for this day
+      // All GPS arrivals for this day (incl. source: manuel vs auto_gps)
       const { rows: arrivees } = await pool.query(`
         SELECT jg.ordre_mission_id AS mission_id,
                u.equipe_id, e.nom AS equipe_nom,
                u.prenom || ' ' || u.nom AS technicien_nom,
                jg.type_pointage, jg.horodatage, jg.dans_rayon, jg.distance_chantier_m,
+               COALESCE(jg.source, 'manuel') AS source,
                c.nom_chantier
         FROM journal_pointage_gps jg
         JOIN utilisateurs u ON u.id = jg.utilisateur_id
@@ -582,20 +583,23 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         if (p.type_pointage === 'fin_journee') team.stats.fin_journee = heure;
       }
 
-      // Add GPS arrival/departure events
+      // Add GPS arrival/departure events (sorties auto GPS mises en évidence)
       for (const a of arrivees) {
         const team = ensureTeam(a.equipe_id, a.equipe_nom, '');
         const heure = new Date(a.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const estSortieAuto = a.type_pointage === 'depart' && a.source === 'auto_gps';
         team.events.push({
-          type: a.type_pointage === 'arrivee' ? 'arrivee' : 'depart',
+          type: estSortieAuto ? 'sortie_auto' : (a.type_pointage === 'arrivee' ? 'arrivee' : 'depart'),
           heure,
           horodatage: a.horodatage,
           chantier: a.nom_chantier || null,
           technicien: a.technicien_nom,
           conforme: a.dans_rayon,
           distance: a.distance_chantier_m,
-          icon: a.type_pointage === 'arrivee' ? '📍' : '🚶',
-          label: a.type_pointage === 'arrivee' ? `${a.technicien_nom} arrivé` : `${a.technicien_nom} parti`,
+          icon: a.type_pointage === 'arrivee' ? '📍' : (estSortieAuto ? '🚨' : '🚶'),
+          label: a.type_pointage === 'arrivee'
+            ? `${a.technicien_nom} arrivé`
+            : (estSortieAuto ? `${a.technicien_nom} — sortie auto GPS (sans pause)` : `${a.technicien_nom} parti`),
         });
         if (a.type_pointage === 'arrivee') team.stats.arrivee = heure;
       }
