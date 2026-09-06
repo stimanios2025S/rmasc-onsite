@@ -946,13 +946,12 @@ BEGIN
         ) THEN
             RETURN NEW;
         END IF;
-        SELECT CASE v_prochaine_phase::text
-                 WHEN 'electrique' THEN c.date_debut_electrique
-                 WHEN 'verification' THEN c.date_debut_verification
-                 ELSE NULL
-               END
-          INTO v_date_planifiee
-          FROM chantiers c WHERE c.id = NEW.chantier_id;
+        -- Planning admin pour la phase suivante (NULL = pas de planning -> NOW())
+        IF v_prochaine_phase::text = 'electrique' THEN
+          SELECT c.date_debut_electrique INTO v_date_planifiee FROM chantiers c WHERE c.id = NEW.chantier_id;
+        ELSIF v_prochaine_phase::text = 'verification' THEN
+          SELECT c.date_debut_verification INTO v_date_planifiee FROM chantiers c WHERE c.id = NEW.chantier_id;
+        END IF;
         v_date_planifiee := COALESCE(v_date_planifiee, NOW());
         SELECT e.id, e.nom INTO v_equipe_id, v_equipe_nom
         FROM equipes e
