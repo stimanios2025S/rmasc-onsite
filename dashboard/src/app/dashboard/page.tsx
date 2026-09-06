@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { getUtilisateur, apiFetch } from '@/lib/auth';
 import {
   approuverDemande, refuserDemande, annulerBlocage,
@@ -7,24 +8,25 @@ import {
 } from '@/lib/api';
 import {
   HardHat, AlertTriangle, Users, MapPin, XCircle,
-  Loader2, ChevronDown, ChevronRight, Package, Wrench, Zap, Shield,
-  CheckCheck, Timer, CheckCircle, Calendar, Clock, Ban, Sunrise, Sunset,
+  Loader2, CheckCheck, Timer, CheckCircle, Calendar, Clock, Ban,
+  Search, Mail, Bell, Plus, Share, Star, Check,
 } from 'lucide-react';
 import MapView, { type TeamPosition } from '@/components/MapView';
 import SyncNotifications from '@/components/SyncNotifications';
 
-const STATUT_BADGE: Record<string, string> = {
-  DISPONIBLE: 'bg-emerald-50 text-emerald-600', EN_MISSION: 'bg-indigo-50 text-indigo-600',
-  EN_REPOS: 'bg-amber-50 text-amber-600',
-};
-const STATUT_LABEL: Record<string, string> = {
-  DISPONIBLE: 'Disponible', EN_MISSION: 'En mission', EN_REPOS: 'En repos',
-};
-const TYPE_ICON: Record<string, any> = { mecanique: Wrench, electrique: Zap, mixte: Shield };
-const PRIORITE_COULEUR: Record<string, string> = {
-  critique: 'bg-rose-500 text-white', haute: 'bg-orange-500 text-white',
-  moyenne: 'bg-amber-400 text-stone-800', basse: 'bg-stone-100 text-stone-500',
-};
+const AVATAR_BG = [
+  'bg-gradient-to-br from-amber-200 to-orange-300 text-stone-700',
+  'bg-gradient-to-br from-sky-200 to-blue-300 text-stone-700',
+  'bg-gradient-to-br from-emerald-200 to-teal-300 text-stone-700',
+  'bg-gradient-to-br from-rose-200 to-pink-300 text-stone-700',
+  'bg-gradient-to-br from-violet-200 to-purple-300 text-stone-700',
+  'bg-gradient-to-br from-lime-200 to-green-300 text-stone-700',
+];
+
+function initials(nom: string): string {
+  const p = (nom || '?').trim().split(/\s+/);
+  return ((p[0]?.[0] || '?') + (p[1]?.[0] || '')).toUpperCase();
+}
 
 function timeAgo(d: string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -34,7 +36,36 @@ function timeAgo(d: string): string {
   return `Il y a ${Math.floor(min / 60)}h`;
 }
 
+function parseEtapes(c: ChantierData) {
+  let etapes: { label: string; done: boolean; subtasks?: { label: string; done: boolean }[] }[] = [];
+  if (c.checklist_etapes) {
+    try {
+      const raw = typeof c.checklist_etapes === 'string' ? JSON.parse(c.checklist_etapes) : c.checklist_etapes;
+      if (Array.isArray(raw)) etapes = raw;
+    } catch {}
+  }
+  const total = etapes.length;
+  const done = etapes.filter(e => e.done).length;
+  let current = '', currentIdx = -1;
+  for (let i = 0; i < etapes.length; i++) {
+    const e = etapes[i];
+    const complete = e.done && (!e.subtasks || e.subtasks.every(s => s.done));
+    if (!complete) { current = e.label; currentIdx = i; break; }
+  }
+  return { etapes, total, done, current, currentIdx, pct: total > 0 ? Math.round((done / total) * 100) : 0, allDone: total > 0 && done === total };
+}
+
+const NAV_PILLS = [
+  { label: "Vue d'ensemble", href: '/dashboard' },
+  { label: 'Chantiers', href: '/dashboard/chantiers' },
+  { label: 'Équipes', href: '/dashboard/team-management' },
+  { label: 'Incidents', href: '/dashboard/incidents' },
+  { label: 'Demandes', href: '/dashboard/demandes' },
+  { label: 'Magasin', href: '/dashboard/magasiniers' },
+];
+
 export default function DashboardPage() {
+  const router = useRouter();
   const user = getUtilisateur();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [demandes, setDemandes] = useState<DemandeData[]>([]);
@@ -47,15 +78,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showEquipes, setShowEquipes] = useState(true);
-  const [filtreTemps, setFiltreTemps] = useState("Aujourd'hui");
 
-  // Sync temps réel : 1 seule requête toutes les 8s
   useEffect(() => {
     loadAll();
-    // Safety: force loading to false after 5s even if all APIs fail
     const safetyTimeout = setTimeout(() => setLoading(false), 5000);
-    // Polling 8s — 1 seule requête au lieu de 7
     const i = setInterval(() => {
       if (document.visibilityState === 'visible') loadAll();
     }, 8000);
@@ -65,7 +91,6 @@ export default function DashboardPage() {
 
   async function loadAll() {
     try {
-      // 1 seule requête au lieu de 7 !
       const data = await apiFetch<any>('/dashboard/all');
       if (data.stats) setStats(data.stats);
       if (data.demandes) setDemandes(data.demandes);
@@ -74,13 +99,11 @@ export default function DashboardPage() {
       if (data.incidents) setIncidents(data.incidents);
       if (data.demandesMateriel) setDemandesMateriel(data.demandesMateriel);
       if (data.teamPositions) setTeamPositions(data.teamPositions);
-      setError(null); // Clear any previous error on success
+      setError(null);
     } catch (e: any) {
-      // Only set error if we have NO data at all (first load)
       if (!stats && chantiers.length === 0) {
         setError(e?.message || 'Erreur de connexion au serveur.');
       }
-      // Otherwise keep stale data (don't overwrite with error)
     }
     finally { setLoading(false); }
   }
@@ -101,23 +124,28 @@ export default function DashboardPage() {
         await annulerBlocage(id, 'Annulé par El Ghani');
       }
       await loadAll();
-    } catch (e: any) { alert(e.message || 'Erreur lors de l\'annulation du blocage.'); }
+    } catch (e: any) { alert(e.message || "Erreur lors de l'annulation du blocage."); }
     setActionLoading(null);
   }
 
-  const equipeTypes = useMemo(() => {
-    const g: Record<string, EquipeData[]> = {};
-    for (const e of equipes) { const t = e.type; if (!g[t]) g[t] = []; g[t].push(e); }
-    return g;
-  }, [equipes]);
+  const groupes = useMemo(() => {
+    const termines = chantiers.filter(c => c.statut === 'termine' || c.statut === 'reception_officielle');
+    const bloques = chantiers.filter(c => c.statut === 'bloque' || ((c.nb_blocages ?? 0) > 0));
+    const enCours = chantiers.filter(c => c.statut === 'en_cours');
+    const planifies = chantiers.filter(c => c.statut === 'planifie');
+    return { termines, bloques, enCours, planifies };
+  }, [chantiers]);
 
-  if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-indigo-500" /></div>;
+  const totalCh = chantiers.length || 1;
+  const pctExecuted = Math.round((groupes.termines.length / totalCh) * 100);
+  const pctActive = Math.round((groupes.enCours.length / totalCh) * 100);
 
-  // Error state (only shown if no data loaded at all)
+  if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-stone-500" /></div>;
+
   if (error && !stats && chantiers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-sm">
           <AlertTriangle size={32} className="text-rose-500" />
         </div>
         <div className="text-center">
@@ -125,61 +153,232 @@ export default function DashboardPage() {
           <p className="text-sm text-stone-400 mt-1 max-w-md">{error}</p>
         </div>
         <button onClick={() => { setError(null); setLoading(true); loadAll(); }}
-          className="px-6 py-2.5 bg-indigo-500 text-white rounded-xl text-sm font-semibold hover:bg-indigo-600 shadow-sm">
+          className="px-6 py-2.5 bg-stone-900 text-white rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm">
           Réessayer
         </button>
       </div>
     );
   }
 
-  const totalM = stats?.missionsTotal ?? 0;
-  const pct = totalM > 0 ? Math.round(((stats?.chantiersTotal ?? 0) / totalM) * 100) : 0;
-
   return (
-    <div>
-      {/* Top bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
-        <div className="flex items-center gap-2 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-stone-100 p-1 w-full sm:w-auto overflow-x-auto">
-          {["Aujourd'hui", 'Cette semaine', 'Ce mois'].map((t) => (
-            <button key={t} onClick={() => setFiltreTemps(t)}
-              className={`px-3 sm:px-4 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${filtreTemps === t ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}>
-              {t}
-            </button>
-          ))}
+    <div className="-m-4 sm:-m-6 lg:-m-8 p-4 sm:p-6 lg:p-8 bg-[#e4e6ec] min-h-screen">
+      {/* ═══ TOP BAR : logo + pills + icon actions ═══ */}
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center shadow">
+            <HardHat size={18} className="text-white" />
+          </div>
+          <span className="text-lg font-bold tracking-tight text-stone-900">rmasc<span className="font-normal"> onsite</span></span>
         </div>
-        <div className="flex items-center gap-3 text-sm text-stone-400">
-          <SyncNotifications onRefresh={loadAll} />
-          <span className="hidden sm:inline">{user?.prenom} {user?.nom}</span>
+        <nav className="hidden md:flex items-center gap-1 bg-white/60 rounded-full p-1 border border-white">
+          {NAV_PILLS.map((p) => {
+            const active = p.label === "Vue d'ensemble";
+            return (
+              <button key={p.label} onClick={() => { if (!active) router.push(p.href); }}
+                className={`px-4 py-2 rounded-full text-[13px] font-medium transition-all whitespace-nowrap ${active ? 'bg-stone-900 text-white shadow' : 'text-stone-500 hover:text-stone-800'}`}>
+                {p.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="flex items-center gap-2">
+          <button className="w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Recherche">
+            <Search size={17} />
+          </button>
+          <button onClick={() => router.push('/dashboard/demandes')}
+            className="relative w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Commandes">
+            <Mail size={17} />
+            {demandes.length > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-400 border-2 border-white" />}
+          </button>
+          <button onClick={() => router.push('/dashboard/incidents')}
+            className="relative w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Alertes">
+            <Bell size={17} />
+            {(groupes.bloques.length > 0) && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-400 border-2 border-white" />}
+          </button>
+          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-amber-200 to-rose-300 border-2 border-white shadow flex items-center justify-center text-[13px] font-bold text-stone-700" title={`${user?.prenom || ''} ${user?.nom || ''}`}>
+            {(user?.prenom?.[0] || 'E')}{(user?.nom?.[0] || 'G')}
+          </div>
         </div>
       </div>
 
-      {/* Approval gateway */}
-      {demandes.length > 0 && (
-        <div className="mb-8 bg-white/90 backdrop-blur-md rounded-3xl border border-rose-100 shadow-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-rose-50 to-orange-50 px-6 py-4 flex items-center justify-between border-b border-rose-100">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center"><Package size={18} className="text-rose-600" /></div>
-              <div><h2 className="font-bold text-stone-800">Commandes Factory à Valider</h2><p className="text-xs text-stone-400">{demandes.length} en attente</p></div>
+      {/* ═══ TITLE ═══ */}
+      <h1 className="text-[26px] sm:text-[30px] font-bold tracking-tight text-stone-900 mb-4">Suivi des Chantiers</h1>
+
+      {/* ═══ MAIN JOURNEY BOARD ═══ */}
+      <div className="bg-[#f2f4f9]/80 rounded-[28px] border border-white shadow-sm p-4 sm:p-6 mb-5">
+        {/* board header */}
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
+          <h2 className="text-[15px] font-bold text-stone-800">Gestion des Chantiers</h2>
+          {/* avatar stack équipes */}
+          <div className="flex items-center">
+            {equipes.slice(0, 7).map((eq, i) => (
+              <div key={eq.id} className={`flex flex-col items-center ${i > 0 ? '-ml-2' : ''}`}>
+                <div className={`w-10 h-10 rounded-full border-[3px] border-[#f2f4f9] flex items-center justify-center text-[11px] font-bold shadow-sm ${AVATAR_BG[i % AVATAR_BG.length]}`} title={eq.nom}>
+                  {initials(eq.nom)}
+                </div>
+                <span className={`mt-1 w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center text-white shadow ${eq.statut_equipe === 'EN_MISSION' ? 'bg-rose-400' : eq.statut_equipe === 'EN_REPOS' ? 'bg-amber-400' : 'bg-blue-400'}`}>
+                  {eq.missions > 0 ? eq.missions : '+'}
+                </span>
+              </div>
+            ))}
+            {equipes.length === 0 && <span className="text-xs text-stone-400">Aucune équipe</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.push('/dashboard/chantiers')}
+              className="w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Nouveau chantier">
+              <Plus size={17} />
+            </button>
+            <button onClick={() => router.push('/dashboard/chantiers')}
+              className="w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Partager">
+              <Share size={16} />
+            </button>
+            <div className="w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all overflow-hidden">
+              <SyncNotifications onRefresh={loadAll} />
             </div>
-            <span className="bg-rose-500 text-white text-xs font-bold px-3 py-1 rounded-full">{demandes.length}</span>
+          </div>
+        </div>
+
+        {/* 4 columns */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {/* COL 1 — Allocation */}
+          <JourneyColumn title="Allocation Équipe">
+            {groupes.planifies.length === 0 && (
+              <EmptyMini label="Aucun chantier à allouer" />
+            )}
+            {groupes.planifies.slice(0, 3).map((c) => (
+              <div key={c.id} className="bg-[#f7f9fc] border border-stone-100 rounded-2xl p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-200 to-blue-300 flex items-center justify-center text-[11px] font-bold text-stone-700 shrink-0">
+                    {initials(c.nom)}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Check size={15} className="text-stone-700" strokeWidth={2.5} />
+                    <span className="w-9 h-9 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500">
+                      <Calendar size={14} />
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[12px] text-stone-500 mt-2.5">Allouer le chantier à une équipe</p>
+                <p className="text-[13px] font-bold text-stone-800 mt-0.5 truncate">{c.nom}</p>
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 mt-1 truncate">
+                  <MapPin size={11} className="shrink-0" />{c.adresse || 'Lieu non renseigné'}
+                </p>
+              </div>
+            ))}
+          </JourneyColumn>
+
+          {/* COL 2 — Phase en cours */}
+          <JourneyColumn title="Phase en Cours">
+            {groupes.enCours.length === 0 && <EmptyMini label="Aucune phase active" />}
+            {groupes.enCours.slice(0, 3).map((c) => {
+              const p = parseEtapes(c);
+              return (
+                <div key={c.id} className="bg-[#f7f9fc] border border-stone-100 rounded-2xl p-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-200 to-teal-300 flex items-center justify-center text-[10px] font-bold text-stone-700 shrink-0">
+                        {initials(c.equipe_actuelle && c.equipe_actuelle !== 'Aucune' ? c.equipe_actuelle : c.nom)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-bold text-stone-800 truncate">{c.nom}</p>
+                        <p className="text-[10px] text-stone-400 truncate">{c.phase_actuelle === 'mecanique' ? '🔧 Mécanique' : c.phase_actuelle === 'electrique' ? '⚡ Électrique' : c.phase_actuelle === 'verification' ? '🛡️ Vérification' : 'Phase'}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-stone-500 shrink-0">{p.pct}%</span>
+                  </div>
+                  {p.current ? (
+                    <p className="text-[11px] text-stone-500 mt-2 truncate">Étape {p.currentIdx + 1}/{p.total} : <span className="font-semibold text-stone-700">{p.current}</span></p>
+                  ) : (
+                    <p className="text-[11px] text-stone-400 mt-2">Démarrage de la phase…</p>
+                  )}
+                  <div className="h-1.5 bg-stone-200/70 rounded-full overflow-hidden mt-2">
+                    <div className={`h-full rounded-full ${p.pct === 100 ? 'bg-emerald-500' : p.pct >= 60 ? 'bg-blue-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(p.pct, 4)}%` }} />
+                  </div>
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 mt-2 truncate">
+                    <MapPin size={11} className="shrink-0" />{c.adresse || 'Lieu non renseigné'}
+                  </p>
+                </div>
+              );
+            })}
+          </JourneyColumn>
+
+          {/* COL 3 — Résolution / blocages */}
+          <JourneyColumn title="Résolution Technique">
+            {groupes.bloques.length === 0 && <EmptyMini label="Aucun blocage — tout roule ✓" />}
+            {groupes.bloques.slice(0, 3).map((c) => (
+              <div key={c.id} className="bg-[#f7f9fc] border border-stone-100 rounded-2xl p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-bold text-stone-800 truncate">{c.nom}</p>
+                    <p className="text-[11px] text-rose-500 mt-1 leading-snug line-clamp-2">{c.motifs_blocage || 'Mission bloquée'}</p>
+                  </div>
+                  <span className="text-stone-300 text-sm shrink-0">•••</span>
+                </div>
+                <div className="flex items-center justify-between mt-2.5">
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 truncate">
+                    <MapPin size={11} className="shrink-0" />{c.adresse || 'Lieu non renseigné'}
+                  </p>
+                  {c.blocage_ids && (
+                    <button onClick={() => handleAnnulerBlocage(c.blocage_ids!)}
+                      disabled={actionLoading === `blocage-${c.blocage_ids}`}
+                      className="text-[10px] font-bold text-white bg-stone-900 hover:bg-stone-700 px-2.5 py-1.5 rounded-full transition-all disabled:opacity-50 shrink-0">
+                      {actionLoading === `blocage-${c.blocage_ids}` ? '...' : 'Débloquer'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </JourneyColumn>
+
+          {/* COL 4 — Terminés */}
+          <JourneyColumn title="Nouvelles Tâches">
+            <div className="bg-stone-900 rounded-2xl p-3.5 text-white">
+              <p className="text-[13px] font-bold leading-snug">Réception<br />& Clôture</p>
+              <p className="text-[11px] text-white/60 mt-1">{groupes.termines.length} chantier{groupes.termines.length > 1 ? 's' : ''} terminé{groupes.termines.length > 1 ? 's' : ''}</p>
+            </div>
+            {groupes.termines.slice(0, 2).map((c) => (
+              <div key={c.id} className="bg-[#f7f9fc] border border-stone-100 rounded-2xl p-3.5">
+                <div className="flex items-center gap-1.5 text-emerald-600">
+                  <CheckCircle size={14} />
+                  <p className="text-[12px] font-bold text-stone-800 truncate">{c.nom}</p>
+                </div>
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 mt-1.5 truncate">
+                  <MapPin size={11} className="shrink-0" />{c.adresse || 'Lieu non renseigné'}
+                </p>
+              </div>
+            ))}
+            {groupes.termines.length === 0 && <EmptyMini label="Aucune réception pour le moment" />}
+          </JourneyColumn>
+        </div>
+      </div>
+
+      {/* ═══ APPROVAL STRIP (fonctionnel, style board) ═══ */}
+      {demandes.length > 0 && (
+        <div className="bg-white rounded-[24px] border border-stone-100 shadow-sm mb-5 overflow-hidden">
+          <div className="px-5 py-4 flex items-center justify-between border-b border-stone-100">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center"><Mail size={17} className="text-rose-500" /></div>
+              <div><h2 className="font-bold text-[15px] text-stone-800">Commandes Factory à Valider</h2><p className="text-xs text-stone-400">{demandes.length} en attente</p></div>
+            </div>
+            <span className="bg-stone-900 text-white text-xs font-bold px-3 py-1 rounded-full">{demandes.length}</span>
           </div>
           <div className="divide-y divide-stone-100">
             {demandes.map((d) => (
-              <div key={d.id} className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-rose-50/30 transition-colors">
+              <div key={d.id} className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">{d.ref}</span>
-                    <span className="font-semibold text-sm sm:text-base text-stone-800">{d.nom_chantier}</span>
+                    <span className="text-[10px] font-mono font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md">{d.ref}</span>
+                    <span className="font-semibold text-sm text-stone-800">{d.nom_chantier}</span>
                   </div>
                   <p className="text-xs text-stone-400 mt-1">Client: {d.client_nom} • {timeAgo(d.cree)}</p>
                 </div>
-                <div className="flex items-center gap-2 sm:ml-4">
+                <div className="flex items-center gap-2">
                   <button onClick={() => handleApprouver(d.id)} disabled={actionLoading === d.id}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50 shadow-sm">
+                    className="flex items-center gap-1.5 bg-stone-900 text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-stone-700 disabled:opacity-50">
                     {actionLoading === d.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCheck size={15} />}Valider
                   </button>
                   <button onClick={() => handleRefuser(d.id)} disabled={actionLoading === d.id}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-white text-rose-500 px-4 py-2 rounded-xl text-sm font-semibold border border-rose-200 hover:bg-rose-50">
+                    className="flex items-center gap-1.5 bg-white text-rose-500 px-4 py-2 rounded-full text-sm font-semibold border border-stone-200 hover:bg-rose-50">
                     <XCircle size={15} /> Refuser
                   </button>
                 </div>
@@ -189,451 +388,211 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ═══ CARTE DE COMMANDE — Full width ═══ */}
-      <div className="mb-8">
+      {/* ═══ MAP (même style) ═══ */}
+      <div className="mb-5 rounded-[28px] overflow-hidden">
         <MapView chantiers={chantiers} teamPositions={teamPositions} />
       </div>
 
-      {/* KPIs + Gauge */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
-        <KpiCard titre="Chantiers Actifs" valeur={stats?.chantiersActifs ?? 0} couleur="emerald" icon={<HardHat size={20} />} />
-        <KpiCard titre="Bloqués" valeur={stats?.chantiersBloques ?? 0} couleur="rose" icon={<AlertTriangle size={20} />} badge />
-        <KpiCard titre="Équipes Dispo" valeur={stats?.equipesDisponibles ?? 0} couleur="indigo" icon={<Users size={20} />} />
-        <KpiCard titre="Blocages" valeur={stats?.blocagesOuverts ?? 0} couleur="amber" icon={<AlertTriangle size={20} />} />
-      </div>
-
-      {/* Incidents */}
-      <div className="mb-8">
-        <IncidentsWidget incidents={incidents} onAnnulerBlocage={handleAnnulerBlocage} actionLoading={actionLoading} />
-      </div>
-
-      {/* ═══ RETARDS SIGNALÉS (sync technicien → admin) ═══ */}
-      {retards.length > 0 && (
-        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-amber-200 shadow-sm mb-8 overflow-hidden">
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-4 sm:px-6 py-4 border-b border-amber-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                <Timer size={18} className="text-amber-600" />
-              </div>
-              <div>
-                <h2 className="font-bold text-sm sm:text-base text-stone-800">⏰ Retards Signalés <span className="text-stone-400 font-normal">({retards.length})</span></h2>
-                <p className="text-[10px] sm:text-xs text-stone-400">Signalés par les équipes en temps réel</p>
-              </div>
+      {/* ═══ BOTTOM SPLIT : table + arcs ═══ */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 mb-5">
+        {/* Table chantiers */}
+        <div className="xl:col-span-3 bg-[#eef1f7] rounded-[28px] border border-white shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[15px] font-bold text-stone-800">Chantiers Suivis</h2>
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push('/dashboard/chantiers')} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow" title="Ajouter"><Plus size={16} /></button>
+              <button onClick={() => router.push('/dashboard/chantiers')} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow" title="Voir tout"><Share size={15} /></button>
+              <button onClick={() => router.push('/dashboard/chantiers')} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow" title="Calendrier"><Calendar size={15} /></button>
             </div>
           </div>
-          <div className="divide-y divide-stone-100">
-            {retards.slice(0, 8).map((r, i) => (
-              <div key={i} className="px-4 sm:px-6 py-4 hover:bg-amber-50/30 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-stone-800">{r.nom_chantier}</span>
-                      <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{r.equipe_nom}</span>
-                      <span className="text-[10px] font-semibold text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">{r.phase}</span>
-                    </div>
-                    <p className="text-sm text-stone-600 mt-1.5">{r.motif}</p>
-                    {r.etape_id && <p className="text-xs text-stone-400 mt-0.5">Étape: {r.etape_id}</p>}
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[10px] text-stone-400 whitespace-nowrap">{timeAgo(r.moment)}</span>
-                    {r.photo_url && (
-                      <a href={`https://onsite.sarl-rmasc.com${r.photo_url}`} target="_blank" rel="noopener noreferrer"
-                        className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-1 rounded-full hover:bg-amber-100">
-                        📷 Preuve
-                      </a>
-                    )}
-                  </div>
+          <div className="hidden sm:grid grid-cols-[24px_1.4fr_0.8fr_1fr_1fr] gap-2 px-3 pb-2 text-[11px] font-medium text-stone-400">
+            <span></span><span>Chantier</span><span>Statut</span><span>Échéance</span><span>Équipe assignée</span>
+          </div>
+          <div className="space-y-1">
+            {chantiers.slice(0, 6).map((c) => (
+              <div key={c.id} className="grid grid-cols-1 sm:grid-cols-[24px_1.4fr_0.8fr_1fr_1fr] gap-1 sm:gap-2 items-center px-3 py-2.5 rounded-2xl hover:bg-white transition-colors">
+                <Star size={14} className="text-stone-300 hidden sm:block" />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-stone-700 truncate">{c.nom}</p>
+                  <p className="flex items-center gap-1 text-[10px] font-semibold text-rose-500 truncate"><MapPin size={10} className="shrink-0" />{c.adresse || 'Lieu non renseigné'}</p>
                 </div>
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full w-fit ${c.statut === 'termine' || c.statut === 'reception_officielle' ? 'bg-blue-100 text-blue-600' : c.statut === 'en_cours' ? 'bg-rose-100 text-rose-500' : c.statut === 'bloque' ? 'bg-stone-900 text-white' : 'bg-stone-200/70 text-stone-500'}`}>
+                  {c.statut === 'termine' || c.statut === 'reception_officielle' ? 'Exécuté' : c.statut === 'en_cours' ? 'Actif' : c.statut === 'bloque' ? 'Bloqué' : 'Planifié'}
+                </span>
+                <span className="text-[11px] text-stone-500">{c.date_echeance ? new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
+                <span className="text-[11px] text-stone-500 truncate">{c.equipe_actuelle && c.equipe_actuelle !== 'Aucune' ? c.equipe_actuelle : '—'}</span>
               </div>
             ))}
+            {chantiers.length === 0 && <p className="py-10 text-center text-stone-400 text-sm">Aucun chantier.</p>}
           </div>
         </div>
-      )}
 
-      {/* ═══ ROADMAP DES CHANTIERS (état réel + équipe) ═══ */}
-      <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8 overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
-              <MapPin size={18} className="text-emerald-600" />
-            </div>
-            <div>
-              <h2 className="font-bold text-sm sm:text-base text-stone-800">Roadmap des Chantiers</h2>
-              <p className="text-[10px] sm:text-xs text-stone-400">État réel des phases et équipes assignées</p>
+        {/* Arcs stats */}
+        <div className="xl:col-span-2 bg-[#eef1f7] rounded-[28px] border border-white shadow-sm p-5">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-[15px] font-bold text-stone-800">État des Missions</h2>
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push('/dashboard/chantiers')} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow"><Plus size={16} /></button>
+              <button onClick={loadAll} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow"><Timer size={15} /></button>
+              <button onClick={() => router.push('/dashboard/chantiers')} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:shadow"><Calendar size={15} /></button>
             </div>
           </div>
-        </div>
-        <div className="divide-y divide-stone-50">
-          {chantiers.length === 0 ? (
-            <p className="py-12 text-center text-stone-400 text-sm">Aucun chantier actif.</p>
-          ) : chantiers.map(c => {
-            // Parse checklist etapes
-            let etapes: { label: string; done: boolean; subtasks?: { label: string; done: boolean }[] }[] = [];
-            if (c.checklist_etapes) {
-              try {
-                const raw = typeof c.checklist_etapes === 'string' ? JSON.parse(c.checklist_etapes) : c.checklist_etapes;
-                if (Array.isArray(raw)) etapes = raw;
-              } catch {}
-            }
-            const totalEtapes = etapes.length;
-            const doneEtapes = etapes.filter(e => e.done).length;
-            const progression = totalEtapes > 0 ? Math.round((doneEtapes / totalEtapes) * 100) : 0;
-
-            // Find current step (first incomplete)
-            let etapeActuelle = '';
-            let etapeActuelleIdx = -1;
-            for (let i = 0; i < etapes.length; i++) {
-              const e = etapes[i];
-              const complete = e.done && (!e.subtasks || e.subtasks.every(s => s.done));
-              if (!complete) {
-                etapeActuelle = e.label;
-                etapeActuelleIdx = i;
-                break;
-              }
-            }
-            const allDone = totalEtapes > 0 && doneEtapes === totalEtapes;
-
-            // Phase icon/label
-            const phaseInfo = c.phase_actuelle === 'mecanique' ? { icon: '🔧', label: 'Mécanique', color: 'blue' }
-              : c.phase_actuelle === 'electrique' ? { icon: '⚡', label: 'Électrique', color: 'orange' }
-              : c.phase_actuelle === 'verification' ? { icon: '🛡️', label: 'Vérification', color: 'emerald' }
-              : null;
-
-            return (
-              <div key={c.id} className="px-4 sm:px-6 py-4 hover:bg-stone-50/50 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    {/* Header: name + ref + badges */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-stone-800 text-sm">{c.nom}</span>
-                      <span className="text-[10px] font-mono text-stone-400">{c.ref}</span>
-                      {c.equipe_actuelle && c.equipe_actuelle !== 'Aucune' && (
-                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                          👥 {c.equipe_actuelle}
-                        </span>
-                      )}
-                      {phaseInfo && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          phaseInfo.color === 'blue' ? 'bg-blue-50 text-blue-600' :
-                          phaseInfo.color === 'orange' ? 'bg-orange-50 text-orange-600' :
-                          'bg-emerald-50 text-emerald-600'
-                        }`}>
-                          {phaseInfo.icon} {phaseInfo.label}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Current step display */}
-                    {totalEtapes > 0 && (
-                      <div className="mt-2.5">
-                        {allDone ? (
-                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
-                            <CheckCircle size={13} />
-                            <span>Toutes les étapes complétées</span>
-                          </div>
-                        ) : etapeActuelle ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-stone-500">
-                              Étape {etapeActuelleIdx + 1}/{totalEtapes} :
-                            </span>
-                            <span className="text-[11px] font-semibold text-stone-700">{etapeActuelle}</span>
-                          </div>
-                        ) : null}
-
-                        {/* Progress bar */}
-                        <div className="flex items-center gap-2.5 mt-1.5">
-                          <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-700 ease-out ${
-                                progression === 100 ? 'bg-emerald-500' :
-                                progression >= 60 ? 'bg-blue-500' :
-                                progression >= 30 ? 'bg-amber-500' :
-                                'bg-stone-300'
-                              }`}
-                              style={{ width: `${Math.max(progression, 2)}%` }}
-                            />
-                          </div>
-                          <span className="text-[10px] font-bold text-stone-400 w-8 text-right">{progression}%</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Chantier dates */}
-                    <div className="flex items-center gap-3 mt-2 text-[10px]">
-                      <span className="flex items-center gap-1 text-stone-400">
-                        <Calendar size={10} /> Créé: {c.date_creation}
-                      </span>
-                      {c.date_echeance && (
-                        <span className={`flex items-center gap-1 font-semibold ${
-                          new Date(c.date_echeance) < new Date() ? 'text-rose-500' : 'text-amber-600'
-                        }`}>
-                          <Clock size={10} /> Échéance: {new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Blockage reasons */}
-                    {c.nb_blocages && c.nb_blocages > 0 && c.motifs_blocage && (
-                      <div className="mt-2 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <Ban size={12} className="text-rose-500" />
-                            <span className="text-[10px] font-bold text-rose-600">Blocage{c.nb_blocages > 1 ? 's' : ''} ({c.nb_blocages})</span>
-                          </div>
-                          {c.blocage_ids && (
-                            <button
-                              onClick={() => handleAnnulerBlocage(c.blocage_ids!)}
-                              disabled={actionLoading === `blocage-${c.blocage_ids}`}
-                              className="text-[10px] font-bold text-white bg-rose-500 hover:bg-rose-600 px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
-                            >
-                              {actionLoading === `blocage-${c.blocage_ids}` ? <Loader2 size={10} className="animate-spin" /> : '✕ Annuler'}
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-rose-500 mt-1 leading-relaxed">{c.motifs_blocage}</p>
-                      </div>
-                    )}
-
-                    {/* Mission counts */}
-                    <div className="flex items-center gap-4 mt-2 text-[10px] text-stone-400">
-                      <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${(c.en_cours ?? 0) > 0 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
-                        {c.en_cours ?? 0} en cours
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${(c.en_attente ?? 0) > 0 ? 'bg-indigo-400' : 'bg-stone-200'}`} />
-                        {c.en_attente ?? 0} en attente
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${(c.bloquee ?? 0) > 0 ? 'bg-rose-400' : 'bg-stone-200'}`} />
-                        {c.bloquee ?? 0} bloquées
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${(c.terminee ?? 0) > 0 ? 'bg-stone-300' : 'bg-stone-200'}`} />
-                        {c.terminee ?? 0} terminées
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Status badge */}
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                      c.statut === 'en_cours' ? 'bg-emerald-50 text-emerald-600'
-                      : c.statut === 'bloque' ? 'bg-rose-50 text-rose-600'
-                      : c.statut === 'termine' || c.statut === 'reception_officielle' ? 'bg-stone-100 text-stone-500'
-                      : 'bg-indigo-50 text-indigo-600'
-                    }`}>
-                      {c.statut === 'en_cours' ? 'En cours' : c.statut === 'bloque' ? 'Bloqué' : c.statut === 'termine' ? 'Terminé' : c.statut === 'reception_officielle' ? 'Réceptionné' : 'Planifié'}
-                    </span>
-                    {c.mission_statut && c.mission_statut !== c.statut && (
-                      <span className={`text-[9px] font-medium px-2 py-0.5 rounded-full ${
-                        c.mission_statut === 'en_pause' ? 'bg-amber-50 text-amber-600'
-                        : c.mission_statut === 'en_route' ? 'bg-sky-50 text-sky-600'
-                        : 'bg-stone-50 text-stone-500'
-                      }`}>
-                        {c.mission_statut === 'en_pause' ? '⏸ En pause'
-                         : c.mission_statut === 'en_route' ? '🚗 En route'
-                         : c.mission_statut === 'en_attente' ? '⏳ En attente'
-                         : ''}
-                      </span>
-                    )}
-                    <span className="text-[9px] text-stone-300">{c.date_creation}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          <div className="grid grid-cols-2 gap-3">
+            <ArcGauge label="Exécuté" value={groupes.termines.length} pct={pctExecuted} color="#7aa5e8" track="#d7e3f7" />
+            <ArcGauge label="Actif" value={groupes.enCours.length} pct={pctActive} color="#e88383" track="#f6d9d9" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="bg-white rounded-2xl p-3.5 flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center"><HardHat size={17} className="text-emerald-500" /></div>
+              <div><p className="text-[10px] font-semibold text-stone-400 uppercase">Actifs</p><p className="text-lg font-bold text-stone-800">{stats?.chantiersActifs ?? 0}</p></div>
+            </div>
+            <div className="bg-white rounded-2xl p-3.5 flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center"><Users size={17} className="text-indigo-500" /></div>
+              <div><p className="text-[10px] font-semibold text-stone-400 uppercase">Équipes dispo</p><p className="text-lg font-bold text-stone-800">{stats?.equipesDisponibles ?? 0}</p></div>
+            </div>
+          </div>
+          {(stats?.chantiersBloques ?? 0) > 0 && (
+            <div className="mt-3 bg-white rounded-2xl p-3.5 flex items-center gap-2.5 border border-rose-100">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center"><Ban size={17} className="text-rose-500" /></div>
+              <div><p className="text-[10px] font-semibold text-stone-400 uppercase">Bloqués</p><p className="text-lg font-bold text-stone-800">{stats?.chantiersBloques}</p></div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ═══ DEMANDES MATÉRIEL (from workers) ═══ */}
-      {demandesMateriel.length > 0 && (
-        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8 overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-stone-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Package size={18} className="text-amber-600" />
-              </div>
-              <div>
-                <h2 className="font-bold text-sm sm:text-base text-stone-800">Demandes Matériel</h2>
-                <p className="text-[11px] text-stone-400">{demandesMateriel.length} en attente</p>
-              </div>
+      {/* ═══ ALERTES & ÉQUIPES (même langage visuel) ═══ */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-5">
+        <div className="bg-white rounded-[24px] border border-stone-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={16} className="text-rose-500" /></div>
+              <h3 className="text-sm font-bold text-stone-800">Alertes & Blocages</h3>
             </div>
-            <a href="/dashboard/demandes" className="text-[11px] font-semibold text-indigo-500 hover:text-indigo-700">
-              Tout voir →
-            </a>
+            <button onClick={() => router.push('/dashboard/incidents')} className="text-[11px] font-semibold text-stone-400 hover:text-stone-700">Tout voir →</button>
           </div>
-          <div className="divide-y divide-stone-50">
-            {demandesMateriel.slice(0, 5).map((dm: any) => (
-              <div key={dm.id} className="px-4 sm:px-6 py-3.5 hover:bg-amber-50/20 transition-colors">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                        dm.type_demande === 'retard' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
-                      }`}>
-                        {dm.type_demande === 'retard' ? '⏰ Retard' : '📦 Matériel'}
-                      </span>
-                      <span className="text-sm font-semibold text-stone-700">{dm.equipe_nom || 'Équipe'}</span>
-                      {dm.chantier_nom && <span className="text-[10px] text-stone-400">• {dm.chantier_nom}</span>}
-                    </div>
-                    {dm.description && <p className="text-xs text-stone-500 mt-1 truncate">{dm.description}</p>}
-                    {dm.items && Array.isArray(dm.items) && dm.items.length > 0 && (
-                      <p className="text-[10px] text-stone-400 mt-0.5">
-                        {dm.items.map((it: any) => it.nom).join(', ')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {dm.photo_url && (
-                      <a href={dm.photo_url.startsWith('http') ? dm.photo_url : `https://onsite.sarl-rmasc.com${dm.photo_url}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="text-[10px] font-semibold text-sky-600 bg-sky-50 px-2 py-1 rounded-full hover:bg-sky-100 flex items-center gap-1">
-                        📷 Photo
-                      </a>
-                    )}
-                    <span className="text-[10px] text-stone-400 whitespace-nowrap">{dm.cree}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Team Matrix */}
-      <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm mb-8">
-        <button onClick={() => setShowEquipes(!showEquipes)}
-          className="w-full px-4 sm:px-6 py-4 flex items-center justify-between hover:bg-stone-50 rounded-t-3xl transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><Users size={18} className="text-indigo-600" /></div>
-            <h2 className="font-bold text-sm sm:text-base text-stone-800">Matrice des Équipes <span className="text-stone-400 font-normal">({equipes.length})</span></h2>
-          </div>
-          {showEquipes ? <ChevronDown size={18} className="text-stone-400" /> : <ChevronRight size={18} className="text-stone-400" />}
-        </button>
-        {showEquipes && (
-          <div className="px-6 pb-6 space-y-5">
-            {Object.entries(equipeTypes).map(([type, eqs]) => {
-              const Icon = TYPE_ICON[type] || Users;
-              return (
-                <div key={type}>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-stone-500 mb-3">
-                    <Icon size={14} />
-                    {type === 'mecanique' ? 'Mécaniques' : type === 'electrique' ? 'Électriques' : 'Vérification'}
-                    <span className="text-stone-300">({eqs.length})</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                    {eqs.map((eq) => (
-                      <div key={eq.id} className={`rounded-2xl p-4 border shadow-sm ${eq.statut_equipe === 'EN_REPOS' ? 'border-amber-200 bg-amber-50/30' : eq.statut_equipe === 'EN_MISSION' ? 'border-indigo-200 bg-indigo-50/30' : 'border-emerald-200 bg-emerald-50/30'}`}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-sm font-semibold text-stone-700">{eq.nom}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUT_BADGE[eq.statut_equipe]}`}>{STATUT_LABEL[eq.statut_equipe]}</span>
-                        </div>
-                        {/* Member names */}
-                        {eq.membres_noms && (
-                          <p className="text-[10px] text-stone-500 font-medium mb-1 truncate" title={eq.membres_noms}>
-                            👤 {eq.membres_noms}
-                          </p>
-                        )}
-                        {eq.statut_equipe === 'EN_REPOS' && eq.jours_repos_restants > 0 && <p className="text-[11px] text-amber-600 font-medium">⏳ {eq.jours_repos_restants}j restants</p>}
-                        {eq.statut_equipe === 'EN_MISSION' && <p className="text-[11px] text-indigo-600 font-medium">🔧 {eq.missions} mission{eq.missions > 1 ? 's' : ''}</p>}
-                        {eq.statut_equipe === 'DISPONIBLE' && <p className="text-[11px] text-emerald-600 font-medium">✅ Prêt</p>}
-                        {/* Pointage times */}
-                        {(eq.pointage_matinal || eq.pointage_fin_journee) && (
-                          <div className="flex items-center gap-2 mt-1.5 text-[10px]">
-                            {eq.pointage_matinal && (
-                              <span className="flex items-center gap-0.5 text-blue-600" title="Pointage matinal">
-                                <Sunrise size={10} /> {eq.pointage_matinal}
-                              </span>
-                            )}
-                            {eq.pointage_fin_journee && (
-                              <span className="flex items-center gap-0.5 text-purple-600" title="Pointage fin de journée">
-                                <Sunset size={10} /> {eq.pointage_fin_journee}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({ titre, valeur, couleur, icon, badge }: { titre: string; valeur: number; couleur: string; icon: React.ReactNode; badge?: boolean }) {
-  const cm: Record<string, string> = { emerald: 'bg-emerald-50 text-emerald-500', rose: 'bg-rose-50 text-rose-500', indigo: 'bg-indigo-50 text-indigo-500', amber: 'bg-amber-50 text-amber-500' };
-  return (
-    <div className="relative bg-white/90 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-stone-100 shadow-sm p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-all">
-      {badge && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" /></span>}
-      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${cm[couleur]}`}>{icon}</div>
-      <div><p className="text-[9px] sm:text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-0.5">{titre}</p><span className="text-lg sm:text-2xl font-bold text-stone-800">{valeur}</span></div>
-    </div>
-  );
-}
-
-function IncidentsWidget({ incidents, onAnnulerBlocage, actionLoading }: { incidents: IncidentData[]; onAnnulerBlocage: (id: string) => void; actionLoading: string | null }) {
-  const blocages = incidents.filter(i => i.type === 'blocage');
-  const pauses = incidents.filter(i => i.type === 'pause');
-  const pointages = incidents.filter(i => i.type === 'pointage');
-  return (
-    <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm h-full">
-      <div className="px-4 sm:px-5 py-4 border-b border-stone-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={15} className="text-rose-500" /></div>
-          <h3 className="text-sm font-bold text-stone-800">Alertes & Blocages</h3>
-        </div>
-        <span className="text-[11px] text-stone-400">{blocages.length + pauses.length + pointages.length} récents</span>
-      </div>
-      <div className="divide-y divide-stone-50 max-h-[520px] overflow-y-auto">
-        {blocages.length === 0 && pauses.length === 0 && pointages.length === 0 ? <p className="py-10 text-center text-stone-400 text-sm">Tout est sous contrôle ✓</p> : (
-          <>
-            {blocages.slice(0, 6).map((inc, i) => (
-              <div key={`b-${i}`} className="px-5 py-3.5 hover:bg-rose-50/20 transition-colors">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold text-stone-700">{inc.message}</p>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRIORITE_COULEUR[inc.priorite] || 'bg-stone-100 text-stone-500'}`}>{inc.priorite?.toUpperCase()}</span>
-                </div>
-                <p className="text-[12px] text-stone-400 mt-1">{inc.nom_chantier} • {timeAgo(inc.moment)}</p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  {inc.photo_url && (
-                    <a href={inc.photo_url.startsWith('http') ? inc.photo_url : `https://onsite.sarl-rmasc.com${inc.photo_url}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full hover:bg-blue-100 flex items-center gap-1">
-                      📷 Photo
-                    </a>
-                  )}
+          <div className="divide-y divide-stone-50 max-h-[320px] overflow-y-auto">
+            {incidents.length === 0 ? <p className="py-10 text-center text-stone-400 text-sm">Tout est sous contrôle ✓</p> :
+              incidents.slice(0, 6).map((inc, i) => (
+                <div key={i} className="px-5 py-3">
+                  <p className="text-[13px] font-semibold text-stone-700">{inc.message}</p>
+                  <p className="text-[11px] text-stone-400 mt-0.5">{inc.nom_chantier} • {timeAgo(inc.moment)}</p>
                   {inc.blocage_id && (
-                    <button
-                      onClick={() => onAnnulerBlocage(inc.blocage_id!)}
+                    <button onClick={() => handleAnnulerBlocage(inc.blocage_id!)}
                       disabled={actionLoading === `blocage-${inc.blocage_id}`}
-                      className="text-[10px] font-bold text-white bg-rose-500 hover:bg-rose-600 px-2 py-0.5 rounded-full transition-all disabled:opacity-50"
-                    >
-                      {actionLoading === `blocage-${inc.blocage_id}` ? '...' : '✕ Annuler'}
+                      className="mt-1.5 text-[10px] font-bold text-white bg-stone-900 hover:bg-stone-700 px-2.5 py-1 rounded-full disabled:opacity-50">
+                      {actionLoading === `blocage-${inc.blocage_id}` ? '...' : '✕ Annuler le blocage'}
                     </button>
                   )}
                 </div>
+              ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-[24px] border border-stone-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center"><Users size={16} className="text-indigo-500" /></div>
+              <h3 className="text-sm font-bold text-stone-800">Équipes <span className="text-stone-400 font-normal">({equipes.length})</span></h3>
+            </div>
+            <button onClick={() => router.push('/dashboard/team-management')} className="text-[11px] font-semibold text-stone-400 hover:text-stone-700">Gérer →</button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {equipes.slice(0, 6).map((eq, i) => (
+              <div key={eq.id} className="rounded-2xl p-3.5 border bg-[#f7f9fc] border-stone-100">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${AVATAR_BG[i % AVATAR_BG.length]}`}>{initials(eq.nom)}</div>
+                  <span className="text-[12px] font-semibold text-stone-700 truncate">{eq.nom}</span>
+                </div>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${eq.statut_equipe === 'EN_MISSION' ? 'bg-indigo-50 text-indigo-600' : eq.statut_equipe === 'EN_REPOS' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {eq.statut_equipe === 'EN_MISSION' ? 'En mission' : eq.statut_equipe === 'EN_REPOS' ? 'En repos' : 'Disponible'}
+                </span>
+                {eq.membres_noms && <p className="text-[10px] text-stone-400 mt-1.5 truncate">👤 {eq.membres_noms}</p>}
               </div>
             ))}
-            {pauses.slice(0, 4).map((inc, i) => (
-              <div key={`ps-${i}`} className="px-5 py-3.5 hover:bg-amber-50/20 transition-colors">
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400" /><p className="text-sm font-medium text-stone-600">⏸️ {inc.message}</p></div>
-                <p className="text-[11px] text-stone-400 mt-0.5 ml-[14px]">{inc.equipe_nom || 'Équipe'} • {inc.nom_chantier} • {timeAgo(inc.moment)}</p>
+            {equipes.length === 0 && <p className="col-span-3 py-8 text-center text-stone-400 text-sm">Aucune équipe.</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ RETARDS + DEMANDES MATÉRIEL ═══ */}
+      {retards.length > 0 && (
+        <div className="bg-white rounded-[24px] border border-amber-200 shadow-sm mb-5 overflow-hidden">
+          <div className="px-5 py-4 border-b border-amber-100 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center"><Timer size={17} className="text-amber-600" /></div>
+            <h2 className="font-bold text-sm text-stone-800">⏰ Retards Signalés <span className="text-stone-400 font-normal">({retards.length})</span></h2>
+          </div>
+          <div className="divide-y divide-stone-100">
+            {retards.slice(0, 5).map((r, i) => (
+              <div key={i} className="px-5 py-3.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-stone-800">{r.nom_chantier}</span>
+                  <span className="text-[10px] font-semibold text-stone-600 bg-stone-100 px-2 py-0.5 rounded-full">{r.equipe_nom}</span>
+                </div>
+                <p className="text-sm text-stone-600 mt-1">{r.motif}</p>
               </div>
             ))}
-            {pointages.slice(0, 4).map((inc, i) => (
-              <div key={`p-${i}`} className="px-5 py-3.5 hover:bg-stone-50 transition-colors">
-                <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-indigo-400" /><p className="text-sm text-stone-600">{inc.message}</p></div>
-                <p className="text-[11px] text-stone-400 mt-0.5 ml-[14px]">{inc.nom_chantier} • {timeAgo(inc.moment)}</p>
+          </div>
+        </div>
+      )}
+      {demandesMateriel.length > 0 && (
+        <div className="bg-white rounded-[24px] border border-stone-100 shadow-sm mb-5 overflow-hidden">
+          <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+            <h2 className="font-bold text-sm text-stone-800">Demandes Matériel <span className="text-stone-400 font-normal">({demandesMateriel.length})</span></h2>
+            <button onClick={() => router.push('/dashboard/demandes')} className="text-[11px] font-semibold text-stone-400 hover:text-stone-700">Tout voir →</button>
+          </div>
+          <div className="divide-y divide-stone-50">
+            {demandesMateriel.slice(0, 5).map((dm: any) => (
+              <div key={dm.id} className="px-5 py-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-stone-700 truncate">{dm.equipe_nom || 'Équipe'}{dm.chantier_nom ? ` • ${dm.chantier_nom}` : ''}</p>
+                  {dm.description && <p className="text-xs text-stone-400 truncate">{dm.description}</p>}
+                </div>
+                <span className="text-[10px] text-stone-400 shrink-0">{dm.cree}</span>
               </div>
             ))}
-          </>
-        )}
+          </div>
+        </div>
+      )}
+
+      <p className="text-center text-[11px] text-stone-400 pb-4 flex items-center justify-center gap-1.5">
+        <Clock size={11} /> Synchronisé en temps réel • {user?.prenom} {user?.nom}
+      </p>
+    </div>
+  );
+}
+
+function JourneyColumn({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="bg-white rounded-[24px] p-3 shadow-sm border border-stone-100 space-y-3 min-h-[180px]">
+        {children}
+      </div>
+      <p className="text-center text-[12px] font-medium text-stone-500 mt-2.5">{title}</p>
+    </div>
+  );
+}
+
+function EmptyMini({ label }: { label: string }) {
+  return (
+    <div className="bg-[#f7f9fc] border border-dashed border-stone-200 rounded-2xl p-4 text-center">
+      <p className="text-[11px] text-stone-400">{label}</p>
+    </div>
+  );
+}
+
+function ArcGauge({ label, value, pct, color, track }: { label: string; value: number; pct: number; color: string; track: string }) {
+  const R = 64;
+  const CIRC = Math.PI * R;
+  const fill = Math.max(0, Math.min(100, pct)) / 100 * CIRC;
+  return (
+    <div className="bg-white rounded-2xl p-4 flex flex-col items-center">
+      <div className="relative">
+        <span className="absolute -top-1 left-1/2 -translate-x-1/2 bg-white border border-stone-100 shadow-sm text-[11px] font-bold text-stone-600 rounded-full px-2 py-0.5">{value}</span>
+        <svg width="150" height="92" viewBox="0 0 150 92">
+          <path d={`M 11 84 A ${R} ${R} 0 0 1 139 84`} fill="none" stroke={track} strokeWidth="26" strokeLinecap="round" />
+          <path d={`M 11 84 A ${R} ${R} 0 0 1 139 84`} fill="none" stroke={color} strokeWidth="26" strokeLinecap="round"
+            strokeDasharray={`${fill} ${CIRC}`} />
+          <text x="75" y="72" textAnchor="middle" fontSize="11" fontWeight="600" fill="#fff">{label}</text>
+        </svg>
       </div>
     </div>
   );
