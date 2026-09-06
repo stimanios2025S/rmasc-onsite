@@ -359,13 +359,25 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         [newEquipeId, missionId]
       );
 
-      if (mission.statut === 'en_cours' || mission.statut === 'en_attente' || mission.statut === 'en_route') {
-        // Set new team to EN_MISSION — works for DISPONIBLE or EN_REPOS (with force override)
-        await pool.query(
-          `UPDATE equipes SET statut_equipe = 'EN_MISSION', date_modification = NOW() WHERE id = $1 AND statut_equipe IN ('DISPONIBLE', 'EN_REPOS')`,
-          [newEquipeId]
+      // Free old team if no other active missions
+      if (mission.equipe_id) {
+        const otherMissions = await pool.query(
+          `SELECT 1 FROM ordres_de_mission WHERE equipe_id = $1 AND statut IN ('en_cours','en_attente','en_route','en_pause','bloque') AND id != $2 LIMIT 1`,
+          [mission.equipe_id, missionId]
         );
+        if (otherMissions.rows.length === 0) {
+          await pool.query(
+            `UPDATE equipes SET statut_equipe = 'DISPONIBLE', date_modification = NOW() WHERE id = $1`,
+            [mission.equipe_id]
+          );
+        }
       }
+
+      // Set new team to EN_MISSION
+      await pool.query(
+        `UPDATE equipes SET statut_equipe = 'EN_MISSION', date_modification = NOW() WHERE id = $1 AND statut_equipe IN ('DISPONIBLE', 'EN_REPOS')`,
+        [newEquipeId]
+      );
 
       logger.info('Mission réassignée', {
         missionId, ancienneEquipe: mission.ancienne_equipe_nom,

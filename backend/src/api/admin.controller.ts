@@ -440,10 +440,8 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       }
       const mission = missionRes.rows[0];
 
-      // Bloquer la réassignation si le travail a déjà commencé (sur site ou en pause)
-      if (mission.statut === 'en_cours' || mission.statut === 'en_pause') {
-        return res.status(400).json({ erreur: 'Impossible de changer — le travail a déjà commencé sur ce chantier. Attendez la fin de mission ou le transfert.' });
-      }
+      // Admin peut réassigner à tout moment (travail en cours, en pause, etc.)
+      // Les raisons : maladie, indisponibilité, changement d'équipe, etc.
 
       // Réassigner la mission
       await pool.query(

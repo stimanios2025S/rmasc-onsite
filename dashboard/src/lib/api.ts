@@ -160,10 +160,10 @@ export async function sauvegarderTelephones(lignes: { utilisateur_id: string; te
 }
 
 // ─── RÉASSIGNATION D'ÉQUIPE ──────────────────────────────────────────
-export async function reassignerEquipe(chantierId: string, equipeId: string): Promise<{ message?: string }> {
+export async function reassignerEquipe(chantierId: string, equipeId: string, force = true): Promise<{ message?: string }> {
   return apiFetch(`/admin/chantiers/${chantierId}/reassign`, {
     method: 'PATCH',
-    body: JSON.stringify({ equipe_id: equipeId }),
+    body: JSON.stringify({ equipe_id: equipeId, force }),
   });
 }
 

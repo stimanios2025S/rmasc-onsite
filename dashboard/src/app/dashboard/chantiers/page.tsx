@@ -5,7 +5,7 @@ import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight,
   User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
-  Navigation, Radio, Wifi,
+  Navigation, Radio, Wifi, ArrowRightLeft,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
 import TrackingMap from '@/components/TrackingMap';
@@ -685,9 +685,14 @@ export default function ChantiersPage() {
                 </span>
               </div>
 
-              {/* ═══ TRACKING + ITINÉRAIRE BUTTONS ═══ */}
+              {/* ═══ TRACKING + RÉASSIGNER BUTTONS ═══ */}
               {c.lat && c.lng && c.equipe_actuelle && c.equipe_actuelle !== 'Aucune équipe' && c.equipe_actuelle !== 'Aucune' && (
                 <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => ouvrirEdition(c)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+                    title="Changer d'équipe (maladie, indisponibilité...)">
+                    <ArrowRightLeft size={11} /> Réassigner
+                  </button>
                   <button onClick={() => setTrackChantier(c)}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold transition-all ${
                       trackChantier?.id === c.id
@@ -1022,32 +1027,31 @@ export default function ChantiersPage() {
                 {editChantier.equipe_actuelle && editChantier.equipe_actuelle !== 'Aucune équipe' && editChantier.equipe_actuelle !== 'Aucune' ? (
                   (() => {
                     const missionStatut = (editChantier as any).mission_statut;
-                    const canReassign = missionStatut === 'en_attente' || missionStatut === 'en_route' || !missionStatut;
-                    if (canReassign) {
-                      return (
-                        <>
-                          <TeamSearchBar
-                            equipes={equipes}
-                            selectedId={editForm.equipe_id}
-                            onSelect={(id) => setEditForm({ ...editForm, equipe_id: id })}
-                            placeholder="Rechercher une équipe par nom, type, chef..."
-                          />
-                          <p className="text-[10px] text-stone-400 mt-1.5">💡 Travail pas encore commencé — vous pouvez changer l'équipe.</p>
-                        </>
-                      );
-                    }
+                    const isActive = missionStatut === 'en_cours' || missionStatut === 'en_pause' || missionStatut === 'bloque';
                     return (
-                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                        <CircleDot size={14} className="text-emerald-600" />
-                        <div>
-                          <p className="text-sm font-semibold text-emerald-800">{editChantier.equipe_actuelle}</p>
-                          <p className="text-[10px] text-emerald-600">
-                            {missionStatut === 'en_cours' ? '🔧 Travail en cours — modification impossible.' :
-                             missionStatut === 'en_pause' ? '⏸ En pause — modification impossible.' :
-                             'L\'équipe est sur site — modification impossible.'}
-                          </p>
-                        </div>
-                      </div>
+                      <>
+                        {isActive && (
+                          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2">
+                            <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                            <p className="text-[11px] text-amber-700 font-medium">
+                              {missionStatut === 'en_cours' ? '🔧 Travail en cours — l\'équipe actuelle sera libérée.' :
+                               missionStatut === 'en_pause' ? '⏸ En pause — l\'équipe actuelle sera libérée.' :
+                               '🚫 Mission bloquée — vous pouvez changer d\'équipe.'}
+                            </p>
+                          </div>
+                        )}
+                        <TeamSearchBar
+                          equipes={equipes}
+                          selectedId={editForm.equipe_id}
+                          onSelect={(id) => setEditForm({ ...editForm, equipe_id: id })}
+                          placeholder="Rechercher une équipe par nom, type, chef..."
+                        />
+                        <p className="text-[10px] text-stone-400 mt-1.5">
+                          {isActive
+                            ? '⚠ Nouvelle équipe assignée, ancienne équipe libérée automatiquement.'
+                            : '💡 Vous pouvez changer l\'équipe à tout moment.'}
+                        </p>
+                      </>
                     );
                   })()
                 ) : (
