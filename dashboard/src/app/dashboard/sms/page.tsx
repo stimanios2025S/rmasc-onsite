@@ -97,7 +97,6 @@ export default function PageSms() {
           >
             <RefreshCw size={15} className={chargement ? 'animate-spin' : ''} /> Rafraîchir
           </button>
-        </div>
       </div>
 
       {message && (

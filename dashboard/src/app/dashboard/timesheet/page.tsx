@@ -669,6 +669,6 @@ function EventRow({ event }: { event: TimesheetEvent }) {
           )}
         </div>
       </div>
-    </AdminShell>
+    </div>
   );
 }

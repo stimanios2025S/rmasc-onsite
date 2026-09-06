@@ -159,7 +159,6 @@ export default function ParametresPage() {
         {/* Security — password change (now wired to real backend) */}
         <SecuritySection />
       </div>
-      </div>
     </AdminShell>
   );
 }
