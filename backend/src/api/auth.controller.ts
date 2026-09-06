@@ -95,5 +95,37 @@ export function creerAuthRouter(pool: Pool, logger: LoggerService): Router {
     }
   });
 
+  // PATCH /api/auth/change-password — changer le mot de passe de l'admin
+  router.patch('/change-password', verifierToken, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { motDePasseActuel, nouveauMotDePasse } = req.body;
+      if (!motDePasseActuel || !nouveauMotDePasse) {
+        res.status(400).json({ erreur: 'Mot de passe actuel et nouveau mot de passe requis.' });
+        return;
+      }
+      if (nouveauMotDePasse.length < 6) {
+        res.status(400).json({ erreur: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+        return;
+      }
+      // Fetch current hash
+      const { rows } = await pool.query('SELECT mot_de_passe_hash FROM utilisateurs WHERE id = $1', [req.user!.userId]);
+      if (rows.length === 0) {
+        res.status(404).json({ erreur: 'Utilisateur introuvable.' });
+        return;
+      }
+      const valide = await bcrypt.compare(motDePasseActuel, rows[0].mot_de_passe_hash);
+      if (!valide) {
+        res.status(401).json({ erreur: 'Mot de passe actuel incorrect.' });
+        return;
+      }
+      const hash = await bcrypt.hash(nouveauMotDePasse, 10);
+      await pool.query('UPDATE utilisateurs SET mot_de_passe_hash = $1, date_modification = NOW() WHERE id = $2', [hash, req.user!.userId]);
+      logger.info('Mot de passe admin changé', { userId: req.user!.userId });
+      res.json({ message: 'Mot de passe mis à jour avec succès.' });
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }

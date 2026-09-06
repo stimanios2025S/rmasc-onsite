@@ -2,11 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-body { background-color: #F4F6FB; }
+body { background-color: #e4e6ec; }
 
 @layer utilities {
   .alert-pulse { animation: pulse-alert 2s infinite; }
   @keyframes pulse-alert { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
 }
 
 .leaflet-container { border-radius: 16px; }
@@ -529,3 +531,31 @@ img, svg, iframe, video { max-width: 100%; }
   border-radius: 50%;
   margin-top: 6px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TV + LAPTOP RESPONSIVE — 4K displays, 1080p, laptops
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Large desktop / TV (1920px+) */
+@media (min-width: 1920px) {
+  body { font-size: 16px; }
+}
+
+/* Medium TV (1600px) */
+@media (min-width: 1600px) and (max-width: 1919px) {
+  body { font-size: 15px; }
+}
+
+/* Small laptop (under 1024px) — tighten spacing */
+@media (max-width: 1023px) {
+  .sync-panel { width: calc(100vw - 32px); right: -80px; }
+}
+
+/* Very small screens — prevent horizontal overflow */
+@media (max-width: 640px) {
+  .map-view__container { height: 320px; min-height: 260px; }
+}
+
+/* Ensure no body horizontal scroll */
+body { overflow-x: hidden; }
+html { overflow-x: hidden; }

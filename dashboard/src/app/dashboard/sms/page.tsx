@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { fetchSmsLog, fetchTelephones, sauvegarderTelephones } from '@/lib/api';
 import type { SmsLogData, TelephoneData } from '@/lib/api';
+import AdminShell from '@/components/AdminShell';
 
 const LIBELLES_EVENEMENT: Record<string, string> = {
   mission_assignee: 'Mission assignée',
@@ -82,19 +83,8 @@ export default function PageSms() {
   const actif = fournisseur === 'twilio';
 
   return (
-    <div className="space-y-6">
-      {/* ─── En-tête ─────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg">
-            <MessageSquareText size={22} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-stone-800">SMS Automatiques</h1>
-            <p className="text-sm text-stone-400">Relais de mission → propriétaire, équipes et clients</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
+    <AdminShell title="SMS Automatiques" subtitle="Relais de mission → propriétaire, équipes et clients" onRefresh={charger}>
+      <div className="flex items-center gap-3 mb-4">
           <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold shadow-sm ${
             actif ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}>
@@ -254,6 +244,6 @@ export default function PageSms() {
           </p>
         </div>
       </div>
-    </div>
+    </AdminShell>
   );
 }

@@ -161,7 +161,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="-m-4 sm:-m-6 lg:-m-8 p-4 sm:p-6 lg:p-8 bg-[#e4e6ec] min-h-screen">
+    <div className="min-h-screen bg-[#e4e6ec] text-stone-900">
+      <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
       {/* ═══ TOP BAR : logo + pills + icon actions ═══ */}
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-2">
@@ -556,6 +557,7 @@ export default function DashboardPage() {
       <p className="text-center text-[11px] text-stone-400 pb-4 flex items-center justify-center gap-1.5">
         <Clock size={11} /> Synchronisé en temps réel • {user?.prenom} {user?.nom}
       </p>
+      </div>
     </div>
   );
 }

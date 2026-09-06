@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchIncidents, annulerBlocage, type IncidentData } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
+import AdminShell from '@/components/AdminShell';
 import {
   AlertTriangle, Loader2, Clock, Filter, Search, Ban, ExternalLink,
   PauseCircle, MapPin, Camera, User, ChevronDown, CheckCircle, PlayCircle,
@@ -104,13 +105,19 @@ export default function IncidentsPage() {
   const critiques = incidents.filter(i => i.priorite === 'critique');
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Loader2 size={36} className="animate-spin text-indigo-500" />
-    </div>
+    <AdminShell title="Incidents & Événements" subtitle="Chargement…">
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 size={36} className="animate-spin text-stone-400" />
+      </div>
+    </AdminShell>
   );
 
   return (
-    <div>
+    <AdminShell
+      title="Incidents & Événements"
+      subtitle={`${incidents.length} événement${incidents.length !== 1 ? 's' : ''} au total`}
+      onRefresh={load}
+    >
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${
@@ -119,13 +126,6 @@ export default function IncidentsPage() {
           {toast.text}
         </div>
       )}
-
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-stone-800">Incidents & Événements</h1>
-          <p className="text-xs text-stone-400 mt-0.5">{incidents.length} événement{incidents.length !== 1 ? 's' : ''} au total</p>
-        </div>
-      </div>
 
       {/* Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 mb-6">
@@ -258,6 +258,6 @@ export default function IncidentsPage() {
           );
         })}
       </div>
-    </div>
+    </AdminShell>
   );
 }

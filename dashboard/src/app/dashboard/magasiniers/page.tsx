@@ -4,6 +4,7 @@ import {
   Package, Plus, Edit2, Trash2, Key, Loader2, X, Check, Users, MapPin, Phone, User,
 } from 'lucide-react';
 import { getUtilisateur } from '@/lib/auth';
+import AdminShell from '@/components/AdminShell';
 
 interface Magasinier {
   id: string; nom: string; prenom: string; identifiant: string; telephone: string | null;
@@ -134,25 +135,19 @@ export default function MagasiniersPage() {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Loader2 size={36} className="animate-spin text-indigo-500" />
-    </div>
+    <AdminShell title="Gestion Magasiniers" subtitle="Chargement…">
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 size={36} className="animate-spin text-stone-400" />
+      </div>
+    </AdminShell>
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-800">Gestion Magasiniers</h1>
-          <p className="text-sm text-stone-400">Gérez les magasiniers et leurs chantiers assignés</p>
-        </div>
-        <button onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-semibold hover:bg-indigo-600 transition-all shadow-sm">
-          <Plus size={16} /> Nouveau magasinier
-        </button>
-      </div>
-
+    <AdminShell title="Gestion Magasiniers" subtitle="Gérez les magasiniers et leurs chantiers assignés"
+      actions={<button onClick={openCreate}
+        className="flex items-center gap-2 px-4 py-2 rounded-full bg-stone-900 text-white text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all">
+        <Plus size={16} /> Nouveau magasinier
+      </button>}>
       {/* Message */}
       {message && (
         <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2 ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
@@ -335,6 +330,6 @@ export default function MagasiniersPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

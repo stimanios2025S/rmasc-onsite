@@ -8,6 +8,7 @@ import {
 import { fetchTimesheet, type TimesheetData, type TimesheetEquipe, type TimesheetEvent,
          searchChantiers, type ChantierSearchResult } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
+import AdminShell from '@/components/AdminShell';
 
 /* ─── CONSTANTS ────────────────────────────────────────────────────── */
 const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: string }> = {
@@ -130,49 +131,42 @@ export default function TimesheetPage() {
   };
 
   if (loading && !data) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Loader2 size={36} className="animate-spin text-indigo-500" />
-    </div>
+    <AdminShell title="Feuille de Temps" subtitle="Chargement…">
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 size={36} className="animate-spin text-stone-400" />
+      </div>
+    </AdminShell>
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header + Search */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-              <Clock size={22} className="text-indigo-500" /> Feuille de Temps
-            </h1>
-            <p className="text-sm text-stone-400 mt-0.5">Pointages, arrivées, pauses et fin de journée</p>
-          </div>
-          <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-2 py-1.5">
-            <button onClick={() => shiftDate(-1)} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
-              <ChevronLeft size={16} className="text-stone-500" />
-            </button>
-            <div className="flex items-center gap-2 px-2">
-              <Calendar size={14} className="text-stone-400" />
-              <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-                className="text-sm font-semibold text-stone-700 outline-none bg-transparent cursor-pointer"
-                style={{ fontSize: '16px' }}
-              />
-            </div>
-            <button onClick={() => shiftDate(1)} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
-              <ChevronRight size={16} className="text-stone-500" />
-            </button>
-            {!isToday && (
-              <button onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
-                className="px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-all">
-                Aujourd&apos;hui
-              </button>
-            )}
-            <button onClick={loadData} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
-              <RefreshCw size={14} className={`text-stone-400 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+    <AdminShell title="Feuille de Temps" subtitle="Pointages, arrivées, pauses et fin de journée" onRefresh={loadData}>
+      {/* Date navigation */}
+      <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-2 py-1.5 mb-4 w-fit">
+        <button onClick={() => shiftDate(-1)} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
+          <ChevronLeft size={16} className="text-stone-500" />
+        </button>
+        <div className="flex items-center gap-2 px-2">
+          <Calendar size={14} className="text-stone-400" />
+          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+            className="text-sm font-semibold text-stone-700 outline-none bg-transparent cursor-pointer"
+            style={{ fontSize: '16px' }}
+          />
         </div>
+        <button onClick={() => shiftDate(1)} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
+          <ChevronRight size={16} className="text-stone-500" />
+        </button>
+        {!isToday && (
+          <button onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+            className="px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-all">
+            Aujourd&apos;hui
+          </button>
+        )}
+        <button onClick={loadData} className="p-1.5 hover:bg-stone-100 rounded-lg transition-all">
+          <RefreshCw size={14} className={`text-stone-400 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
-        {/* ═══ INTELLIGENT SEARCH BAR ═══ */}
+      {/* ═══ INTELLIGENT SEARCH BAR ═══ */}
         <div ref={searchRef} className="relative w-full sm:max-w-xl">
           <div className={`flex items-center gap-3 bg-white border rounded-2xl px-4 py-3 transition-all shadow-sm ${
             searchOpen ? 'border-indigo-300 ring-2 ring-indigo-100 shadow-md' : 'border-stone-200 hover:border-stone-300'
@@ -675,6 +669,6 @@ function EventRow({ event }: { event: TimesheetEvent }) {
           )}
         </div>
       </div>
-    </div>
+    </AdminShell>
   );
 }

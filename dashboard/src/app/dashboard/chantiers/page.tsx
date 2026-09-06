@@ -10,6 +10,7 @@ import {
 import MapPicker from '@/components/MapPicker';
 import TrackingMap from '@/components/TrackingMap';
 import type { TeamPosition } from '@/components/MapView';
+import AdminShell from '@/components/AdminShell';
 
 /* ═══════════════════════════════════════════════════════════════
    TEAM SEARCH BAR — Portal-based dropdown, never clipped
@@ -496,22 +497,21 @@ export default function ChantiersPage() {
   });
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-indigo-500" /></div>;
+    return (
+      <AdminShell title="Chantiers" subtitle="Chargement…">
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader2 size={36} className="animate-spin text-stone-400" />
+        </div>
+      </AdminShell>
+    );
   }
 
   return (
-    <div>
-      {/* ═══ HEADER ═══ */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-stone-800">
-          Chantiers <span className="text-stone-400 font-normal">({chantiers.length})</span>
-        </h1>
-        <button onClick={() => setShowWizard(true)}
-          className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/20 transition-all">
-          <Plus size={16} /> Ajouter un Chantier
-        </button>
-      </div>
-
+    <AdminShell title="Chantiers" subtitle={`${chantiers.length} chantier${chantiers.length > 1 ? 's' : ''}`}
+      actions={<button onClick={() => setShowWizard(true)}
+        className="flex items-center gap-2 bg-stone-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all">
+        <Plus size={16} /> Ajouter un Chantier
+      </button>}>
       {/* Message */}
       {message && (
         <div className={`mb-4 px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-2 ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
@@ -1304,6 +1304,6 @@ export default function ChantiersPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

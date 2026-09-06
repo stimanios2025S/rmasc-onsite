@@ -62,6 +62,13 @@ export async function fetchIncidents(): Promise<IncidentData[]> {
   return apiFetch('/admin/incidents');
 }
 
+export async function changePassword(motDePasseActuel: string, nouveauMotDePasse: string): Promise<{ message: string }> {
+  return apiFetch('/auth/change-password', {
+    method: 'PATCH',
+    body: JSON.stringify({ motDePasseActuel, nouveauMotDePasse }),
+  });
+}
+
 export interface EquipementEquipe {
   id: string; nom: string; categorie: string; quantite: number; etat: string; date_assignation: string;
 }

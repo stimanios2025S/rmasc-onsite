@@ -12,6 +12,7 @@ import {
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
 } from '@/lib/api';
 import { apiFetch } from '@/lib/auth';
+import AdminShell from '@/components/AdminShell';
 
 /* ─── CONSTANTS ────────────────────────────────────────────────────── */
 const TYPE_META: Record<string, { label: string; icon: any; color: string; bg: string; ring: string }> = {
@@ -266,28 +267,36 @@ export default function TeamManagementPage() {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Loader2 size={36} className="animate-spin text-indigo-500" />
-    </div>
+    <AdminShell title="Team Management" subtitle="Chargement…">
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 size={36} className="animate-spin text-stone-400" />
+      </div>
+    </AdminShell>
   );
 
   if (teams.length === 0 && missions.length === 0 && Object.keys(config).length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <AlertTriangle size={40} className="text-amber-400" />
-        <p className="text-sm text-stone-500 text-center">Aucune donnée chargée. Vérifiez la connexion au serveur.</p>
-        <button onClick={loadAll}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-500 text-white rounded-xl text-sm font-bold hover:bg-indigo-600 transition-all">
-          <RefreshCw size={15} /> Réessayer
-        </button>
-      </div>
+      <AdminShell title="Team Management" subtitle="Erreur de chargement" onRefresh={loadAll}>
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+          <AlertTriangle size={40} className="text-amber-400" />
+          <p className="text-sm text-stone-500 text-center">Aucune donnée chargée. Vérifiez la connexion au serveur.</p>
+          <button onClick={loadAll}
+            className="flex items-center gap-2 px-5 py-2.5 bg-stone-900 text-white rounded-full text-sm font-bold hover:bg-stone-700 transition-all">
+            <RefreshCw size={15} /> Réessayer
+          </button>
+        </div>
+      </AdminShell>
     );
   }
 
   const reposJours = config.jours_repos?.valeur || '3';
 
   return (
-    <div className="space-y-6">
+    <AdminShell title="Team Management" subtitle="Gérez les équipes, membres et configuration" onRefresh={loadAll}
+      actions={<button onClick={openCreateModal}
+        className="flex items-center gap-2 px-4 py-2 rounded-full bg-stone-900 text-white text-sm font-bold hover:bg-stone-700 transition-all shadow-md">
+        <Plus size={16} /> Nouvelle Équipe
+      </button>}>
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg flex items-center gap-2 ${
@@ -297,24 +306,6 @@ export default function TeamManagementPage() {
           {toast.text}
         </div>
       )}
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-stone-800">Team Management</h1>
-          <p className="text-sm text-stone-400 mt-0.5">Gérez les équipes, membres et configuration</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={loadAll}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-medium text-stone-500 hover:text-stone-700 hover:border-stone-300 transition-all">
-            <RefreshCw size={15} /> Actualiser
-          </button>
-          <button onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl text-sm font-bold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md shadow-indigo-200">
-            <Plus size={16} /> Nouvelle Équipe
-          </button>
-        </div>
-      </div>
 
       {/* ═══ SECTION 1: REST DAYS CONFIG ═══ */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-6">
@@ -908,6 +899,6 @@ export default function TeamManagementPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

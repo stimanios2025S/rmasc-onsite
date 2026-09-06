@@ -5,6 +5,7 @@ import {
   XCircle, Filter, RefreshCw, ExternalLink,
 } from 'lucide-react';
 import { fetchDemandesMateriel, modifierStatutDemande, DemandeMateriel } from '@/lib/api';
+import AdminShell from '@/components/AdminShell';
 
 export default function DemandesPage() {
   const [demandes, setDemandes] = useState<DemandeMateriel[]>([]);
@@ -47,18 +48,7 @@ export default function DemandesPage() {
   const statsR = statsParStatut('retard');
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg sm:text-2xl font-bold text-stone-800">Demandes & Signalements</h1>
-          <p className="text-xs text-stone-400 mt-1">Gestion des demandes matériel et retards chantier</p>
-        </div>
-        <button onClick={charger} className="p-2 rounded-lg hover:bg-stone-100 text-stone-400">
-          <RefreshCw size={18} />
-        </button>
-      </div>
-
+    <AdminShell title="Demandes & Signalements" subtitle="Gestion des demandes matériel et retards chantier" onRefresh={charger}>
       {/* Tabs */}
       <div className="flex gap-2 p-1 bg-stone-100/80 rounded-xl">
         <button
@@ -350,6 +340,6 @@ export default function DemandesPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }
