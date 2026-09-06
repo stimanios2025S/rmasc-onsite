@@ -69,17 +69,16 @@ BEGIN
     ]'::jsonb;
   ELSIF phase = 'electrique' THEN
     RETURN '[
-      {"id":"e1","label":"Installation armoire","done":false},
-      {"id":"e2","label":"Installation pendentif","done":false},
-      {"id":"e3","label":"Installation boîte inspection","done":false},
-      {"id":"e4","label":"Installation bouton appel palier","done":false},
-      {"id":"e5","label":"Installation bouton appel cabine","done":false},
-      {"id":"e6","label":"Installation de colonne montante","done":false},
-      {"id":"e7","label":"Raccordement machine","done":false},
-      {"id":"e8","label":"Raccordement toit cabine et inspection","done":false},
-      {"id":"e9","label":"Raccordement colonne","done":false},
-      {"id":"e10","label":"Installation des aimants","done":false},
-      {"id":"e11","label":"Les essais et réglages","done":false}
+      {"id":"e1","label":"Installation de l''armoire électrique","done":false},
+      {"id":"e2","label":"Raccordement du moteur","done":false},
+      {"id":"e3","label":"Installation du pendentif","done":false},
+      {"id":"e4","label":"Installation de la boîte d''inspection","done":false},
+      {"id":"e5","label":"Installation de la colonne électrique","done":false},
+      {"id":"e6","label":"Installation des boutons d''appel paliers","done":false},
+      {"id":"e7","label":"Installation des capteurs et le COP (poste à boutons)","done":false},
+      {"id":"e8","label":"Mise en place des aimants","done":false},
+      {"id":"e9","label":"Vérification générale","done":false},
+      {"id":"e10","label":"Réglage des étapes — l''apprentissage","done":false}
     ]'::jsonb;
   ELSE
     RETURN '[
