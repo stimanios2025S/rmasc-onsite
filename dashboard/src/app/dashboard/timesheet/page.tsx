@@ -239,7 +239,6 @@ export default function TimesheetPage() {
             </div>
           )}
         </div>
-      </div>
 
       {/* ═══ CHANTIER DETAIL PANEL ═══ */}
       {selectedChantier && (
@@ -269,7 +268,7 @@ export default function TimesheetPage() {
           </div>
         </>
       )}
-    </div>
+    </AdminShell>
   );
 }
 
