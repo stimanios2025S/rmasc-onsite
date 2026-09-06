@@ -1000,16 +1000,23 @@ $v20$ LANGUAGE plpgsql`);
   }
 }
 
-// Démarrer le serveur
+// Démarrer le serveur — migration AVANT listen pour éviter
+// "column date_debut_mecanique does not exist" sur les premières requêtes
 const port = parseInt(PORT, 10);
-app.listen(port, () => {
-  logger.info(`RMASC OnSite — Serveur démarré sur le port ${port}`);
-  pool.query('SELECT 1')
-    .then(() => { logger.info('PostgreSQL OK'); return appliquerMigrationV20(); })
-    .catch(e => logger.error('PostgreSQL', { erreur: e.message }));
-  // Démarrer le worker SMS (file d'attente sms_outbox)
-  const smsWorker = new SmsWorker(pool, smsService, logger);
-  smsWorker.demarrer();
-});
+(async () => {
+  try {
+    await pool.query('SELECT 1');
+    logger.info('PostgreSQL OK');
+    await appliquerMigrationV20();
+  } catch (e: any) {
+    logger.error('PostgreSQL / migration v20 au démarrage', { erreur: e.message });
+  }
+  app.listen(port, () => {
+    logger.info(`RMASC OnSite — Serveur démarré sur le port ${port}`);
+    // Démarrer le worker SMS (file d'attente sms_outbox)
+    const smsWorker = new SmsWorker(pool, smsService, logger);
+    smsWorker.demarrer();
+  });
+})();
 
 export { app };
