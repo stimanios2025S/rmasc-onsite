@@ -3,7 +3,7 @@ import { LoggerService } from '../notifications/logger.service';
 import { normaliserTelephone } from './providers/sms.provider.types';
 import type { SmsService } from './sms.service';
 
-const INTERVALLE_MS = 30_000; // traitement toutes les 30s
+const INTERVALLE_MS = 10_000; // traitement toutes les 10s (WhatsApp quasi instantané)
 const MAX_TENTATIVES = 3;
 
 /**
