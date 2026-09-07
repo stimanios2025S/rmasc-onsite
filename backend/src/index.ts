@@ -30,6 +30,7 @@ import { creerTeamManagementRouter } from './api/team-management.controller';
 import { creerMagasinierRouter } from './api/magasinier.controller';
 import { SmsService } from './services/sms/sms.service';
 import { SmsWorker } from './services/sms/sms.worker';
+import { PlaceAgentService } from './services/places/place-agent.service';
 import path from 'path';
 import https from 'https';
 import { creerPages } from './views';
@@ -474,6 +475,37 @@ app.get('/api/dashboard/all', async (_req, res) => {
   } catch (err: any) {
     console.error('[dashboard/all] fatal:', err.message);
     res.status(500).json({ erreur: 'Erreur serveur.', detail: err.message });
+  }
+});
+
+// ─── Agent Lieux : l'admin tape le nom, l'agent cherche auto + mémorise ──
+const placeAgent = new PlaceAgentService(pool);
+
+// POST /api/places/rechercher — recherche auto (admin) : mémoire → libre → conseil Google
+app.post('/api/places/rechercher', verifierToken, async (req, res) => {
+  try {
+    const { requete } = req.body || {};
+    if (!requete || String(requete).trim().length < 3) {
+      return res.status(400).json({ erreur: 'Nom du lieu requis (3 lettres min).' });
+    }
+    const resultat = await placeAgent.rechercher(String(requete));
+    res.json(resultat);
+  } catch (err: any) {
+    res.status(500).json({ erreur: 'Recherche impossible.', detail: err.message });
+  }
+});
+
+// POST /api/places/memoriser — l'admin confirme un point → appris pour toujours
+app.post('/api/places/memoriser', verifierToken, async (req, res) => {
+  try {
+    const { nom, adresse, lat, lng, source } = req.body || {};
+    if (!nom || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+      return res.status(400).json({ erreur: 'nom + lat + lng requis.' });
+    }
+    await placeAgent.memoriser(String(nom), String(adresse || ''), Number(lat), Number(lng), String(source || 'admin'));
+    res.json({ ok: true, message: 'Lieu mémorisé — il sera trouvé par son nom à l\'avenir.' });
+  } catch (err: any) {
+    res.status(500).json({ erreur: 'Mémorisation impossible.', detail: err.message });
   }
 });
 
@@ -1089,10 +1121,31 @@ $v20$ LANGUAGE plpgsql`);
       ON repos_chantier (chantier_id, equipe_id) WHERE statut = 'actif'`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_repos_chantier_equipe
       ON repos_chantier (equipe_id, statut, date_fin_prevue)`);
+    // v24 : agent lieux — mémoire des endroits + log quota (slot Google 3/jour)
+    await pool.query(`CREATE TABLE IF NOT EXISTS lieux_connus (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        nom TEXT NOT NULL UNIQUE,
+        adresse TEXT NOT NULL DEFAULT '',
+        coordonnees geography(POINT, 4326) NOT NULL,
+        source TEXT NOT NULL DEFAULT 'admin',
+        nb_confirmations INTEGER NOT NULL DEFAULT 1,
+        date_creation TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        date_modification TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS agent_recherche_log (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        requete TEXT NOT NULL DEFAULT '',
+        fournisseur TEXT NOT NULL DEFAULT 'libre',
+        nb_resultats INTEGER NOT NULL DEFAULT 0,
+        date_creation TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_lieux_nom ON lieux_connus (LOWER(nom))`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_log_jour ON agent_recherche_log (fournisseur, date_creation)`);
     logger.info('Migration v20 OK — planning par phase actif');
     logger.info('Migration v21 OK — réception auto à la fin de vérification');
     logger.info('Migration v22 OK — sortie auto GPS');
     logger.info('Migration v23 OK — repos par équipe sur chantier');
+    logger.info('Migration v24 OK — agent lieux (mémoire + quota)');
   } catch (e: any) {
     logger.error('Migration v20 échouée (non bloquant)', { erreur: e.message });
   }

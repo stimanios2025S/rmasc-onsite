@@ -55,7 +55,7 @@ function calcProgress(c: ChantierData) {
 }
 
 /* ── Recherche d'adresse type Google Maps (Nominatim, gratuit sans clé) ── */
-export interface LieuRecherche { lat: number; lng: number; nom: string; adresse: string; }
+export interface LieuRecherche { lat: number; lng: number; nom: string; adresse: string; source?: string; }
 
 export interface PoiLieu { lat: number; lng: number; nom: string; categorie: string; }
 
@@ -429,6 +429,8 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
   const [rechercheLoading, setRechercheLoading] = useState(false);
   const [lieuRecherche, setLieuRecherche] = useState<LieuRecherche | null>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [quotaGoogle, setQuotaGoogle] = useState<number | null>(null);
+  const [conseilGoogle, setConseilGoogle] = useState<string | null>(null);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchBoxRef = React.useRef<HTMLDivElement>(null);
 
@@ -436,85 +438,72 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
     setRecherche(query);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim().length < 3) { setSuggestions([]); setSuggestOpen(false); return; }
+    // 0. Lien Google Maps collé ou coordonnées brutes → point exact gratuit
+    // Formats: .../@36.3701,3.9008,15z | ?q=36.3701,3.9008 | !3d36.3701!4d3.9008 | 36.3701, 3.9008
+    const brut = query.trim();
+    let latG: number | null = null, lngG: number | null = null;
+    let mg = brut.match(/@(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/)
+      || brut.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+      || brut.match(/[?&]query=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+      || brut.match(/[?&]q=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+      || brut.match(/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+    if (mg) { latG = parseFloat(mg[1]); lngG = parseFloat(mg[2]); }
+    if (latG !== null && lngG !== null && Number.isFinite(latG) && Number.isFinite(lngG)
+      && latG >= 18 && latG <= 38 && lngG >= -10 && lngG <= 13) {
+      setSuggestions([{
+        lat: latG, lng: lngG,
+        nom: '📍 Point Google Maps (exact)',
+        adresse: `${latG.toFixed(6)}, ${lngG.toFixed(6)} — collé depuis Google, gratuit`,
+      }]);
+      setSuggestOpen(true);
+      setRechercheLoading(false);
+      return;
+    }
     setRechercheLoading(true);
     debounceRef.current = setTimeout(async () => {
       const q = query.trim();
-      const lieux: LieuRecherche[] = [];
-      const vus = new Set<string>();
-      function ajouter(l: LieuRecherche) {
-        const cle = `${l.lat.toFixed(5)},${l.lng.toFixed(5)}`;
-        if (vus.has(cle) || lieux.length >= 8) return;
-        vus.add(cle);
-        lieux.push(l);
-      }
-      // 1. Nominatim — adresses + lieux nommés (Algérie d'abord, puis monde)
-      for (const scope of ['dz', '']) {
-        try {
-          const url = scope
-            ? `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=dz&limit=6&accept-language=fr&addressdetails=1`
-            : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' Algérie')}&limit=4&accept-language=fr&addressdetails=1`;
-          const res = await fetch(url, { headers: { Accept: 'application/json' } });
-          const data = await res.json();
-          (Array.isArray(data) ? data : []).forEach((d: any) => {
-            const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-            ajouter({
-              lat, lng,
-              nom: (d.display_name || '').split(',').slice(0, 2).join(','),
-              adresse: d.display_name || '',
+      // Agent côté serveur : mémoire → sources libres → conseil Google (quota 3/jour)
+      try {
+        const token = localStorage.getItem('rmasc_token');
+        const res = await fetch('/api/places/rechercher', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requete: q }),
+        });
+        const data = await res.json();
+        const lieux: LieuRecherche[] = Array.isArray(data.lieux) ? data.lieux : [];
+        if (typeof data.quotaGoogleRestant === 'number') setQuotaGoogle(data.quotaGoogleRestant);
+        setConseilGoogle(typeof data.conseilGoogle === 'string' ? data.conseilGoogle : null);
+        setSuggestions(lieux.slice(0, 8));
+        // Mémoriser le 1er résultat auto pour l'apprentissage (silencieux)
+        if (lieux.length > 0) {
+          try {
+            await fetch('/api/places/memoriser', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ nom: q.slice(0, 200), adresse: lieux[0].adresse || '', lat: lieux[0].lat, lng: lieux[0].lng, source: 'agent:' + (lieux[0].source || 'libre') }),
             });
-          });
-          if (lieux.length >= 4) break;
-        } catch { /* passer au suivant */ }
+          } catch { /* mémoire non bloquante */ }
+        }
+      } catch {
+        setSuggestions([]);
+        setConseilGoogle(null);
       }
-      // 2. Photon (search alsacien, meilleur sur noms commerciaux) — vue Algérie
-      if (lieux.length < 8) {
-        try {
-          const res = await fetch(
-            `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=fr&lat=28.0&lon=2.0&location_bias_scale=0.6`,
-            { headers: { Accept: 'application/json' } }
-          );
-          const data = await res.json();
-          ((data && data.features) || []).forEach((f: any) => {
-            const c = f.geometry && f.geometry.coordinates;
-            if (!c || !Number.isFinite(c[1]) || !Number.isFinite(c[0])) return;
-            const p = f.properties || {};
-            const nom = p.name || p.street || '';
-            if (!nom) return;
-            const ville = p.city || p.state || p.country || '';
-            ajouter({ lat: c[1], lng: c[0], nom, adresse: [nom, ville].filter(Boolean).join(', ') });
-          });
-        } catch { /* ignorer */ }
-      }
-      // 3. Overpass — commerces / usines / hôtels nommés (ex: factory, shop, motel introuvables ci-dessus)
-      if (lieux.length < 8) {
-        try {
-          const echappe = q.replace(/"/g, '');
-          const req = `[out:json][timeout:12];(node["name"~"${echappe}",i](24.0,-9.0,37.5,12.0);way["name"~"${echappe}",i](24.0,-9.0,37.5,12.0););out center 6;`;
-          const res = await fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'data=' + encodeURIComponent(req),
-          });
-          const data = await res.json();
-          ((data && data.elements) || []).forEach((el: any) => {
-            const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-            const tags = el.tags || {};
-            const nom = tags.name || '';
-            if (!nom) return;
-            const detail = tags['addr:city'] || tags.shop || tags.amenity || tags.industrial || '';
-            ajouter({ lat, lng, nom, adresse: [nom, detail].filter(Boolean).join(' — ') });
-          });
-        } catch { /* ignorer */ }
-      }
-      setSuggestions(lieux);
       setSuggestOpen(true);
       setRechercheLoading(false);
     }, 450);
   }
 
   function choisirLieu(l: LieuRecherche) {
+    // Confirmer le choix → l'agent le mémorise (trouvé par nom la prochaine fois)
+    try {
+      const token = localStorage.getItem('rmasc_token');
+      fetch('/api/places/memoriser', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom: recherche.slice(0, 200) || l.nom, adresse: l.adresse || '', lat: l.lat, lng: l.lng, source: 'choix-admin' }),
+      }).catch(() => {});
+    } catch { /* non bloquant */ }
     setLieuRecherche(l);
     setRecherche(l.nom);
     setSuggestions([]);
@@ -639,7 +628,7 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
                 if (e.key === 'Enter' && suggestions.length > 0) choisirLieu(suggestions[0]);
                 if (e.key === 'Escape') { setSuggestOpen(false); }
               }}
-              placeholder="Rechercher un lieu en Algérie… (ex: AB Park Bouira, promotion Alger)"
+              placeholder="Nom en Algérie… ou collez un lien Google Maps pour le point exact"
               className="map-search__input"
             />
             {rechercheLoading && <span className="map-search__spinner">⏳</span>}
@@ -664,8 +653,11 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
           )}
           {suggestOpen && !rechercheLoading && recherche.trim().length >= 3 && suggestions.length === 0 && (
             <div className="map-search__results">
-              <div className="map-search__empty">Aucun lieu trouvé — essayez un autre nom.</div>
+              <div className="map-search__empty">{conseilGoogle || "Aucun lieu trouvé — ou collez le lien Google Maps du lieu (clic droit sur Google → copier le lien) pour l'avoir au mètre près, gratuit."}</div>
             </div>
+          )}
+          {quotaGoogle !== null && (
+            <div className="map-search__quota">🤖 Agent lieux actif — slot Google du jour : {quotaGoogle}/3 restant</div>
           )}
         </div>
 
