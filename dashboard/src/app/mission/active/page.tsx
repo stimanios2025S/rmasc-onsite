@@ -980,6 +980,17 @@ export default function MissionActivePage() {
         </div>
       )}
 
+      {/* ═══ REPOS CHANTIER : mission mise en pause par l'admin ═══ */}
+      {isPaused && (
+        <div className="mx-4 mb-4 bg-gradient-to-r from-violet-500 to-purple-600 rounded-3xl p-4 flex items-start gap-3 shadow-lg shadow-violet-200">
+          <span className="text-2xl flex-shrink-0 mt-0.5">😴</span>
+          <div>
+            <p className="font-bold text-white text-sm">Repos — reprise par l'admin uniquement</p>
+            <p className="text-xs text-violet-100 mt-0.5">Votre équipe est au repos sur ce chantier. Reposez-vous — le pointage reprendra automatiquement à la fin du repos.</p>
+          </div>
+        </div>
+      )}
+
       {/* ═══ ALERTE COMPLEXITÉ DIFFICILE ═══ */}
       {(missionDetail?.complexite === 'DIFFICILE' || mission?.complexite === 'DIFFICILE') && (
         <div className="mx-4 mb-4 bg-gradient-to-r from-rose-500 to-red-500 rounded-3xl p-4 flex items-start gap-3 shadow-lg shadow-rose-200">

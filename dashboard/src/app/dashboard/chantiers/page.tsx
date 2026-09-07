@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, type ChantierData, type EquipeData } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type ReposChantier } from '@/lib/api';
+import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
   MapPin, Building2, CheckCircle, Upload, FileText, ChevronLeft, ChevronRight, ChevronDown,
   User, Phone, Clock, AlertTriangle, HardHat, Send, Users, CircleDot,
-  Navigation, Radio, Wifi, ArrowRightLeft,
+  Navigation, Radio, Wifi, ArrowRightLeft, Moon, Play,
 } from 'lucide-react';
 import MapPicker from '@/components/MapPicker';
 import TrackingMap from '@/components/TrackingMap';
@@ -290,8 +291,27 @@ export default function ChantiersPage() {
   const [trackChantier, setTrackChantier] = useState<ChantierData | null>(null);
   const [trackPositions, setTrackPositions] = useState<TeamPosition[]>([]);
   const trackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ─── REPOS CHANTIER ───
+  const [reposModal, setReposModal] = useState<ChantierData | null>(null);
+  const [reposEquipeId, setReposEquipeId] = useState('');
+  const [reposJours, setReposJours] = useState('7');
+  const [reposMotif, setReposMotif] = useState('');
+  const [reposSaving, setReposSaving] = useState(false);
+  const [reposArretId, setReposArretId] = useState<string | null>(null);
+  const [reposList, setReposList] = useState<ReposChantier[]>([]);
 
   useEffect(() => { loadChantiers(); loadEquipes(); loadTeamPositions(); }, []);
+
+  // Temps réel : un repos démarré/arrêté/expiré ailleurs → recharger la grille
+  useSyncEvents({
+    onDataChanged: () => { loadChantiers(); },
+    onEvent: (ev) => {
+      if (ev.type === 'repos_chantier') {
+        loadChantiers();
+        if (detailChantier) ouvrirDetail(detailChantier.chantier?.id || detailChantier.chantier?.id_chantier || '');
+      }
+    },
+  });
 
   async function loadChantiers() {
     try { setChantiers(await fetchChantiers()); } catch (_) { }
@@ -487,13 +507,66 @@ export default function ChantiersPage() {
   }
 
   async function ouvrirDetail(id: string) {
+    if (!id) return;
     setDetailLoading(true);
     setDetailChantier(null);
     try {
       const res = await fetch(`/api/chantiers/${id}/detail`);
-      if (res.ok) setDetailChantier(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setDetailChantier(data);
+        setReposList(data.repos || []);
+      }
     } catch (_) { }
     setDetailLoading(false);
+  }
+
+  // ─── REPOS CHANTIER : ouvrir la modale (pré-sélectionne l'équipe du chantier) ───
+  function ouvrirReposModal(c: ChantierData) {
+    setReposModal(c);
+    const eq = equipes.find(e => e.nom === c.equipe_actuelle)
+      || (c as any).equipe_actuelle_id && equipes.find(e => e.id === (c as any).equipe_actuelle_id);
+    setReposEquipeId((typeof eq === 'object' && eq ? (eq as EquipeData).id : '') || '');
+    setReposJours('7');
+    setReposMotif('');
+  }
+
+  async function handleDemarrerRepos() {
+    if (!reposModal || !reposEquipeId) {
+      setMessage({ type: 'error', text: 'Sélectionnez une équipe.' });
+      return;
+    }
+    const jours = parseInt(reposJours, 10);
+    if (!jours || jours < 1 || jours > 90) {
+      setMessage({ type: 'error', text: 'Nombre de jours invalide (1 à 90).' });
+      return;
+    }
+    setReposSaving(true);
+    try {
+      const res = await demarrerReposChantier(reposModal.id, reposEquipeId, jours, reposMotif.trim());
+      setMessage({ type: 'success', text: res.message || 'Repos démarré.' });
+      setReposModal(null);
+      await loadChantiers();
+      await loadEquipes();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur démarrage repos.' });
+    }
+    setReposSaving(false);
+  }
+
+  async function handleArreterRepos(chantierId: string, reposId: string) {
+    if (!confirm('Arrêter ce repos ? Le planning sera recalé et les missions reprendront.')) return;
+    setReposArretId(reposId);
+    try {
+      const res = await arreterReposChantier(chantierId, reposId);
+      setMessage({ type: 'success', text: res.message || 'Repos arrêté.' });
+      await loadChantiers();
+      await loadEquipes();
+      if (detailChantier) await ouvrirDetail(chantierId);
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur arrêt repos.' });
+    }
+    setReposArretId(null);
   }
 
   const filtres = [
@@ -686,6 +759,11 @@ export default function ChantiersPage() {
                         ✅ Terminé
                       </span>
                     )}
+                    {((c as any).jours_repos_restants ?? 0) > 0 && (
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-200 shrink-0 flex items-center gap-1">
+                        <Moon size={10} /> Repos {(c as any).jours_repos_restants}j
+                      </span>
+                    )}
                     {phase && (
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${PHASE_COLOR[phase] || 'bg-stone-100 text-stone-600'}`}>
                         <Icon size={11} /> {phase === 'mecanique' ? 'Méca' : phase === 'electrique' ? 'Élec' : 'Vérif'}
@@ -777,9 +855,14 @@ export default function ChantiersPage() {
                 </span>
               </div>
 
-              {/* ═══ TRACKING + RÉASSIGNER BUTTONS ═══ */}
+              {/* ═══ TRACKING + RÉASSIGNER + REPOS BUTTONS ═══ */}
               {c.lat && c.lng && c.equipe_actuelle && c.equipe_actuelle !== 'Aucune équipe' && c.equipe_actuelle !== 'Aucune' && (
                 <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => ouvrirReposModal(c)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-all"
+                    title="Mettre l'équipe en repos sur ce chantier (le planning se décale)">
+                    <Moon size={11} /> Repos
+                  </button>
                   <button onClick={() => ouvrirEdition(c)}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
                     title="Changer d'équipe (maladie, indisponibilité...)">
@@ -1334,6 +1417,67 @@ export default function ChantiersPage() {
         </div>
       )}
 
+      {/* ═══ MODAL: REPOS CHANTIER — mettre l'équipe en pause N jours ═══ */}
+      {reposModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setReposModal(null); }}>
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="shrink-0 flex items-center gap-3 bg-gradient-to-r from-violet-500 to-purple-600 px-5 py-4 text-white">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <Moon size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-sm">Repos sur chantier</h3>
+                <p className="text-xs text-white/70 truncate">{reposModal.nom}</p>
+              </div>
+              <button onClick={() => setReposModal(null)} className="p-2 hover:bg-white/10 rounded-xl"><X size={18} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
+                  <Users size={12} /> Équipe à mettre au repos
+                </label>
+                <select value={reposEquipeId} onChange={e => setReposEquipeId(e.target.value)}
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all">
+                  <option value="">— Choisir une équipe —</option>
+                  {equipes.map(eq => (
+                    <option key={eq.id} value={eq.id}>{eq.nom} ({eq.type})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
+                  <Clock size={12} /> Nombre de jours de repos (1 à 90)
+                </label>
+                <input value={reposJours} onChange={e => setReposJours(e.target.value)}
+                  type="number" min="1" max="90" inputMode="numeric"
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Motif (optionnel)</label>
+                <input value={reposMotif} onChange={e => setReposMotif(e.target.value)}
+                  placeholder="Ex: congés équipe, pause météo..."
+                  className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-violet-400 transition-all" />
+              </div>
+              <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
+                <AlertTriangle size={13} className="text-violet-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-violet-700 font-medium">
+                  Le planning du chantier se décale de N jours (phases futures). Les missions de cette équipe passent en pause — l'équipe ne peut plus pointer ni être réassignée ici jusqu'à la reprise.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setReposModal(null)}
+                  className="flex-1 bg-stone-100 text-stone-500 py-3 rounded-xl text-sm font-semibold hover:bg-stone-200 transition-all">Annuler</button>
+                <button onClick={handleDemarrerRepos} disabled={reposSaving || !reposEquipeId}
+                  className="flex-1 bg-violet-500 text-white py-3 rounded-xl text-sm font-semibold hover:bg-violet-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                  {reposSaving ? <Loader2 size={16} className="animate-spin" /> : <Moon size={16} />} Démarrer le repos
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ MODAL: DÉTAIL + ROADMAP ═══ */}
       {detailChantier && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -1376,6 +1520,47 @@ export default function ChantiersPage() {
                 </div>
               </div>
 
+              {/* ═══ REPOS : équipes en pause sur ce chantier ═══ */}
+              {reposList.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="font-bold text-stone-800 mb-3 flex items-center gap-2">
+                    <Moon size={16} className="text-violet-500" /> Repos en cours / passés
+                  </h4>
+                  <div className="space-y-2">
+                    {reposList.map((r) => (
+                      <div key={r.id}
+                        className={`flex items-center gap-3 rounded-2xl border px-3.5 py-2.5 ${r.statut === 'actif' ? 'bg-violet-50/60 border-violet-200' : 'bg-stone-50 border-stone-200 opacity-70'}`}>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${r.statut === 'actif' ? 'bg-violet-500/10 text-violet-600' : 'bg-stone-200/60 text-stone-400'}`}>
+                          <Moon size={15} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-stone-700 truncate">
+                            {r.equipe_nom || 'Équipe'}
+                            {r.statut === 'actif'
+                              ? <span className="ml-2 text-violet-600">😴 {r.jours_restants}j restants</span>
+                              : <span className="ml-2 text-stone-400 font-semibold">terminé</span>}
+                          </p>
+                          <p className="text-[10px] text-stone-400">
+                            {r.jours_prevus}j prévus
+                            {r.date_fin_prevue ? ` • fin prévue ${new Date(r.date_fin_prevue).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}` : ''}
+                            {r.motif ? ` • ${r.motif}` : ''}
+                          </p>
+                        </div>
+                        {r.statut === 'actif' && (
+                          <button
+                            onClick={() => handleArreterRepos(detailChantier.chantier?.id || detailChantier.chantier?.id_chantier, r.id)}
+                            disabled={reposArretId === r.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all disabled:opacity-50 shrink-0">
+                            {reposArretId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                            Reprendre
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <h4 className="font-bold text-stone-800 mb-4 flex items-center gap-2">
                 <MapPin size={16} className="text-indigo-500" /> Roadmap des Phases
               </h4>
@@ -1400,6 +1585,11 @@ export default function ChantiersPage() {
                               {m.phase === 'mecanique' ? '🔧 Mécanique' : m.phase === 'electrique' ? '⚡ Électrique' : '🛡️ Vérification'}
                             </span>
                             {m.equipe_nom && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">👥 {m.equipe_nom}</span>}
+                            {(m as any).repos_id && (
+                              <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full border border-violet-200">
+                                <Moon size={9} className="inline mr-0.5" />{(m as any).repos_jours_restants ?? 0}j repos
+                              </span>
+                            )}
                           </div>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.statut === 'termine' ? 'bg-emerald-50 text-emerald-600' : m.statut === 'en_cours' ? 'bg-indigo-50 text-indigo-600' : m.statut === 'bloque' ? 'bg-rose-50 text-rose-600' : 'bg-stone-100 text-stone-500'}`}>
                             {m.statut === 'termine' ? 'Terminée' : m.statut === 'en_cours' ? 'En cours' : m.statut === 'bloque' ? 'Bloquée' : 'En attente'}

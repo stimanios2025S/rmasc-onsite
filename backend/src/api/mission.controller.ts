@@ -8,6 +8,7 @@ import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
 import { eventBus } from '../services/events/event-bus';
+import { reposActif, sweepReposExpires, joursRestants } from '../services/repos-chantier.service';
 
 export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
@@ -51,8 +52,16 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       validerCoordonnees(latitude, longitude);
 
       // Vérifier la mission
-      const mission = await pool.query(`SELECT id, statut, chantier_id FROM ordres_de_mission WHERE id = $1`, [missionId]);
+      const mission = await pool.query(`SELECT id, statut, chantier_id, equipe_id FROM ordres_de_mission WHERE id = $1`, [missionId]);
       if (mission.rows.length === 0) return res.status(404).json({ erreur: 'Mission introuvable.' });
+
+      // Garde repos-chantier : aucun pointage sur une mission gelée par un repos
+      try {
+        const garde = await reposActif(pool, mission.rows[0].chantier_id, mission.rows[0].equipe_id);
+        if (garde.actif) {
+          return res.status(409).json({ erreur: `⏸ Équipe en repos${garde.date_fin_prevue ? ' jusqu\'au ' + new Date(garde.date_fin_prevue).toLocaleDateString('fr-FR') : ''}. Pointage bloqué.` });
+        }
+      } catch (_) { /* table absente avant migration v23 — on laisse passer */ }
 
       // Si arrivée, mettre la mission en cours
       if (type === 'arrivee' && mission.rows[0].statut === 'en_attente') {

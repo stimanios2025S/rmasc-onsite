@@ -4,6 +4,7 @@ import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
+import { reposActif, sweepReposExpires, joursRestants, cloturerRepos } from '../services/repos-chantier.service';
 
 export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
   const router = Router();
@@ -390,6 +391,193 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
     }
   });
 
+  // ─── REPOS CHANTIER — mettre une équipe en repos sur un chantier ──
+  // POST /api/admin/chantiers/:id/repos { equipe_id, jours, motif? }
+  router.post('/chantiers/:id/repos', async (req: any, res) => {
+    try {
+      const chantierId = req.params.id;
+      const { equipe_id, jours, motif } = req.body;
+      const nbJours = Number(jours);
+      if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
+      if (!Number.isFinite(nbJours) || nbJours < 1 || nbJours > 90) {
+        return res.status(400).json({ erreur: 'jours doit être entre 1 et 90.' });
+      }
+
+      const chantierRes = await pool.query(
+        `SELECT id, nom_chantier FROM chantiers WHERE id = $1`, [chantierId]
+      );
+      if (chantierRes.rows.length === 0) return res.status(404).json({ erreur: 'Chantier introuvable.' });
+      const chantier = chantierRes.rows[0];
+
+      const equipeRes = await pool.query(
+        `SELECT id, nom, statut_equipe FROM equipes WHERE id = $1 AND actif = TRUE`, [equipe_id]
+      );
+      if (equipeRes.rows.length === 0) return res.status(404).json({ erreur: 'Équipe introuvable ou inactive.' });
+      const equipe = equipeRes.rows[0];
+
+      // Déjà en repos sur ce chantier ?
+      const existant = await reposActif(pool, chantierId, equipe_id);
+      if (existant.actif) {
+        return res.status(409).json({ erreur: `« ${equipe.nom} » est déjà en repos sur ce chantier.` });
+      }
+
+      // Missions actives de cette équipe SUR CE chantier → en_pause (snapshot)
+      const { rows: missions } = await pool.query(
+        `SELECT id, phase::text AS phase, statut::text AS statut
+         FROM ordres_de_mission
+         WHERE chantier_id = $1 AND equipe_id = $2
+           AND statut IN ('en_attente','en_route','en_cours','en_pause','bloque')`,
+        [chantierId, equipe_id]
+      );
+      const snaps = missions
+        .filter(m => m.statut !== 'en_pause')
+        .map(m => ({ id: m.id, phase: m.phase, ancien_statut: m.statut }));
+      if (missions.length > 0) {
+        await pool.query(
+          `UPDATE ordres_de_mission SET statut = 'en_pause', date_modification = NOW()
+           WHERE chantier_id = $1 AND equipe_id = $2
+             AND statut IN ('en_attente','en_route','en_cours','en_pause','bloque')`,
+          [chantierId, equipe_id]
+        );
+      }
+
+      // Équipe → EN_REPOS jusqu'à NOW()+N jours
+      const finPrevueRes = await pool.query(`SELECT NOW() + ($1 || ' days')::INTERVAL AS fin`, [nbJours]);
+      const finPrevue = finPrevueRes.rows[0].fin;
+      await pool.query(
+        `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = $2,
+                date_modification = NOW() WHERE id = $1`,
+        [equipe_id, finPrevue]
+      );
+
+      // Planning décalé de +N jours (dates futures uniquement + date_echeance)
+      await pool.query(
+        `UPDATE chantiers SET
+           date_debut_mecanique = CASE WHEN date_debut_mecanique IS NOT NULL AND date_debut_mecanique > NOW() THEN date_debut_mecanique + ($2 || ' days')::INTERVAL ELSE date_debut_mecanique END,
+           date_debut_electrique = CASE WHEN date_debut_electrique IS NOT NULL AND date_debut_electrique > NOW() THEN date_debut_electrique + ($2 || ' days')::INTERVAL ELSE date_debut_electrique END,
+           date_debut_verification = CASE WHEN date_debut_verification IS NOT NULL AND date_debut_verification > NOW() THEN date_debut_verification + ($2 || ' days')::INTERVAL ELSE date_debut_verification END,
+           date_echeance = CASE WHEN date_echeance IS NOT NULL AND date_echeance > NOW() THEN date_echeance + ($2 || ' days')::INTERVAL ELSE date_echeance END,
+           date_modification = NOW()
+         WHERE id = $1`,
+        [chantierId, nbJours]
+      );
+      // Missions en attente re-synchronisées (jamais les démarrées)
+      await pool.query(
+        `UPDATE ordres_de_mission SET date_declenchement = date_declenchement + ($2 || ' days')::INTERVAL
+         WHERE chantier_id = $1 AND statut = 'en_attente' AND date_declenchement IS NOT NULL AND date_declenchement > NOW()`,
+        [chantierId, nbJours]
+      );
+
+      const { rows: reposRows } = await pool.query(
+        `INSERT INTO repos_chantier (chantier_id, equipe_id, missions, jours_prevus, date_fin_prevue, motif, cree_par)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [chantierId, equipe_id, JSON.stringify(snaps), nbJours, finPrevue, motif || null, req.user?.userId || null]
+      );
+
+      logger.info('Repos chantier démarré', {
+        chantierId, equipe: equipe.nom, jours: nbJours, missionsMisesEnPause: missions.length,
+      });
+      eventBus.emit('repos_chantier', {
+        action: 'demarre', reposId: reposRows[0].id,
+        chantierId, chantierNom: chantier.nom_chantier,
+        equipeId: equipe_id, equipeNom: equipe.nom, jours: nbJours,
+        message: `😴 Repos ${nbJours}j — ${equipe.nom} sur "${chantier.nom_chantier}"`,
+      });
+
+      res.status(201).json({
+        ok: true, repos_id: reposRows[0].id, fin_prevue: finPrevue,
+        missions_mises_en_pause: missions.length,
+        message: `😴 « ${equipe.nom} » en repos ${nbJours} jour${nbJours > 1 ? 's' : ''} sur « ${chantier.nom_chantier} ». Planning décalé de ${nbJours}j.`,
+      });
+    } catch (err: any) {
+      logger.error('Erreur démarrage repos chantier', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // GET /api/admin/chantiers/:id/repos — repos actifs + historique
+  router.get('/chantiers/:id/repos', async (req, res) => {
+    try {
+      await sweepReposExpires(pool);
+      const { rows } = await pool.query(
+        `SELECT rc.id, rc.chantier_id, rc.equipe_id, e.nom AS equipe_nom, e.type::text AS equipe_type,
+                rc.missions, rc.jours_prevus,
+                TO_CHAR(rc.date_debut,'YYYY-MM-DD HH24:MI') AS date_debut,
+                TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS date_fin_prevue,
+                TO_CHAR(rc.date_fin_effective,'YYYY-MM-DD HH24:MI') AS date_fin_effective,
+                rc.statut, rc.motif,
+                CASE WHEN rc.statut = 'actif' AND rc.date_fin_prevue > NOW()
+                  THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
+                  ELSE 0 END AS jours_restants
+         FROM repos_chantier rc
+         JOIN equipes e ON e.id = rc.equipe_id
+         WHERE rc.chantier_id = $1
+         ORDER BY (rc.statut = 'actif') DESC, rc.date_creation DESC`,
+        [req.params.id]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // DELETE /api/admin/chantiers/:id/repos/:reposId — arrêter le repos (recalage auto)
+  router.delete('/chantiers/:id/repos/:reposId', async (req, res) => {
+    try {
+      const { id: chantierId, reposId } = req.params;
+      const { rows } = await pool.query(
+        `SELECT rc.*, c.nom_chantier, e.nom AS equipe_nom
+         FROM repos_chantier rc
+         JOIN chantiers c ON c.id = rc.chantier_id
+         JOIN equipes e ON e.id = rc.equipe_id
+         WHERE rc.id = $1 AND rc.chantier_id = $2 AND rc.statut = 'actif'`,
+        [reposId, chantierId]
+      );
+      if (rows.length === 0) return res.status(404).json({ erreur: 'Repos actif introuvable.' });
+      const repos = rows[0];
+      const missions = (typeof repos.missions === 'string' ? JSON.parse(repos.missions) : repos.missions) || [];
+
+      // Recalage : on retire les jours RESTANTS du planning (pas les écoulés)
+      const restants = joursRestants(repos.date_fin_prevue);
+      if (restants > 0) {
+        await pool.query(
+          `UPDATE chantiers SET
+             date_debut_mecanique = CASE WHEN date_debut_mecanique IS NOT NULL AND date_debut_mecanique > NOW() THEN date_debut_mecanique - ($2 || ' days')::INTERVAL ELSE date_debut_mecanique END,
+             date_debut_electrique = CASE WHEN date_debut_electrique IS NOT NULL AND date_debut_electrique > NOW() THEN date_debut_electrique - ($2 || ' days')::INTERVAL ELSE date_debut_electrique END,
+             date_debut_verification = CASE WHEN date_debut_verification IS NOT NULL AND date_debut_verification > NOW() THEN date_debut_verification - ($2 || ' days')::INTERVAL ELSE date_debut_verification END,
+             date_echeance = CASE WHEN date_echeance IS NOT NULL AND date_echeance > NOW() THEN date_echeance - ($2 || ' days')::INTERVAL ELSE date_echeance END,
+             date_modification = NOW()
+           WHERE id = $1`,
+          [chantierId, restants]
+        );
+        await pool.query(
+          `UPDATE ordres_de_mission SET date_declenchement = date_declenchement - ($2 || ' days')::INTERVAL
+           WHERE chantier_id = $1 AND statut = 'en_attente' AND date_declenchement IS NOT NULL AND date_declenchement > NOW()`,
+          [chantierId, restants]
+        );
+      }
+
+      await cloturerRepos(pool, reposId, missions, true);
+
+      logger.info('Repos chantier arrêté', { reposId, chantierId, joursRetires: restants });
+      eventBus.emit('repos_chantier', {
+        action: 'arrete', reposId,
+        chantierId, chantierNom: repos.nom_chantier,
+        equipeId: repos.equipe_id, equipeNom: repos.equipe_nom,
+        message: `▶️ Repos arrêté — ${repos.equipe_nom} reprend sur "${repos.nom_chantier}"`,
+      });
+
+      res.json({
+        ok: true,
+        message: `▶️ Repos de « ${repos.equipe_nom} » arrêté. Planning recalé de -${restants}j. Missions reprises.`,
+      });
+    } catch (err: any) {
+      logger.error('Erreur arrêt repos chantier', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // ─── RÉASSIGNER UNE ÉQUIPE À UN CHANTIER ─────────────────────────
   router.patch('/chantiers/:id/reassign', async (req: any, res) => {
     try {
@@ -417,6 +605,12 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
       // Allow EN_REPOS teams only with force override
       if (nouvelleEquipe.statut_equipe === 'EN_REPOS' && !force) {
         return res.status(400).json({ erreur: 'Cette équipe est en repos. Utilisez force=true pour forcer l\'assignation.' });
+      }
+
+      // Garde repos-chantier : impossible d'assigner une équipe en repos ciblé sur ce chantier
+      const gardeRepos = await reposActif(pool, req.params.id, equipe_id);
+      if (gardeRepos.actif) {
+        return res.status(409).json({ erreur: `« ${nouvelleEquipe.nom} » est en repos sur ce chantier. Arrêtez le repos d'abord.` });
       }
 
       // Trouver la mission active pour ce chantier (tous statuts actifs)

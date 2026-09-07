@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
+import { reposActif } from '../services/repos-chantier.service';
 import * as bcrypt from 'bcryptjs';
 
 /**
@@ -352,6 +353,14 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       // Allow EN_REPOS teams only with force override
       if (newEquipe.statut_equipe === 'EN_REPOS' && !force) {
         return res.status(400).json({ erreur: 'Cette équipe est en repos. Utilisez force=true pour forcer l\'assignation.' });
+      }
+
+      // Garde repos-chantier : équipe en repos ciblé sur ce chantier ?
+      if (mission.chantier_id) {
+        const gardeRepos = await reposActif(pool, mission.chantier_id, newEquipeId);
+        if (gardeRepos.actif) {
+          return res.status(409).json({ erreur: `« ${newEquipe.nom} » est en repos sur ce chantier. Arrêtez le repos d'abord.` });
+        }
       }
 
       await pool.query(

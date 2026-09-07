@@ -204,11 +204,19 @@ app.get('/api/chantiers', async (_req, res) => {
        ),
        active_mission AS (
          SELECT DISTINCT ON (om.chantier_id)
-           om.chantier_id, e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut
+           om.chantier_id, om.equipe_id AS equipe_actuelle_id,
+           e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
          WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause','bloque','termine')
          ORDER BY om.chantier_id, om.date_creation DESC
+       ),
+       repos_actifs AS (
+         SELECT chantier_id,
+                COUNT(*)::INT AS nb_repos_actifs,
+                MAX(date_fin_prevue) AS repos_fin_max
+         FROM repos_chantier WHERE statut = 'actif'
+         GROUP BY chantier_id
        )
        SELECT c.id, c.reference_commande_erp AS ref, c.nom_chantier AS nom, c.statut,
               c.client_nom, c.complexite, c.dxf_url AS dxf, c.pdf_url AS pdf,
@@ -221,8 +229,14 @@ app.get('/api/chantiers', async (_req, res) => {
               COALESCE(ms.bloquee, 0) AS bloquee,
               COALESCE(ms.terminee, 0) AS terminee,
               COALESCE(am.equipe_actuelle, 'Aucune équipe') AS equipe_actuelle,
+              am.equipe_actuelle_id,
               am.phase_actuelle,
               am.mission_statut,
+              COALESCE(ra.nb_repos_actifs, 0) AS nb_repos_actifs,
+              TO_CHAR(ra.repos_fin_max,'YYYY-MM-DD HH24:MI') AS repos_fin_max,
+              CASE WHEN ra.repos_fin_max IS NOT NULL AND ra.repos_fin_max > NOW()
+                THEN CEIL(EXTRACT(EPOCH FROM ra.repos_fin_max - NOW()) / 86400)::INT
+                ELSE 0 END AS jours_repos_restants,
               TO_CHAR(c.date_creation,'YYYY-MM-DD HH24:MI') AS date_creation,
               TO_CHAR(c.date_echeance,'YYYY-MM-DD') AS date_echeance,
               TO_CHAR(c.date_debut_mecanique,'YYYY-MM-DD"T"HH24:MI') AS date_debut_mecanique,
@@ -231,6 +245,7 @@ app.get('/api/chantiers', async (_req, res) => {
        FROM chantiers c
        LEFT JOIN mission_stats ms ON ms.chantier_id = c.id
        LEFT JOIN active_mission am ON am.chantier_id = c.id
+       LEFT JOIN repos_actifs ra ON ra.chantier_id = c.id
        ORDER BY c.date_creation DESC`
     );
     res.json(rows);
@@ -799,6 +814,7 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
 
     const missionsRes = await pool.query(
       `SELECT om.id, om.phase, om.statut, om.duree_estimee_jours,
+              om.equipe_id,
               TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
               TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
               TO_CHAR(om.date_fin_effectif,'YYYY-MM-DD HH24:MI') AS date_fin,
@@ -808,13 +824,21 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
                    THEN EXTRACT(DAY FROM om.date_fin_effectif - om.date_debut_effectif) - om.duree_estimee_jours
                    ELSE NULL END AS retard_jours,
               cl.etapes AS checklist_etapes,
-              cl.complete AS checklist_complete
+              cl.complete AS checklist_complete,
+              rc.id AS repos_id,
+              rc.jours_prevus AS repos_jours_prevus,
+              TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS repos_fin_prevue,
+              CASE WHEN rc.id IS NOT NULL AND rc.date_fin_prevue > NOW()
+                THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
+                ELSE 0 END AS repos_jours_restants
        FROM ordres_de_mission om
        LEFT JOIN equipes e ON e.id = om.equipe_id
        LEFT JOIN LATERAL (
          SELECT etapes, complete FROM checklists_phases cp
          WHERE cp.mission_id = om.id ORDER BY cp.date_mise_a_jour DESC LIMIT 1
        ) cl ON true
+       LEFT JOIN repos_chantier rc ON rc.chantier_id = om.chantier_id
+         AND rc.equipe_id = om.equipe_id AND rc.statut = 'actif'
        WHERE om.chantier_id = $1 ORDER BY om.date_creation`, [req.params.id]
     );
 
@@ -862,7 +886,29 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
       return { ...m, progression, etapeActuelle, etapeSuivante, etapePrecedente, sousTacheActuelle };
     });
 
-    res.json({ chantier, missions });
+    // Repos actifs sur ce chantier (toutes équipes) — pour la section repos du détail
+    let repos: any[] = [];
+    try {
+      const reposRes = await pool.query(
+        `SELECT rc.id, rc.equipe_id, e.nom AS equipe_nom, e.type::text AS equipe_type,
+                rc.jours_prevus,
+                TO_CHAR(rc.date_debut,'YYYY-MM-DD HH24:MI') AS date_debut,
+                TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS date_fin_prevue,
+                TO_CHAR(rc.date_fin_effective,'YYYY-MM-DD HH24:MI') AS date_fin_effective,
+                rc.statut, rc.motif,
+                CASE WHEN rc.statut = 'actif' AND rc.date_fin_prevue > NOW()
+                  THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
+                  ELSE 0 END AS jours_restants
+         FROM repos_chantier rc
+         JOIN equipes e ON e.id = rc.equipe_id
+         WHERE rc.chantier_id = $1
+         ORDER BY (rc.statut = 'actif') DESC, rc.date_creation DESC`,
+        [req.params.id]
+      );
+      repos = reposRes.rows;
+    } catch (_) { /* table absente avant migration v23 — non bloquant */ }
+
+    res.json({ chantier, missions, repos });
   } catch (err: any) {
     res.status(500).json({ erreur: err.message });
   }
@@ -1023,9 +1069,30 @@ $v20$ LANGUAGE plpgsql`);
     // v22 : sortie auto GPS (pointage unique) — colonne source sur le journal
     await pool.query(`ALTER TABLE journal_pointage_gps ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manuel'`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_journal_mission_recent ON journal_pointage_gps (ordre_mission_id, horodatage DESC)`);
+    // v23 : repos par équipe depuis la page chantier
+    await pool.query(`CREATE TABLE IF NOT EXISTS repos_chantier (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        chantier_id UUID NOT NULL REFERENCES chantiers(id) ON DELETE CASCADE,
+        equipe_id UUID NOT NULL REFERENCES equipes(id) ON DELETE CASCADE,
+        missions JSONB NOT NULL DEFAULT '[]',
+        jours_prevus INTEGER NOT NULL DEFAULT 7,
+        date_debut TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        date_fin_prevue TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days',
+        date_fin_effective TIMESTAMPTZ NULL,
+        statut TEXT NOT NULL DEFAULT 'actif',
+        motif TEXT NULL,
+        cree_par UUID REFERENCES utilisateurs(id) ON DELETE SET NULL,
+        date_creation TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        date_modification TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_repos_chantier_actif
+      ON repos_chantier (chantier_id, equipe_id) WHERE statut = 'actif'`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_repos_chantier_equipe
+      ON repos_chantier (equipe_id, statut, date_fin_prevue)`);
     logger.info('Migration v20 OK — planning par phase actif');
     logger.info('Migration v21 OK — réception auto à la fin de vérification');
     logger.info('Migration v22 OK — sortie auto GPS');
+    logger.info('Migration v23 OK — repos par équipe sur chantier');
   } catch (e: any) {
     logger.error('Migration v20 échouée (non bloquant)', { erreur: e.message });
   }

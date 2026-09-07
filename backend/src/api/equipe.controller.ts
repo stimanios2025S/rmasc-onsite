@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
 import { Pool } from 'pg';
+import { sweepReposExpires } from '../services/repos-chantier.service';
 
 export function creerEquipeRouter(pool: Pool): Router {
   const router = Router();
@@ -10,17 +11,36 @@ export function creerEquipeRouter(pool: Pool): Router {
       const { equipe_id } = req.query;
       if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
 
-      // Repos expiré → libération automatique (le compteur du portail
-      // worker dit "Disponible maintenant" mais le statut restait EN_REPOS
-      // car personne ne le remettait à DISPONIBLE à la date prévue).
-      await pool.query(
-        `UPDATE equipes
-         SET statut_equipe = 'DISPONIBLE', date_modification = NOW()
-         WHERE id = $1 AND statut_equipe = 'EN_REPOS'
-           AND disponible_a_partir_de IS NOT NULL
-           AND disponible_a_partir_de <= NOW()`,
+      // Repos-chantier : clôturer les repos expirés (missions reprises,
+      // équipes libérées) AVANT toute logique de statut.
+      try { await sweepReposExpires(pool, equipe_id as string); } catch (_) { /* non bloquant */ }
+
+      // Repos-chantier actif ? → l'équipe reste EN_REPOS jusqu'à la fin
+      // prévue (même si disponible_a_partir_de a été écrasé entre-temps).
+      const reposHold = await pool.query(
+        `SELECT MAX(date_fin_prevue) AS fin FROM repos_chantier
+         WHERE equipe_id = $1 AND statut = 'actif'`,
         [equipe_id]
       );
+      if (reposHold.rows[0]?.fin) {
+        await pool.query(
+          `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = $2,
+                  date_modification = NOW() WHERE id = $1`,
+          [equipe_id, reposHold.rows[0].fin]
+        );
+      } else {
+        // Repos expiré → libération automatique (le compteur du portail
+        // worker dit "Disponible maintenant" mais le statut restait EN_REPOS
+        // car personne ne le remettait à DISPONIBLE à la date prévue).
+        await pool.query(
+          `UPDATE equipes
+           SET statut_equipe = 'DISPONIBLE', date_modification = NOW()
+           WHERE id = $1 AND statut_equipe = 'EN_REPOS'
+             AND disponible_a_partir_de IS NOT NULL
+             AND disponible_a_partir_de <= NOW()`,
+          [equipe_id]
+        );
+      }
 
       const { rows } = await pool.query(
         `SELECT id, nom, type, statut_equipe,

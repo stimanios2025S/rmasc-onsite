@@ -8,12 +8,21 @@ export interface ChecklistEtape {
   subtasks?: { label: string; done: boolean }[];
 }
 
+export interface ReposChantier {
+  id: string; chantier_id: string; equipe_id: string; equipe_nom: string; equipe_type?: string;
+  jours_prevus: number; date_debut: string; date_fin_prevue: string; date_fin_effective?: string | null;
+  statut: string; motif?: string | null; jours_restants: number;
+  repos_id?: string | null; repos_jours_prevus?: number | null;
+  repos_fin_prevue?: string | null; repos_jours_restants?: number;
+}
 export interface ChantierData {
   id: string; ref: string; nom: string; statut: string; client_nom: string;
   lat?: number | null; lng?: number | null; missions: number; en_cours: number; date_creation: string;
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
-  equipe_actuelle?: string; phase_actuelle?: string; mission_statut?: string; adresse?: string;
+  equipe_actuelle?: string; equipe_actuelle_id?: string | null;
+  phase_actuelle?: string; mission_statut?: string; adresse?: string;
+  nb_repos_actifs?: number; repos_fin_max?: string | null; jours_repos_restants?: number;
   checklist_etapes?: ChecklistEtape[] | string | null;
   checklist_complete?: boolean | null;
   date_echeance?: string | null;
@@ -171,6 +180,20 @@ export async function reassignerEquipe(chantierId: string, equipeId: string, for
     method: 'PATCH',
     body: JSON.stringify({ equipe_id: equipeId, force }),
   });
+}
+
+// ─── REPOS CHANTIER (repos ciblé par équipe) ───────────────────────
+export async function fetchReposChantier(chantierId: string): Promise<ReposChantier[]> {
+  return apiFetch(`/admin/chantiers/${chantierId}/repos`);
+}
+export async function demarrerReposChantier(chantierId: string, equipeId: string, jours: number, motif?: string): Promise<{ ok: boolean; message: string; fin_prevue?: string }> {
+  return apiFetch(`/admin/chantiers/${chantierId}/repos`, {
+    method: 'POST',
+    body: JSON.stringify({ equipe_id: equipeId, jours, motif: motif || undefined }),
+  });
+}
+export async function arreterReposChantier(chantierId: string, reposId: string): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/admin/chantiers/${chantierId}/repos/${reposId}`, { method: 'DELETE' });
 }
 
 // ─── CANCEL BLOCAGE ───────────────────────────────────────────────

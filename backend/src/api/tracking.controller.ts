@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
+import { reposActif } from '../services/repos-chantier.service';
 import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../config/checklists';
 
 /**
@@ -234,6 +235,21 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         logger.info(`Pause débutée`, { equipeId, type: type || 'pause' });
         res.status(201).json(rows[0]);
       } else {
+        // Garde repos-chantier : une mission mise en_pause par un repos
+        // ne peut pas être reprise côté worker — seul l'admin la relance.
+        if (missionId) {
+          const mRes = await pool.query(
+            `SELECT om.chantier_id, om.equipe_id, c.nom_chantier
+             FROM ordres_de_mission om JOIN chantiers c ON c.id = om.chantier_id
+             WHERE om.id = $1`, [missionId]
+          );
+          if (mRes.rows.length > 0) {
+            const garde = await reposActif(pool, mRes.rows[0].chantier_id, mRes.rows[0].equipe_id || equipeId);
+            if (garde.actif) {
+              return res.status(409).json({ erreur: `⏸ Équipe en repos sur « ${mRes.rows[0].nom_chantier} ». Reprise par l'admin uniquement.` });
+            }
+          }
+        }
         // Fin de pause
         const { rows } = await pool.query(
           `UPDATE pauses_journee SET date_fin = NOW()
