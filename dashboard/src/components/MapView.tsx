@@ -57,9 +57,11 @@ function calcProgress(c: ChantierData) {
 /* ── Recherche d'adresse type Google Maps (Nominatim, gratuit sans clé) ── */
 export interface LieuRecherche { lat: number; lng: number; nom: string; adresse: string; }
 
+export interface PoiLieu { lat: number; lng: number; nom: string; categorie: string; }
+
 const LeafletMap = React.memo(function LeafletMap({
-  chantiers, filtre, teamPositions, lieuRecherche
-}: { chantiers: ChantierData[]; filtre: FiltreType; teamPositions?: TeamPosition[]; lieuRecherche?: LieuRecherche | null }) {
+  chantiers, filtre, teamPositions, lieuRecherche, showPois
+}: { chantiers: ChantierData[]; filtre: FiltreType; teamPositions?: TeamPosition[]; lieuRecherche?: LieuRecherche | null; showPois: boolean }) {
   const [mapReady, setMapReady] = React.useState(false);
   const mapRef = React.useRef<HTMLDivElement>(null);
   const instanceRef = React.useRef<any>(null);
@@ -67,6 +69,8 @@ const LeafletMap = React.memo(function LeafletMap({
   const teamMarkersRef = React.useRef<any[]>([]);
   const trailsRef = React.useRef<any[]>([]);
   const searchMarkerRef = React.useRef<any>(null);
+  const poiMarkersRef = React.useRef<any[]>([]);
+  const poiCacheRef = React.useRef<Map<string, PoiLieu[]>>(new Map());
 
   const filtered = useMemo(() => {
     if (filtre === 'tous') return chantiers;
@@ -327,6 +331,81 @@ const LeafletMap = React.memo(function LeafletMap({
     map.flyTo([lieuRecherche.lat, lieuRecherche.lng], 15, { duration: 1.2 });
   }, [lieuRecherche, mapReady]);
 
+  // ── Calque POI : commerces / usines / hôtels autour de la vue (données OSM réelles) ──
+  React.useEffect(() => {
+    if (!mapReady || !instanceRef.current) return;
+    const map = instanceRef.current;
+    const L = (window as any).L;
+    if (!L) return;
+
+    function effacerPois() {
+      poiMarkersRef.current.forEach((m: any) => map.removeLayer(m));
+      poiMarkersRef.current = [];
+    }
+    if (!showPois) { effacerPois(); return; }
+
+    let annule = false;
+    async function chargerPois() {
+      try {
+        const b = map.getBounds();
+        const s = b.getSouth().toFixed(3), w = b.getWest().toFixed(3);
+        const n = b.getNorth().toFixed(3), e = b.getEast().toFixed(3);
+        // Ne charger qu'à zoom suffisant (sinon trop de résultats)
+        if (map.getZoom() < 12) { if (!annule) effacerPois(); return; }
+        const cle = `${s},${w},${n},${e}`;
+        let pois = poiCacheRef.current.get(cle);
+        if (!pois) {
+          const req = `[out:json][timeout:15];(node["shop"](${s},${w},${n},${e});node["amenity"~"^(restaurant|cafe|fast_food|hotel|fuel|pharmacy|bank|hospital|school)$"](${s},${w},${n},${e});node["craft"](${s},${w},${n},${e});node["office"="company"](${s},${w},${n},${e});way["shop"](${s},${w},${n},${e});way["amenity"~"^(restaurant|cafe|fast_food|hotel|fuel|pharmacy|bank|hospital)$"](${s},${w},${n},${e});way["man_made"="works"](${s},${w},${n},${e});way["industrial"](${s},${w},${n},${e});relation["man_made"="works"](${s},${w},${n},${e}););out center tags 80;`;
+          const res = await fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'data=' + encodeURIComponent(req),
+          });
+          const data = await res.json();
+          const ICONE: Record<string, string> = {
+            shop: '🏪', restaurant: '🍽️', cafe: '☕', fast_food: '🍔', hotel: '🏨',
+            fuel: '⛽', pharmacy: '💊', bank: '🏦', hospital: '🏥', school: '🏫',
+            company: '🏢', works: '🏭', industrial: '🏭', craft: '🔨',
+          };
+          pois = ((data && data.elements) || []).slice(0, 80).map((el: any) => {
+            const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
+            const tags = el.tags || {};
+            const nom = tags.name || tags.shop || tags.amenity || tags.craft || 'Sans nom';
+            const cat = tags.shop || tags.amenity || tags.craft || (tags.office === 'company' ? 'company' : tags.man_made) || tags.industrial || 'lieu';
+            return { lat, lng, nom, categorie: cat, icone: ICONE[tags.shop] || ICONE[tags.amenity] || ICONE[tags.craft] || (tags.man_made === 'works' || tags.industrial ? '🏭' : tags.office === 'company' ? '🏢' : '📍') };
+          }).filter((p: any) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+          poiCacheRef.current.set(cle, pois as PoiLieu[]);
+          if (poiCacheRef.current.size > 12) {
+            const premiere = poiCacheRef.current.keys().next().value;
+            if (premiere) poiCacheRef.current.delete(premiere);
+          }
+        }
+        if (annule) return;
+        effacerPois();
+        (pois || []).forEach((p: any) => {
+          const icon = L.divIcon({
+            className: '',
+            iconSize: [26, 26],
+            iconAnchor: [13, 13],
+            popupAnchor: [0, -14],
+            html: `<div style="width:26px;height:26px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.25);border:2px solid #e2e8f0">${p.icone || '📍'}</div>`,
+          });
+          const marker = L.marker([p.lat, p.lng], { icon })
+            .addTo(map)
+            .bindPopup(`<div style="font-family:inherit;min-width:160px">
+                <div style="font-weight:700;font-size:12.5px;color:#1e293b">${p.icone || '📍'} ${p.nom}</div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px">${p.categorie}</div>
+              </div>`);
+          poiMarkersRef.current.push(marker);
+        });
+      } catch { /* Overpass indispo — silencieux */ }
+    }
+
+    chargerPois();
+    map.on('moveend', chargerPois);
+    return () => { annule = true; map.off('moveend', chargerPois); };
+  }, [showPois, mapReady, filtered]);
+
   // Resize handler
   React.useEffect(() => {
     if (!mapReady || !instanceRef.current) return;
@@ -343,6 +422,7 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoResult, setGeoResult] = useState<string | null>(null);
   const [showTeams, setShowTeams] = useState(true);
+  const [showPois, setShowPois] = useState(false);
   // ── Recherche d'adresse type Google Maps ──
   const [recherche, setRecherche] = useState('');
   const [suggestions, setSuggestions] = useState<LieuRecherche[]>([]);
@@ -503,6 +583,13 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
               🚗 {teamPositions.length} équipe(s) GPS {showTeams ? 'ON' : 'OFF'}
             </button>
           )}
+          <button
+            onClick={() => setShowPois(v => !v)}
+            className={`map-team-toggle ${showPois ? 'map-team-toggle--active' : ''}`}
+            title="Afficher commerces, usines, hôtels… autour de la vue (zoom 12+)"
+          >
+            🏪 Commerces / Usines {showPois ? 'ON' : 'OFF'}
+          </button>
         </div>
 
         {/* Summary Stats */}
@@ -599,7 +686,10 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
       </div>
 
       {/* ── Map ── */}
-      <LeafletMap chantiers={chantiers} filtre={filtre} teamPositions={visibleTeams} lieuRecherche={lieuRecherche} />
+      {showPois && (
+        <div className="map-poi-hint">🏪 Zoomez (niveau 12+) puis déplacez la carte — commerces, usines et hôtels autour de la vue s'affichent.</div>
+      )}
+      <LeafletMap chantiers={chantiers} filtre={filtre} teamPositions={visibleTeams} lieuRecherche={lieuRecherche} showPois={showPois} />
 
       {/* ── Legend ── */}
       <div className="map-view__legend">
