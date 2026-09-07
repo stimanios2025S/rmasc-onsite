@@ -49,9 +49,10 @@ export default function TrackingMap({ chantier, positions }: Props) {
 
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      // OpenStreetMap standard — gratuit, sans clé API (CARTO exige une clé depuis 2024)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '© OpenStreetMap © CARTO',
+        attribution: '© OpenStreetMap',
       }).addTo(map);
 
       instanceRef.current = map;
