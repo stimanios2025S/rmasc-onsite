@@ -106,26 +106,58 @@ export class PlaceAgentService {
 
     function ajouter(l: LieuTrouve) {
       if (!Number.isFinite(l.lat) || !Number.isFinite(l.lng)) return;
+      // Filtre pertinence : "usine rmasc" ne doit JAMAIS rendre "Bouira ville"
+      const score = pertinent(l.nom, l.adresse);
+      if (score <= 0) return;
       const cle = `${l.lat.toFixed(5)},${l.lng.toFixed(5)}`;
       if (vus.has(cle) || lieux.length >= 8) return;
       vus.add(cle);
+      scores.set(cle, score);
       lieux.push(l);
+    }
+    function trier() {
+      lieux.sort((a, b) =>
+        (scores.get(`${b.lat.toFixed(5)},${b.lng.toFixed(5)}`) || 0) -
+        (scores.get(`${a.lat.toFixed(5)},${a.lng.toFixed(5)}`) || 0));
     }
 
     if (qn.length < 3) return { lieux, quotaGoogleRestant };
 
-    // Requêtes élargies : "usine rmasc bouira" → ["usine rmasc bouira", "rmasc bouira", "rmasc"]
+    // Requêtes élargies : "usine rmasc bouira" → ["usine rmasc bouira", "rmasc bouira", "rmasc", "bouira"]
+    // Dédupliquées, sans répétition de ville. Le 1er mot fort ("rmasc") est OBLIGATOIRE
+    // dans chaque résultat gardé — sinon on rendait "Bouira ville" pour "usine rmasc".
     const tokens = qn.split(' ').filter(t => t.length > 1);
     const motsFort = tokens.filter(t => !STOPWORDS.has(t));
-    const variantes: string[] = [q];
-    const ville = tokens.length > 1 ? tokens[tokens.length - 1] : '';
-    if (motsFort.length > 0 && motsFort.length < tokens.length) {
-      variantes.push(ville && !STOPWORDS.has(ville)
-        ? `${motsFort.join(' ')} ${ville}`.trim()
-        : motsFort.join(' '));
-      if (motsFort.length > 1) variantes.push(motsFort[0]);
+    const variantes: string[] = [];
+    function pousserVariante(v: string) {
+      const propre = v.trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (propre.length >= 2 && !variantes.includes(propre)) variantes.push(propre);
     }
-    if (ville && !variantes.includes(ville) && variantes.length < 3) variantes.push(ville);
+    pousserVariante(q);
+    if (motsFort.length > 0) {
+      pousserVariante(motsFort.join(' '));
+      for (const m of motsFort) pousserVariante(m);
+    }
+    const variantesRecherche = variantes.slice(0, 4);
+    // Mot distinctif obligatoire : le 1er mot fort tapé ("rmasc" dans "usine rmasc")
+    const distinctif = (motsFort.length > 0 ? motsFort[0] : tokens[0] || '').toLowerCase();
+    function sansAccents(s: string): string {
+      return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+    const distinctifN = sansAccents(distinctif);
+    function pertinent(nom: string, adresse: string): number {
+      if (!distinctifN || distinctifN.length < 2) return 1; // requête trop vague : on garde
+      const combo = sansAccents(`${nom} ${adresse}`);
+      if (!combo.includes(distinctifN)) return 0; // rejeté : pas le bon lieu (ex: ville au lieu de l'usine)
+      let score = 10;
+      if (sansAccents(nom).includes(distinctifN)) score += 10;
+      for (const m of motsFort.slice(1)) {
+        const mn = sansAccents(m);
+        if (mn.length >= 2 && combo.includes(mn)) score += 3;
+      }
+      return score;
+    }
+    const scores = new Map<string, number>();
 
     async function chercherNominatim(requete: string, limite: number): Promise<void> {
       for (const scope of ['dz', '']) {
@@ -149,11 +181,11 @@ export class PlaceAgentService {
       }
     }
 
-    // 1) MÉMOIRE — lieux déjà appris : requête entière PUIS mots forts
-    // ("usine rmasc" attrape "RMASC" même si le nom exact diffère)
+    // 1) MÉMOIRE — d'abord le mot distinctif ("rmasc" attrape "USINE RMASC" mémorisée)
     try {
-      const cles = [qn, ...variantes.slice(1).map(v => v.toLowerCase())].slice(0, 3);
-      for (const cle of cles) {
+      const cles = distinctifN && distinctifN.length >= 2 ? [distinctifN] : [qn];
+      if (qn !== cles[0]) cles.push(qn);
+      for (const cle of cles.slice(0, 2)) {
         const { rows } = await this.pool.query(
           `SELECT nom, adresse, ST_Y(coordonnees::geometry) AS lat, ST_X(coordonnees::geometry) AS lng
            FROM lieux_connus
@@ -168,18 +200,21 @@ export class PlaceAgentService {
       }
     } catch { /* table créée par migration v24 */ }
     if (lieux.length >= 4) {
+      trier();
       await this.log(q, 'memoire', lieux.length);
       return { lieux, quotaGoogleRestant };
     }
 
-    // 2a) Nominatim — chaque variante (requête entière + mots forts)
-    for (const v of variantes) {
+    // 2a) Nominatim — requête entière PUIS variantes (pas l'inverse : la ville seule polluait tout)
+    for (const v of variantesRecherche) {
       if (lieux.length >= 8) break;
       await chercherNominatim(v, 5);
+      // Si la requête entière a déjà donné un résultat pertinent, on s'arrête (pas de pollution ville)
+      if (lieux.length > 0 && v === variantesRecherche[0]) break;
     }
 
-    // 2b) Photon — chaque variante (noms commerciaux)
-    for (const v of variantes) {
+    // 2b) Photon — variantes (noms commerciaux)
+    for (const v of variantesRecherche) {
       if (lieux.length >= 8) break;
       try {
         const data = await fetchJson(
@@ -200,12 +235,10 @@ export class PlaceAgentService {
       } catch { /* variante suivante */ }
     }
 
-    // 2c) Overpass — mots forts cherchés dans name/brand/operator (attrape "RMASC" même taggé usine)
-    for (const v of variantes) {
-      if (lieux.length >= 8) break;
+    // 2c) Overpass — MOT DISTINCTIF SEUL dans name/brand/operator (jamais la ville seule)
+    if (distinctifN.length >= 2) {
       try {
-        const echappe = v.replace(/"/g, '').replace(/\\/g, '').slice(0, 40);
-        if (echappe.length < 2) continue;
+        const echappe = distinctif.replace(/"/g, '').replace(/\\/g, '').slice(0, 40);
         const req = `[out:json][timeout:12];(node["name"~"${echappe}",i](24.0,-9.0,37.5,12.0);way["name"~"${echappe}",i](24.0,-9.0,37.5,12.0);node["brand"~"${echappe}",i](24.0,-9.0,37.5,12.0);way["brand"~"${echappe}",i](24.0,-9.0,37.5,12.0);node["operator"~"${echappe}",i](24.0,-9.0,37.5,12.0););out center 6;`;
         const data = await fetchJson('https://overpass-api.de/api/interpreter', {
           method: 'POST',
@@ -305,6 +338,7 @@ export class PlaceAgentService {
         : `Quota Google du jour épuisé (3/3). Collez le lien Google Maps du lieu ici pour le point exact gratuit, ou réessayez demain.`;
       return { lieux, quotaGoogleRestant: restant, conseilGoogle };
     }
+    trier();
     await this.log(q, 'libre', lieux.length);
     return { lieux, quotaGoogleRestant };
   }
