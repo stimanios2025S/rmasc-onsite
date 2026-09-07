@@ -358,20 +358,78 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
     if (query.trim().length < 3) { setSuggestions([]); setSuggestOpen(false); return; }
     setRechercheLoading(true);
     debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=dz&limit=6&accept-language=fr&addressdetails=1`,
-          { headers: { Accept: 'application/json' } }
-        );
-        const data = await res.json();
-        const lieux: LieuRecherche[] = (Array.isArray(data) ? data : []).map((d: any) => ({
-          lat: parseFloat(d.lat), lng: parseFloat(d.lon),
-          nom: (d.display_name || '').split(',').slice(0, 2).join(','),
-          adresse: d.display_name || '',
-        }));
-        setSuggestions(lieux);
-        setSuggestOpen(true);
-      } catch { setSuggestions([]); }
+      const q = query.trim();
+      const lieux: LieuRecherche[] = [];
+      const vus = new Set<string>();
+      function ajouter(l: LieuRecherche) {
+        const cle = `${l.lat.toFixed(5)},${l.lng.toFixed(5)}`;
+        if (vus.has(cle) || lieux.length >= 8) return;
+        vus.add(cle);
+        lieux.push(l);
+      }
+      // 1. Nominatim — adresses + lieux nommés (Algérie d'abord, puis monde)
+      for (const scope of ['dz', '']) {
+        try {
+          const url = scope
+            ? `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=dz&limit=6&accept-language=fr&addressdetails=1`
+            : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' Algérie')}&limit=4&accept-language=fr&addressdetails=1`;
+          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          const data = await res.json();
+          (Array.isArray(data) ? data : []).forEach((d: any) => {
+            const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            ajouter({
+              lat, lng,
+              nom: (d.display_name || '').split(',').slice(0, 2).join(','),
+              adresse: d.display_name || '',
+            });
+          });
+          if (lieux.length >= 4) break;
+        } catch { /* passer au suivant */ }
+      }
+      // 2. Photon (search alsacien, meilleur sur noms commerciaux) — vue Algérie
+      if (lieux.length < 8) {
+        try {
+          const res = await fetch(
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=fr&lat=28.0&lon=2.0&location_bias_scale=0.6`,
+            { headers: { Accept: 'application/json' } }
+          );
+          const data = await res.json();
+          ((data && data.features) || []).forEach((f: any) => {
+            const c = f.geometry && f.geometry.coordinates;
+            if (!c || !Number.isFinite(c[1]) || !Number.isFinite(c[0])) return;
+            const p = f.properties || {};
+            const nom = p.name || p.street || '';
+            if (!nom) return;
+            const ville = p.city || p.state || p.country || '';
+            ajouter({ lat: c[1], lng: c[0], nom, adresse: [nom, ville].filter(Boolean).join(', ') });
+          });
+        } catch { /* ignorer */ }
+      }
+      // 3. Overpass — commerces / usines / hôtels nommés (ex: factory, shop, motel introuvables ci-dessus)
+      if (lieux.length < 8) {
+        try {
+          const echappe = q.replace(/"/g, '');
+          const req = `[out:json][timeout:12];(node["name"~"${echappe}",i](24.0,-9.0,37.5,12.0);way["name"~"${echappe}",i](24.0,-9.0,37.5,12.0););out center 6;`;
+          const res = await fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'data=' + encodeURIComponent(req),
+          });
+          const data = await res.json();
+          ((data && data.elements) || []).forEach((el: any) => {
+            const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const tags = el.tags || {};
+            const nom = tags.name || '';
+            if (!nom) return;
+            const detail = tags['addr:city'] || tags.shop || tags.amenity || tags.industrial || '';
+            ajouter({ lat, lng, nom, adresse: [nom, detail].filter(Boolean).join(' — ') });
+          });
+        } catch { /* ignorer */ }
+      }
+      setSuggestions(lieux);
+      setSuggestOpen(true);
       setRechercheLoading(false);
     }, 450);
   }
