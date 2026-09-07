@@ -2,15 +2,19 @@ import { Pool } from 'pg';
 import { LoggerService } from '../notifications/logger.service';
 import { DryRunProvider } from './providers/dryrun.provider';
 import { TwilioProvider } from './providers/twilio.provider';
+import { EvolutionProvider } from './providers/evolution.provider';
 import { normaliserTelephone } from './providers/sms.provider.types';
 import type { SmsProvider } from './providers/sms.provider.types';
 
 export interface SmsConfig {
-  fournisseur: 'twilio' | 'twilio-whatsapp' | 'simulation';
+  fournisseur: 'twilio' | 'twilio-whatsapp' | 'evolution' | 'simulation';
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioFromNumber?: string;
   twilioContentSid?: string;
+  evolutionApiUrl?: string;
+  evolutionApiKey?: string;
+  evolutionInstance?: string;
 }
 
 export interface ProgrammerSmsParams {
@@ -39,6 +43,9 @@ export class SmsService {
       const mode = config.fournisseur === 'twilio-whatsapp' ? 'whatsapp' : 'sms';
       this.provider = new TwilioProvider(config.twilioAccountSid, config.twilioAuthToken, config.twilioFromNumber, mode, config.twilioContentSid);
       this.logger.info(`SMS: provider Twilio ${mode.toUpperCase()} ACTIF`);
+    } else if (config.fournisseur === 'evolution' && config.evolutionApiUrl && config.evolutionApiKey && config.evolutionInstance) {
+      this.provider = new EvolutionProvider(config.evolutionApiUrl, config.evolutionApiKey, config.evolutionInstance);
+      this.logger.info('WhatsApp: provider Evolution API ACTIF (gratuit, instance ' + config.evolutionInstance + ')');
     } else {
       this.provider = new DryRunProvider(this.logger);
       this.logger.warn('SMS: provider SIMULATION (Twilio non configuré) — aucun SMS réel envoyé');

@@ -80,7 +80,10 @@ export default function PageSms() {
   }, {});
 
   const smsFiltres = filtre === 'TOUS' ? sms : sms.filter(s => s.type_evenement === filtre);
-  const actif = fournisseur === 'twilio';
+  const actif = fournisseur === 'twilio' || fournisseur === 'evolution-whatsapp';
+  const labelFournisseur = fournisseur === 'evolution-whatsapp'
+    ? 'Evolution WhatsApp ACTIF — envoi réel gratuit'
+    : fournisseur === 'twilio' ? 'Twilio ACTIF — envoi réel' : 'Mode Simulation (provider à configurer)';
 
   return (
     <AdminShell title="SMS Automatiques" subtitle="Relais de mission → propriétaire, équipes et clients" onRefresh={charger}>
@@ -89,7 +92,7 @@ export default function PageSms() {
             actif ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}>
             {actif ? <ShieldCheck size={16} /> : <TriangleAlert size={16} />}
-            {actif ? 'Twilio ACTIF — envoi réel' : 'Mode Simulation (Twilio à configurer)'}
+            {actif ? labelFournisseur : 'Mode Simulation (provider à configurer)'}
           </div>
           <button
             onClick={charger}
