@@ -475,16 +475,7 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
         if (typeof data.quotaGoogleRestant === 'number') setQuotaGoogle(data.quotaGoogleRestant);
         setConseilGoogle(typeof data.conseilGoogle === 'string' ? data.conseilGoogle : null);
         setSuggestions(lieux.slice(0, 8));
-        // Mémoriser le 1er résultat auto pour l'apprentissage (silencieux)
-        if (lieux.length > 0) {
-          try {
-            await fetch('/api/places/memoriser', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ nom: q.slice(0, 200), adresse: lieux[0].adresse || '', lat: lieux[0].lat, lng: lieux[0].lng, source: 'agent:' + (lieux[0].source || 'libre') }),
-            });
-          } catch { /* mémoire non bloquante */ }
-        }
+        // PAS de mémorisation auto ici : seul ton clic mémorise (sinon l'agent apprend les faux lieux)
       } catch {
         setSuggestions([]);
         setConseilGoogle(null);
