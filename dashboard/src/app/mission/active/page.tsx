@@ -123,8 +123,8 @@ export default function MissionActivePage() {
             fetch(`/api/mission/${m.id}/checklist`),
             fetch(`/api/mission/${m.id}`),
           ]);
-          if (pRes.ok) setPointages(await pRes.json());
-          if (cRes.ok) setChecklist(await cRes.json());
+          if (pRes.ok) { const pj = await pRes.json(); setPointages(Array.isArray(pj) ? pj : []); }
+          if (cRes.ok) { const cd: any = await cRes.json(); if (cd && !Array.isArray(cd.etapes)) cd.etapes = []; setChecklist(cd); }
           if (dRes.ok) setMissionDetail(await dRes.json());
         }
       } else if (missionRef.current) {
@@ -163,11 +163,14 @@ export default function MissionActivePage() {
     return () => clearInterval(iv);
   }, [loadMission]);
 
-  // Countdown repos
+  // Countdown repos — libère l'affichage dès que la date est passée.
+  // (Le backend libère aussi le statut en base : GET /api/equipe/status)
   useEffect(() => {
     if (equipeStatus?.statut_equipe !== 'EN_REPOS') { setJustFinishedDay(false); return; }
     const tick = () => {
-      const dispo = new Date(equipeStatus.disponible_a_partir_de).getTime();
+      const raw = equipeStatus.disponible_a_partir_de;
+      const dispo = raw ? new Date(raw).getTime() : NaN;
+      if (!Number.isFinite(dispo)) { setCompteur('—'); return; }
       const diff = dispo - Date.now();
       if (diff <= 0) { setCompteur('Disponible maintenant !'); setJustFinishedDay(false); loadMission(); return; }
       setCompteur(`${Math.floor(diff / 86400000)}j ${Math.floor((diff % 86400000) / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`);
@@ -176,6 +179,24 @@ export default function MissionActivePage() {
     const iv = setInterval(tick, 10000);
     return () => clearInterval(iv);
   }, [equipeStatus, loadMission]);
+
+  // Sortie auto GPS persistée (rechargement page) : dernier pointage = départ auto
+  // → le worker doit repointer même s'il rouvre le portail.
+  // IMPORTANT : ce hook reste AVANT les `return` conditionnels ci-dessous.
+  // Un hook placé après un return change le nombre de hooks selon l'écran affiché
+  // (repos vs mission) et fait crasher le portail ("client-side exception").
+  useEffect(() => {
+    if (!Array.isArray(pointages) || pointages.length === 0 || !mission) return;
+    const dernier = [...pointages].sort((a: any, b: any) =>
+      new Date(b.horodatage).getTime() - new Date(a.horodatage).getTime())[0] as any;
+    if (dernier?.type === 'depart' && (dernier as any).source === 'auto_gps'
+        && (mission.statut === 'en_cours' || mission.statut === 'en_route')) {
+      setSortieAuto(true);
+      setEstArriveChantier(false);
+    } else if (dernier?.type === 'arrivee') {
+      setSortieAuto(false);
+    }
+  }, [pointages, mission?.id, mission?.statut]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ═══ POINTAGE GPS ═══ */
   const handlePointage = async (type: 'arrivee' | 'depart') => {
@@ -849,7 +870,11 @@ export default function MissionActivePage() {
 
   // ═══ STATE B: EN REPOS ═══
   if (equipeStatus?.statut_equipe === 'EN_REPOS') {
-    const isDispoNow = compteur === 'Disponible maintenant !';
+    // Repos expiré mais statut pas encore rafraîchi → traiter comme dispo.
+    // (Le backend libère aussi automatiquement, voir GET /api/equipe/status)
+    const dispoMs = equipeStatus?.disponible_a_partir_de ? new Date(equipeStatus.disponible_a_partir_de).getTime() : NaN;
+    const reposExpire = Number.isFinite(dispoMs) && dispoMs <= Date.now();
+    const isDispoNow = compteur === 'Disponible maintenant !' || reposExpire;
     return (
       <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
         <div className="flex flex-col items-center justify-center py-14 px-6">
@@ -918,24 +943,12 @@ export default function MissionActivePage() {
   }
 
   // ═══ STATE A: MISSION ACTIVE ═══
-  const estArrive = pointages.some(p => p.type === 'arrivee');
-  const estDepart = pointages.some(p => p.type === 'depart');
-  // Sortie auto GPS persistée (rechargement page) : dernier pointage = départ auto
-  // → le worker doit repointer même s'il rouvre le portail
-  useEffect(() => {
-    if (pointages.length === 0 || !mission) return;
-    const dernier = [...pointages].sort((a: any, b: any) =>
-      new Date(b.horodatage).getTime() - new Date(a.horodatage).getTime())[0] as any;
-    if (dernier?.type === 'depart' && (dernier as any).source === 'auto_gps'
-        && (mission.statut === 'en_cours' || mission.statut === 'en_route')) {
-      setSortieAuto(true);
-      setEstArriveChantier(false);
-    } else if (dernier?.type === 'arrivee') {
-      setSortieAuto(false);
-    }
-  }, [pointages, mission?.id, mission?.statut]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pointagesListe = Array.isArray(pointages) ? pointages : [];
+  const estArrive = pointagesListe.some(p => p.type === 'arrivee');
+  const estDepart = pointagesListe.some(p => p.type === 'depart');
   const aBloque = mission?.statut === 'bloque';
-  const progression = checklist ? Math.round((checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100) : 0;
+  const progression = checklist && Array.isArray(checklist.etapes) && checklist.etapes.length > 0
+    ? Math.round((checklist.etapes.filter(e => e.done).length / checklist.etapes.length) * 100) : 0;
 
   // New lifecycle states — derive from BOTH local state AND fetched data (pointages/mission status)
   // so the UI stays correct even after page reload
@@ -1170,9 +1183,9 @@ export default function MissionActivePage() {
       ) : (
       <>
       {/* ═══ CARTE ═══ */}
-      {mission && (
+      {mission && Number.isFinite(mission.latitude) && Number.isFinite(mission.longitude) && (
         <div className="mx-4 mb-4">
-          <TechnicianMap chantierLat={mission.latitude} chantierLng={mission.longitude} rayon={mission.rayon_geofencing} nomChantier={mission.chantier} />
+          <TechnicianMap chantierLat={mission.latitude} chantierLng={mission.longitude} rayon={mission.rayon_geofencing || 50} nomChantier={mission.chantier} />
         </div>
       )}
 
@@ -1277,7 +1290,7 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ CHECKLIST (only after arrival confirmed) ═══ */}
-      {checklist && (isArrive || isEnCours) && (
+      {checklist && Array.isArray(checklist.etapes) && (isArrive || isEnCours) && (
         <div className="mx-4 mb-4 bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-stone-400 uppercase">📋 {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
@@ -1556,11 +1569,11 @@ export default function MissionActivePage() {
       )}
 
       {/* ═══ JOURNAL POINTAGES ═══ */}
-      {pointages.length > 0 && (
+      {pointagesListe.length > 0 && (
         <div className="mx-4 mb-4">
           <h3 className="text-xs font-semibold text-stone-400 uppercase mb-2 px-1">Journal des Pointages</h3>
           <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm divide-y divide-stone-50">
-            {pointages.map(p => {
+            {pointagesListe.map(p => {
               const estAuto = (p as any).source === 'auto_gps';
               return (
               <div key={p.id} className="px-5 py-3.5 flex items-center gap-3">

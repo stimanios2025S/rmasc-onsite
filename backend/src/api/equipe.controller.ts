@@ -10,6 +10,18 @@ export function creerEquipeRouter(pool: Pool): Router {
       const { equipe_id } = req.query;
       if (!equipe_id) return res.status(400).json({ erreur: 'equipe_id requis.' });
 
+      // Repos expiré → libération automatique (le compteur du portail
+      // worker dit "Disponible maintenant" mais le statut restait EN_REPOS
+      // car personne ne le remettait à DISPONIBLE à la date prévue).
+      await pool.query(
+        `UPDATE equipes
+         SET statut_equipe = 'DISPONIBLE', date_modification = NOW()
+         WHERE id = $1 AND statut_equipe = 'EN_REPOS'
+           AND disponible_a_partir_de IS NOT NULL
+           AND disponible_a_partir_de <= NOW()`,
+        [equipe_id]
+      );
+
       const { rows } = await pool.query(
         `SELECT id, nom, type, statut_equipe,
                 TO_CHAR(disponible_a_partir_de,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS disponible_a_partir_de
