@@ -54,16 +54,19 @@ function calcProgress(c: ChantierData) {
   return Math.round(((c.terminee || 0) / total) * 100);
 }
 
-/* ── Carte Leaflet dynamique ── */
+/* ── Recherche d'adresse type Google Maps (Nominatim, gratuit sans clé) ── */
+export interface LieuRecherche { lat: number; lng: number; nom: string; adresse: string; }
+
 const LeafletMap = React.memo(function LeafletMap({
-  chantiers, filtre, teamPositions
-}: { chantiers: ChantierData[]; filtre: FiltreType; teamPositions?: TeamPosition[] }) {
+  chantiers, filtre, teamPositions, lieuRecherche
+}: { chantiers: ChantierData[]; filtre: FiltreType; teamPositions?: TeamPosition[]; lieuRecherche?: LieuRecherche | null }) {
   const [mapReady, setMapReady] = React.useState(false);
   const mapRef = React.useRef<HTMLDivElement>(null);
   const instanceRef = React.useRef<any>(null);
   const markersRef = React.useRef<any[]>([]);
   const teamMarkersRef = React.useRef<any[]>([]);
   const trailsRef = React.useRef<any[]>([]);
+  const searchMarkerRef = React.useRef<any>(null);
 
   const filtered = useMemo(() => {
     if (filtre === 'tous') return chantiers;
@@ -295,6 +298,35 @@ const LeafletMap = React.memo(function LeafletMap({
     });
   }, [teamPositions, mapReady, chantiers]);
 
+  // Lieu recherché (type Google Maps) : pin violet + zoom
+  React.useEffect(() => {
+    if (!mapReady || !instanceRef.current) return;
+    const map = instanceRef.current;
+    const L = (window as any).L;
+    if (!L) return;
+    if (searchMarkerRef.current) { map.removeLayer(searchMarkerRef.current); searchMarkerRef.current = null; }
+    if (!lieuRecherche) return;
+    const icon = L.divIcon({
+      className: '',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      popupAnchor: [0, -38],
+      html: `<div style="position:relative;display:flex;align-items:center;justify-content:center">
+        <div style="width:36px;height:36px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);border-radius:50% 50% 50% 4px;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(139,92,246,0.5);border:3px solid white">
+          <span style="font-size:16px;transform:rotate(45deg)">🔍</span>
+        </div></div>`,
+    });
+    const marker = L.marker([lieuRecherche.lat, lieuRecherche.lng], { icon, zIndexOffset: 1000 })
+      .addTo(map)
+      .bindPopup(`<div style="font-family:inherit;min-width:200px">
+          <div style="font-weight:700;font-size:13px;color:#1e293b">🔍 ${lieuRecherche.nom}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">${lieuRecherche.adresse}</div>
+        </div>`)
+      .openPopup();
+    searchMarkerRef.current = marker;
+    map.flyTo([lieuRecherche.lat, lieuRecherche.lng], 15, { duration: 1.2 });
+  }, [lieuRecherche, mapReady]);
+
   // Resize handler
   React.useEffect(() => {
     if (!mapReady || !instanceRef.current) return;
@@ -311,6 +343,54 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoResult, setGeoResult] = useState<string | null>(null);
   const [showTeams, setShowTeams] = useState(true);
+  // ── Recherche d'adresse type Google Maps ──
+  const [recherche, setRecherche] = useState('');
+  const [suggestions, setSuggestions] = useState<LieuRecherche[]>([]);
+  const [rechercheLoading, setRechercheLoading] = useState(false);
+  const [lieuRecherche, setLieuRecherche] = useState<LieuRecherche | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchBoxRef = React.useRef<HTMLDivElement>(null);
+
+  function chercherAdresse(query: string) {
+    setRecherche(query);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.trim().length < 3) { setSuggestions([]); setSuggestOpen(false); return; }
+    setRechercheLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=dz&limit=6&accept-language=fr&addressdetails=1`,
+          { headers: { Accept: 'application/json' } }
+        );
+        const data = await res.json();
+        const lieux: LieuRecherche[] = (Array.isArray(data) ? data : []).map((d: any) => ({
+          lat: parseFloat(d.lat), lng: parseFloat(d.lon),
+          nom: (d.display_name || '').split(',').slice(0, 2).join(','),
+          adresse: d.display_name || '',
+        }));
+        setSuggestions(lieux);
+        setSuggestOpen(true);
+      } catch { setSuggestions([]); }
+      setRechercheLoading(false);
+    }, 450);
+  }
+
+  function choisirLieu(l: LieuRecherche) {
+    setLieuRecherche(l);
+    setRecherche(l.nom);
+    setSuggestions([]);
+    setSuggestOpen(false);
+  }
+
+  // Fermer les suggestions au clic extérieur
+  React.useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) setSuggestOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
 
   const stats = useMemo(() => ({
     total: chantiers.length,
@@ -402,6 +482,48 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
           </div>
         )}
 
+        {/* ── Recherche d'adresse type Google Maps (Algérie) ── */}
+        <div className="map-search" ref={searchBoxRef}>
+          <div className="map-search__box">
+            <span className="map-search__icon">🔍</span>
+            <input
+              value={recherche}
+              onChange={e => chercherAdresse(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setSuggestOpen(true); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && suggestions.length > 0) choisirLieu(suggestions[0]);
+                if (e.key === 'Escape') { setSuggestOpen(false); }
+              }}
+              placeholder="Rechercher un lieu en Algérie… (ex: AB Park Bouira, promotion Alger)"
+              className="map-search__input"
+            />
+            {rechercheLoading && <span className="map-search__spinner">⏳</span>}
+            {recherche && !rechercheLoading && (
+              <button
+                onClick={() => { setRecherche(''); setSuggestions([]); setLieuRecherche(null); setSuggestOpen(false); }}
+                className="map-search__clear" title="Effacer">✕</button>
+            )}
+          </div>
+          {suggestOpen && suggestions.length > 0 && (
+            <div className="map-search__results">
+              {suggestions.map((s, i) => (
+                <button key={i} onClick={() => choisirLieu(s)} className="map-search__item">
+                  <span className="map-search__pin">📍</span>
+                  <span className="map-search__texts">
+                    <span className="map-search__nom">{s.nom}</span>
+                    <span className="map-search__adresse">{s.adresse}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {suggestOpen && !rechercheLoading && recherche.trim().length >= 3 && suggestions.length === 0 && (
+            <div className="map-search__results">
+              <div className="map-search__empty">Aucun lieu trouvé — essayez un autre nom.</div>
+            </div>
+          )}
+        </div>
+
         {/* Filter Buttons */}
         <div className="map-view__filters">
           {filtres.map(f => (
@@ -419,7 +541,7 @@ export default function MapView({ chantiers, teamPositions = [] }: Props) {
       </div>
 
       {/* ── Map ── */}
-      <LeafletMap chantiers={chantiers} filtre={filtre} teamPositions={visibleTeams} />
+      <LeafletMap chantiers={chantiers} filtre={filtre} teamPositions={visibleTeams} lieuRecherche={lieuRecherche} />
 
       {/* ── Legend ── */}
       <div className="map-view__legend">
