@@ -3,11 +3,12 @@ import { LoggerService } from '../notifications/logger.service';
 import { DryRunProvider } from './providers/dryrun.provider';
 import { TwilioProvider } from './providers/twilio.provider';
 import { EvolutionProvider } from './providers/evolution.provider';
+import { WahaProvider } from './providers/waha.provider';
 import { normaliserTelephone } from './providers/sms.provider.types';
 import type { SmsProvider } from './providers/sms.provider.types';
 
 export interface SmsConfig {
-  fournisseur: 'twilio' | 'twilio-whatsapp' | 'evolution' | 'simulation';
+  fournisseur: 'twilio' | 'twilio-whatsapp' | 'evolution' | 'waha' | 'simulation';
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioFromNumber?: string;
@@ -15,6 +16,9 @@ export interface SmsConfig {
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstance?: string;
+  wahaApiUrl?: string;
+  wahaApiKey?: string;
+  wahaSession?: string;
 }
 
 export interface ProgrammerSmsParams {
@@ -46,6 +50,9 @@ export class SmsService {
     } else if (config.fournisseur === 'evolution' && config.evolutionApiUrl && config.evolutionApiKey && config.evolutionInstance) {
       this.provider = new EvolutionProvider(config.evolutionApiUrl, config.evolutionApiKey, config.evolutionInstance);
       this.logger.info('WhatsApp: provider Evolution API ACTIF (gratuit, instance ' + config.evolutionInstance + ')');
+    } else if (config.fournisseur === 'waha' && config.wahaApiUrl && config.wahaApiKey) {
+      this.provider = new WahaProvider(config.wahaApiUrl, config.wahaApiKey, config.wahaSession || 'default');
+      this.logger.info('WhatsApp: provider WAHA ACTIF (gratuit, session ' + (config.wahaSession || 'default') + ')');
     } else {
       this.provider = new DryRunProvider(this.logger);
       this.logger.warn('SMS: provider SIMULATION (Twilio non configuré) — aucun SMS réel envoyé');

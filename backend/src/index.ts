@@ -42,6 +42,7 @@ const {
   JWT_SECRET = 'rmasc-onsite-jwt-secret',
   SMS_PROVIDER = 'simulation', TWILIO_ACCOUNT_SID = '', TWILIO_AUTH_TOKEN = '', TWILIO_FROM_NUMBER = '', TWILIO_CONTENT_SID = '',
   EVOLUTION_API_URL = '', EVOLUTION_API_KEY = '', EVOLUTION_INSTANCE = 'rmasc-onsite',
+  WAHA_API_URL = '', WAHA_API_KEY = '', WAHA_SESSION = 'default',
   PORT = '4000',
 } = process.env;
 
@@ -57,7 +58,7 @@ const notifier = new NotificationService(logger, { erpWebhookUrl: ERP_WEBHOOK_UR
 
 // ─── Service SMS (file d'attente + worker d'envoi) ────────────────────
 const smsService = new SmsService(pool, logger, {
-  fournisseur: (SMS_PROVIDER === 'twilio' ? 'twilio' : SMS_PROVIDER === 'twilio-whatsapp' ? 'twilio-whatsapp' : SMS_PROVIDER === 'evolution' ? 'evolution' : 'simulation'),
+  fournisseur: (SMS_PROVIDER === 'twilio' ? 'twilio' : SMS_PROVIDER === 'twilio-whatsapp' ? 'twilio-whatsapp' : SMS_PROVIDER === 'evolution' ? 'evolution' : SMS_PROVIDER === 'waha' ? 'waha' : 'simulation'),
   twilioAccountSid: TWILIO_ACCOUNT_SID,
   twilioAuthToken: TWILIO_AUTH_TOKEN,
   twilioFromNumber: TWILIO_FROM_NUMBER,
@@ -65,6 +66,9 @@ const smsService = new SmsService(pool, logger, {
   evolutionApiUrl: EVOLUTION_API_URL,
   evolutionApiKey: EVOLUTION_API_KEY,
   evolutionInstance: EVOLUTION_INSTANCE,
+  wahaApiUrl: WAHA_API_URL,
+  wahaApiKey: WAHA_API_KEY,
+  wahaSession: WAHA_SESSION,
 });
 export { smsService };
 

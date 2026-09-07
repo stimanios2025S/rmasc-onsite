@@ -80,8 +80,10 @@ export default function PageSms() {
   }, {});
 
   const smsFiltres = filtre === 'TOUS' ? sms : sms.filter(s => s.type_evenement === filtre);
-  const actif = fournisseur === 'twilio' || fournisseur === 'evolution-whatsapp';
-  const labelFournisseur = fournisseur === 'evolution-whatsapp'
+  const actif = fournisseur === 'twilio' || fournisseur === 'evolution-whatsapp' || fournisseur === 'waha-whatsapp';
+  const labelFournisseur = fournisseur === 'waha-whatsapp'
+    ? 'WAHA WhatsApp ACTIF — envoi réel gratuit'
+    : fournisseur === 'evolution-whatsapp'
     ? 'Evolution WhatsApp ACTIF — envoi réel gratuit'
     : fournisseur === 'twilio' ? 'Twilio ACTIF — envoi réel' : 'Mode Simulation (provider à configurer)';
 
