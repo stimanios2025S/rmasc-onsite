@@ -76,16 +76,84 @@ export class SmsService {
 
   // ─── Messages types ───────────────────────────────────────────────────
 
-  /** SMS à l'équipe quand une mission lui est assignée. */
+  /** WhatsApp pro à l'équipe quand une mission lui est assignée.
+   *  Deadline (date admin) + client + chantier + adresse + lien GPS cliquable + lien appli.
+   *  Les champs manquants sont enrichis auto depuis la BDD (chantiers + mission). */
   async notifierNouvelleMission(args: {
     equipeId: string; equipeNom: string; telephone: string | null;
     phase: string; chantierNom: string; adresse?: string | null;
+    clientNom?: string | null; dateDebut?: string | null; dateEcheance?: string | null;
+    latitude?: number | null; longitude?: number | null;
+    lienAppli?: string | null;
     chantierId: string; missionId: string;
   }): Promise<void> {
+    // ── Enrichissement auto depuis BDD (si l'appelant n'a passé que chantierId) ──
+    let clientNom = args.clientNom ?? null;
+    let adresse = args.adresse ?? null;
+    let dateDebut = args.dateDebut ?? null;
+    let dateEcheance = args.dateEcheance ?? null;
+    let latitude = args.latitude ?? null;
+    let longitude = args.longitude ?? null;
+    try {
+      if (!clientNom || !adresse || !dateDebut || !dateEcheance || latitude == null || longitude == null) {
+        const { rows } = await this.pool.query(
+          `SELECT c.client_nom, c.adresse, c.date_echeance,
+                  c.date_debut_mecanique, c.date_debut_electrique, c.date_debut_verification,
+                  ST_Y(c.coordonnees::geometry) AS lat, ST_X(c.coordonnees::geometry) AS lng,
+                  om.date_declenchement AS mission_debut, om.date_echeance AS mission_fin
+           FROM chantiers c LEFT JOIN ordres_de_mission om ON om.id = $2
+           WHERE c.id = $1 LIMIT 1`,
+          [args.chantierId, args.missionId]
+        );
+        const r = rows[0];
+        if (r) {
+          if (!clientNom) clientNom = r.client_nom || null;
+          if (!adresse) adresse = r.adresse || null;
+          if (latitude == null && r.lat != null) latitude = Number(r.lat);
+          if (longitude == null && r.lng != null) longitude = Number(r.lng);
+          if (!dateEcheance) dateEcheance = r.mission_fin || r.date_echeance || null;
+          if (!dateDebut) {
+            const ph = (args.phase || '').toLowerCase();
+            dateDebut = (ph.startsWith('elec') ? r.date_debut_electrique
+              : ph.startsWith('verif') ? r.date_debut_verification
+              : r.date_debut_mecanique) || r.mission_debut || null;
+          }
+        }
+      }
+    } catch { /* enrichissement non bloquant */ }
+    const baseAppli = (process.env.PUBLIC_APP_URL || 'https://onsite.sarl-rmasc.com').replace(/\/$/, '');
+    const lienAppli = args.lienAppli || `${baseAppli}/mission/active`;
+    const fmtDate = (iso: string | null | undefined): string | null => {
+      if (!iso) return null;
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleDateString('fr-DZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const lignes: string[] = [];
+    lignes.push(`🛗 *RMASC — NOUVELLE MISSION ${args.phase.toUpperCase()}*`);
+    lignes.push(`👷 Équipe : ${args.equipeNom}`);
+    lignes.push('');
+    const debut = fmtDate(dateDebut);
+    const fin = fmtDate(dateEcheance);
+    if (debut && fin) lignes.push(`📅 Démarrage : ${debut} → Échéance : ${fin}`);
+    else if (debut) lignes.push(`📅 Démarrage : ${debut}`);
+    else if (fin) lignes.push(`📅 Échéance : ${fin}`);
+    if (clientNom) lignes.push(`🤝 Client : ${clientNom}`);
+    lignes.push(`🏗️ Chantier : ${args.chantierNom}`);
+    lignes.push(`📍 Adresse : ${adresse || 'à confirmer sur place'}`);
+    if (latitude != null && longitude != null
+        && Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude))) {
+      const lat = Number(latitude), lng = Number(longitude);
+      lignes.push(`🗺️ Position : https://www.google.com/maps?q=${lat},${lng}`);
+      lignes.push(`(cliquez pour ouvrir dans Maps et naviguer)`);
+    }
+    lignes.push('');
+    lignes.push(`📱 Votre ordre de mission : ${lienAppli}`);
+    lignes.push(`— El Ghani, RMASC`);
     await this.programmer({
       telephone: args.telephone,
       destinataireNom: args.equipeNom,
-      contenu: `🛗 RMASC: NOUVELLE MISSION ${args.phase.toUpperCase()} — "${args.chantierNom}" à ${args.adresse || 'adresse à confirmer'}. Équipe ${args.equipeNom}. Ordre disponible dans votre app. — El Ghani`,
+      contenu: lignes.join('\n'),
       typeEvenement: 'mission_assignee',
       chantierId: args.chantierId, missionId: args.missionId, equipeId: args.equipeId,
     });
