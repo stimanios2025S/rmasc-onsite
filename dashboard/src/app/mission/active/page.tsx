@@ -1684,7 +1684,7 @@ export default function MissionActivePage() {
       {/* ═══ MODAL BLOCAGE ═══ */}
       {showBlocage && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 sm:m-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-4 sm:p-6 sm:m-4 max-h-[92dvh] overflow-y-auto shadow-2xl pb-safe">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-bold text-lg text-stone-800">Signaler un Blocage</h3>
               <button onClick={() => { setShowBlocage(false); setBlocagePhoto(null); setBlocagePhotoPreview(null); }} className="text-stone-300"><X size={20} /></button>
@@ -1760,7 +1760,7 @@ export default function MissionActivePage() {
       {/* ═══ MODAL RETARD ═══ */}
       {retardModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 sm:m-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-4 sm:p-6 sm:m-4 max-h-[92dvh] overflow-y-auto shadow-2xl pb-safe">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-bold text-lg text-stone-800">⏰ Signaler un Retard</h3>
               <button onClick={() => setRetardModal(false)} className="text-stone-300"><X size={20} /></button>
@@ -1802,7 +1802,7 @@ export default function MissionActivePage() {
       {/* ═══ MODAL CHOIX PHASE — Continuer ou Transférer ═══ */}
       {showPhaseChoice && mission && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 sm:m-4 shadow-2xl">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-4 sm:p-6 sm:m-4 shadow-2xl pb-safe max-h-[92dvh] overflow-y-auto">
             <div className="text-center mb-6">
               <div className={`w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
                 isMecanique ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-orange-500 to-orange-600'

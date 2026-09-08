@@ -239,8 +239,8 @@ export default function MagasiniersPage() {
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="p-6">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92dvh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-bold text-stone-800">{editingId ? 'Modifier' : 'Nouveau magasinier'}</h2>
                 <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-400 hover:text-stone-600">
@@ -249,7 +249,7 @@ export default function MagasiniersPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold text-stone-500 mb-1 block">Prénom *</label>
                     <input value={form.prenom} onChange={e => setForm({...form, prenom: e.target.value})}

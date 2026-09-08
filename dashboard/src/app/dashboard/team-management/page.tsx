@@ -299,7 +299,7 @@ export default function TeamManagementPage() {
       </button>}>
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg flex items-center gap-2 ${
+        <div className={`fixed top-[max(env(safe-area-inset-top),12px)] left-3 right-3 sm:left-auto sm:right-4 z-50 px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg flex items-center gap-2 break-words ${
           toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
         }`}>
           {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -713,7 +713,7 @@ export default function TeamManagementPage() {
       {/* ═══ MODAL: CRÉER UNE ÉQUIPE ═══ */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg p-6 sm:m-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg p-4 sm:p-6 sm:m-4 max-h-[92dvh] overflow-y-auto shadow-2xl pb-safe">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -813,7 +813,7 @@ export default function TeamManagementPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Couleur</label>
                       <div className="flex gap-1.5 flex-wrap">

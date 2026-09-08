@@ -144,7 +144,7 @@ export default function ParametresPage() {
         {Object.keys(config).length > 0 && (
           <div className="bg-[#f2f4f9] rounded-[24px] border border-white shadow-sm p-6">
             <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Settings size={18} /> Configuration Système</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {Object.entries(config).map(([cle, val]) => (
                 <div key={cle} className="bg-white rounded-xl p-3 border border-stone-100">
                   <p className="text-[10px] text-stone-400 uppercase font-semibold">{cle.replace(/_/g, ' ')}</p>

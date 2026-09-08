@@ -1257,8 +1257,8 @@ export default function ChantiersPage() {
       {editChantier && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setEditChantier(null); }}>
-          <div className="relative bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-8 py-5 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-stone-100">
+          <div className="relative bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[92dvh] overflow-y-auto">
+            <div className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-stone-100">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center">
                   <Building2 size={18} className="text-indigo-600" />
@@ -1270,7 +1270,7 @@ export default function ChantiersPage() {
               </div>
               <button onClick={() => setEditChantier(null)} className="text-stone-300 hover:text-stone-500"><X size={20} /></button>
             </div>
-            <div className="p-8 space-y-4">
+            <div className="p-4 sm:p-8 space-y-4">
               <div>
                 <label className="text-xs font-semibold text-stone-500 mb-1 block">Nom du chantier</label>
                 <input value={editForm.nom} onChange={e => setEditForm({ ...editForm, nom: e.target.value })}
@@ -1482,8 +1482,8 @@ export default function ChantiersPage() {
       {detailChantier && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setDetailChantier(null); }}>
-          <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white shrink-0">
+          <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white shrink-0">
               <div>
                 <h3 className="font-bold text-lg">{detailChantier.chantier?.nom_chantier}</h3>
                 <p className="text-white/70 text-xs font-mono">{detailChantier.chantier?.reference_commande_erp}</p>
@@ -1675,7 +1675,7 @@ export default function ChantiersPage() {
       {trackChantier && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setTrackChantier(null); }}>
-          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]">
             {/* Header */}
             <div className="shrink-0 flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-4 text-white">
               <div className="flex items-center gap-3">

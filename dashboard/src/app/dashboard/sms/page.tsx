@@ -89,8 +89,8 @@ export default function PageSms() {
 
   return (
     <AdminShell title="SMS Automatiques" subtitle="Relais de mission → propriétaire, équipes et clients" onRefresh={charger}>
-      <div className="flex items-center gap-3 mb-4">
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold shadow-sm ${
+      <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
+          <div className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl border text-[13px] sm:text-sm font-semibold shadow-sm min-w-0 ${
             actif ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}>
             {actif ? <ShieldCheck size={16} /> : <TriangleAlert size={16} />}

@@ -63,27 +63,27 @@ export default function AdminShell({
             })}
           </nav>
 
-          <div className="flex items-center gap-2 shrink-0 order-2 lg:order-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 order-2 lg:order-3">
             <button onClick={() => router.push('/dashboard/chantiers')}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Rechercher un chantier">
-              <Search size={17} />
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all shrink-0" title="Rechercher un chantier">
+              <Search size={16} />
             </button>
             <button onClick={() => router.push('/dashboard/demandes')}
-              className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Commandes">
-              <Mail size={17} />
+              className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all shrink-0" title="Commandes">
+              <Mail size={16} />
               {notifCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-400 border-2 border-white" />}
             </button>
-            <div className="w-[42px] h-[42px] rounded-xl border border-stone-200 flex items-center justify-center bg-white hover:shadow transition-all overflow-hidden" title="Notifications temps réel">
+            <div className="w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-xl border border-stone-200 flex items-center justify-center bg-white hover:shadow transition-all overflow-hidden shrink-0" title="Notifications temps réel">
               <SyncNotifications onRefresh={onRefresh} />
             </div>
             <button onClick={() => router.push('/dashboard/parametres')}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-200 to-rose-300 border-2 border-white shadow flex items-center justify-center text-[13px] font-bold text-stone-700 hover:shadow-md transition-all"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-200 to-rose-300 border-2 border-white shadow flex items-center justify-center text-[12px] sm:text-[13px] font-bold text-stone-700 hover:shadow-md transition-all shrink-0"
               title={`${user?.prenom || ''} ${user?.nom || ''} — Paramètres`}>
               {(user?.prenom?.[0] || 'E')}{(user?.nom?.[0] || 'G')}
             </button>
             <button onClick={() => { if (confirm('Se déconnecter ?')) deconnecter(); }}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:shadow transition-all" title="Déconnexion">
-              <LogOut size={16} />
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:shadow transition-all shrink-0" title="Déconnexion">
+              <LogOut size={15} />
             </button>
           </div>
         </div>

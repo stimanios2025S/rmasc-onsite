@@ -122,7 +122,7 @@ export default function IncidentsPage() {
     >
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${
+        <div className={`fixed top-[max(env(safe-area-inset-top),12px)] left-3 right-3 sm:left-auto sm:right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all break-words ${
           toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
         }`}>
           {toast.text}

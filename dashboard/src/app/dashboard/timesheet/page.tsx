@@ -327,7 +327,7 @@ function ChantierDetailPanel({ chantier, onClose }: { chantier: ChantierSearchRe
         </div>
       </div>
 
-      <div className="p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         {/* ═══ MISSIONS ═══ */}
         {c.missions.length > 0 && (
           <Section title="Missions" count={c.missions.length} icon={<FileText size={16} className="text-indigo-500" />}>

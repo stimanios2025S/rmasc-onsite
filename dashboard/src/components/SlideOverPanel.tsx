@@ -42,7 +42,7 @@ export default function SlideOverPanel({ chantier, ouvert, onFermer }: {
   const IconPhase = phase.icon;
 
   return (
-    <div className={`fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-[2000] transform transition-transform duration-300 ${ouvert ? 'translate-x-0' : 'translate-x-full'}`}>
+    <div className={`fixed inset-y-0 right-0 w-full sm:max-w-lg bg-white shadow-2xl z-[2000] transform transition-transform duration-300 ${ouvert ? 'translate-x-0' : 'translate-x-full'}`}>
       <div className="h-full flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[#E5E8F0]">
@@ -61,9 +61,9 @@ export default function SlideOverPanel({ chantier, ouvert, onFermer }: {
         </div>
 
         {/* Corps */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-safe">
           {/* Info chantier */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="bg-[#F4F6FB] rounded-xl p-4">
               <div className="flex items-center gap-2 text-[#6B7294] text-xs mb-2">
                 <MapPin size={14} /> Adresse

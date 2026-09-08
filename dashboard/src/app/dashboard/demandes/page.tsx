@@ -248,7 +248,7 @@ export default function DemandesPage() {
       {/* Modal détail */}
       {detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDetailId(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[92dvh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
             <div className={`p-4 border-b ${detail.type_demande === 'retard' ? 'bg-amber-50' : 'bg-indigo-50'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -261,7 +261,7 @@ export default function DemandesPage() {
               </div>
             </div>
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <p className="text-[10px] text-stone-400 uppercase font-medium">Équipe</p>
                   <p className="text-sm font-semibold text-stone-800">{detail.equipe_nom}</p>

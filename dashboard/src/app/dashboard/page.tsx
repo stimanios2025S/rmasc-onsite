@@ -182,36 +182,36 @@ export default function DashboardPage() {
             );
           })}
         </nav>
-        <div className="flex items-center gap-2">
-          <button className="w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Recherche">
-            <Search size={17} />
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all shrink-0" title="Recherche">
+            <Search size={16} />
           </button>
           <button onClick={() => router.push('/dashboard/demandes')}
-            className="relative w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Commandes">
-            <Mail size={17} />
+            className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all shrink-0" title="Commandes">
+            <Mail size={16} />
             {demandes.length > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-400 border-2 border-white" />}
           </button>
           <button onClick={() => router.push('/dashboard/incidents')}
-            className="relative w-11 h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all" title="Alertes">
-            <Bell size={17} />
+            className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-600 hover:shadow transition-all shrink-0" title="Alertes">
+            <Bell size={16} />
             {(groupes.bloques.length > 0) && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-400 border-2 border-white" />}
           </button>
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-amber-200 to-rose-300 border-2 border-white shadow flex items-center justify-center text-[13px] font-bold text-stone-700" title={`${user?.prenom || ''} ${user?.nom || ''}`}>
+          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-200 to-rose-300 border-2 border-white shadow flex items-center justify-center text-[12px] sm:text-[13px] font-bold text-stone-700 shrink-0" title={`${user?.prenom || ''} ${user?.nom || ''}`}>
             {(user?.prenom?.[0] || 'E')}{(user?.nom?.[0] || 'G')}
           </div>
         </div>
       </div>
 
       {/* ═══ TITLE ═══ */}
-      <h1 className="text-[26px] sm:text-[30px] font-bold tracking-tight text-stone-900 mb-4">Suivi des Chantiers</h1>
+      <h1 className="text-[22px] sm:text-[30px] font-bold tracking-tight text-stone-900 mb-4 break-words">Suivi des Chantiers</h1>
 
       {/* ═══ MAIN JOURNEY BOARD ═══ */}
-      <div className="bg-[#f2f4f9]/80 rounded-[28px] border border-white shadow-sm p-4 sm:p-6 mb-5">
+      <div className="bg-[#f2f4f9]/80 rounded-[20px] sm:rounded-[28px] border border-white shadow-sm p-3 sm:p-6 mb-5 overflow-hidden">
         {/* board header */}
         <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
-          <h2 className="text-[15px] font-bold text-stone-800">Gestion des Chantiers</h2>
+          <h2 className="text-[14px] sm:text-[15px] font-bold text-stone-800">Gestion des Chantiers</h2>
           {/* avatar stack équipes */}
-          <div className="flex items-center">
+          <div className="flex items-center overflow-x-auto max-w-full scrollbar-none">
             {equipes.slice(0, 7).map((eq, i) => (
               <div key={eq.id} className={`flex flex-col items-center ${i > 0 ? '-ml-2' : ''}`}>
                 <div className={`w-10 h-10 rounded-full border-[3px] border-[#f2f4f9] flex items-center justify-center text-[11px] font-bold shadow-sm ${AVATAR_BG[i % AVATAR_BG.length]}`} title={eq.nom}>
@@ -586,10 +586,10 @@ function ArcGauge({ label, value, pct, color, track }: { label: string; value: n
   const CIRC = Math.PI * R;
   const fill = Math.max(0, Math.min(100, pct)) / 100 * CIRC;
   return (
-    <div className="bg-white rounded-2xl p-4 flex flex-col items-center">
-      <div className="relative">
-        <span className="absolute -top-1 left-1/2 -translate-x-1/2 bg-white border border-stone-100 shadow-sm text-[11px] font-bold text-stone-600 rounded-full px-2 py-0.5">{value}</span>
-        <svg width="150" height="92" viewBox="0 0 150 92">
+    <div className="bg-white rounded-2xl p-3 sm:p-4 flex flex-col items-center min-w-0 overflow-hidden">
+      <div className="relative w-full max-w-[150px]">
+        <span className="absolute -top-1 left-1/2 -translate-x-1/2 bg-white border border-stone-100 shadow-sm text-[11px] font-bold text-stone-600 rounded-full px-2 py-0.5 z-10">{value}</span>
+        <svg viewBox="0 0 150 92" className="w-full h-auto">
           <path d={`M 11 84 A ${R} ${R} 0 0 1 139 84`} fill="none" stroke={track} strokeWidth="26" strokeLinecap="round" />
           <path d={`M 11 84 A ${R} ${R} 0 0 1 139 84`} fill="none" stroke={color} strokeWidth="26" strokeLinecap="round"
             strokeDasharray={`${fill} ${CIRC}`} />
