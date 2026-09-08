@@ -36,15 +36,15 @@ export default function AdminShell({
   const user = typeof window !== 'undefined' ? getUtilisateur() : null;
 
   return (
-    <div className="min-h-screen bg-[#e4e6ec] text-stone-900">
-      <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+    <div className="min-h-screen bg-[#e4e6ec] text-stone-900 overflow-x-clip">
+      <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pt-safe pb-safe">
         {/* ═══ TOP BAR : logo + pills + actions (identique au dashboard) ═══ */}
-        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 shrink-0" title="Accueil">
-            <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center shadow">
+        <div className="flex items-center justify-between gap-2 sm:gap-3 mb-5 flex-wrap">
+          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 shrink-0 min-w-0" title="Accueil">
+            <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center shadow shrink-0">
               <HardHat size={18} className="text-white" />
             </div>
-            <span className="text-lg font-bold tracking-tight text-stone-900">rmasc<span className="font-normal"> onsite</span></span>
+            <span className="text-base sm:text-lg font-bold tracking-tight text-stone-900 truncate">rmasc<span className="font-normal"> onsite</span></span>
           </button>
 
           {/* Pills — scroll horizontal sur petit écran / TV safe */}
@@ -90,11 +90,11 @@ export default function AdminShell({
 
         {/* ═══ TITLE ROW ═══ */}
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-          <div className="min-w-0">
-            <h1 className="text-[24px] sm:text-[30px] font-bold tracking-tight text-stone-900 leading-tight">{title}</h1>
-            {subtitle && <p className="text-[13px] text-stone-500 mt-1">{subtitle}</p>}
+          <div className="min-w-0 flex-1 basis-48">
+            <h1 className="text-[22px] sm:text-[30px] font-bold tracking-tight text-stone-900 leading-tight break-words">{title}</h1>
+            {subtitle && <p className="text-[13px] text-stone-500 mt-1 break-words">{subtitle}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+          {actions && <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto [&>a]:w-full sm:[&>a]:w-auto">{actions}</div>}
         </div>
 
         {/* ═══ CONTENT ═══ */}

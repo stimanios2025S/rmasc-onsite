@@ -211,9 +211,9 @@ export default function MapPicker({ onPositionChange, onRayonChange, initialLat 
       </div>
 
       {/* ═══ CARTE ═══ */}
-      <div className="relative rounded-2xl overflow-hidden border border-stone-200" style={{ height: 260 }}>
+      <div className="relative rounded-2xl overflow-hidden border border-stone-200 h-[240px] sm:h-[260px]">
         <div ref={mapRef} style={{ width: '100%', height: '100%', zIndex: 1 }} />
-        <div className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-md rounded-xl px-3 py-1.5 shadow-sm text-[10px] font-medium text-stone-600">
+        <div className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-md rounded-xl px-3 py-1.5 shadow-sm text-[10px] font-medium text-stone-600 max-w-[calc(100%-24px)]">
           🎯 Cliquez sur la carte pour positionner
         </div>
       </div>

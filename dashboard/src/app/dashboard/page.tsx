@@ -161,17 +161,17 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#e4e6ec] text-stone-900">
-      <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+    <div className="min-h-screen bg-[#e4e6ec] text-stone-900 overflow-x-clip">
+      <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pt-safe pb-safe">
       {/* ═══ TOP BAR : logo + pills + icon actions ═══ */}
-      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center shadow">
+      <div className="flex items-center justify-between gap-2 sm:gap-3 mb-5 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center shadow shrink-0">
             <HardHat size={18} className="text-white" />
           </div>
-          <span className="text-lg font-bold tracking-tight text-stone-900">rmasc<span className="font-normal"> onsite</span></span>
+          <span className="text-base sm:text-lg font-bold tracking-tight text-stone-900 truncate">rmasc<span className="font-normal"> onsite</span></span>
         </div>
-        <nav className="hidden md:flex items-center gap-1 bg-white/60 rounded-full p-1 border border-white">
+        <nav className="flex items-center gap-1 bg-white/60 rounded-full p-1 border border-white overflow-x-auto max-w-full scrollbar-none order-3 md:order-none w-full md:w-auto justify-start md:justify-center">
           {NAV_PILLS.map((p) => {
             const active = p.label === "Vue d'ensemble";
             return (

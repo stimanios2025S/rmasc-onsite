@@ -620,3 +620,60 @@ img, svg, iframe, video { max-width: 100%; }
 /* Ensure no body horizontal scroll */
 body { overflow-x: hidden; }
 html { overflow-x: hidden; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE PRO — Téléphone + iPhone (375–430px, notch, safe-area)
+   Un seul bloc central : AdminShell, dashboard, carte, tableaux, modales
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Hauteur réelle iPhone (barre Safari) + safe-area */
+.min-h-screen { min-height: 100dvh; }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+
+/* Évite le zoom auto iOS + highlight gris au tap */
+input, select, textarea { font-size: 16px; }
+button, a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+/* Cartes et textes longs : jamais de débordement horizontal */
+* { overflow-wrap: break-word; }
+table { border-collapse: collapse; }
+.table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-responsive table { min-width: 560px; }
+
+@media (max-width: 768px) {
+  /* ── Carte de commande : header qui s'empile, stats scroll, filtres scroll ── */
+  .map-view { margin-bottom: 20px; }
+  .map-view__header { padding: 16px 14px 12px; border-radius: 14px 14px 0 0; }
+  .map-view__title-row { flex-wrap: wrap; gap: 8px; }
+  .map-view__title { font-size: 16px; }
+  .map-view__subtitle { font-size: 11px; white-space: nowrap; }
+  .map-view__stats { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding-bottom: 4px; scrollbar-width: none; }
+  .map-view__stats::-webkit-scrollbar { display: none; }
+  .map-stat { min-width: 72px; padding: 8px 12px; flex-shrink: 0; }
+  .map-stat__value { font-size: 18px; }
+  .map-view__filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .map-view__filters::-webkit-scrollbar { display: none; }
+  .map-filter { flex-shrink: 0; font-size: 12px; padding: 6px 12px; }
+  .map-view__container { height: clamp(300px, 52dvh, 420px); min-height: 300px; border-radius: 0 0 14px 14px; }
+  .map-view__legend { font-size: 11px; gap: 10px; padding: 8px 12px; }
+  .map-search__results { max-height: 46dvh; }
+  /* Popup Leaflet : tient dans l'écran iPhone */
+  .map-popup { min-width: 0; max-width: calc(100vw - 88px); }
+  .map-popup__row { font-size: 12px; }
+  .map-popup__val { max-width: 120px; }
+  .leaflet-popup-content { margin: 10px 12px !important; max-width: calc(100vw - 96px) !important; }
+  /* Boutons carte tactiles 44px */
+  .map-team-toggle, .map-geocode-btn { min-height: 36px; }
+  /* ── Panneau notifs : plein écran utile sur téléphone ── */
+  .sync-panel { position: fixed; top: max(env(safe-area-inset-top), 12px); left: 12px; right: 12px; width: auto; max-height: 80dvh; }
+  .sync-panel-body { max-height: 60dvh; }
+  /* ── Grilles trop serrées en 2 colonnes sur 360px ── */
+  .grid-auto-fit { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 400px) {
+  /* iPhone SE / petits Android : stats et actions respirent */
+  .map-stat { min-width: 64px; padding: 7px 10px; }
+  .map-stat__label { font-size: 9px; }
+}

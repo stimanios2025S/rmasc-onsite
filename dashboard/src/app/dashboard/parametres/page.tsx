@@ -101,7 +101,7 @@ export default function ParametresPage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
             <div className="bg-white rounded-xl p-4 border border-stone-100">
               <p className="text-xs text-stone-400 font-semibold uppercase mb-1">Statut</p>
               <p className="text-emerald-600 font-semibold flex items-center gap-1.5"><span className="w-2 h-2 bg-emerald-400 rounded-full" /> Connecté</p>
@@ -116,7 +116,7 @@ export default function ParametresPage() {
         {/* Durées estimées — wired to backend */}
         <div className="bg-[#f2f4f9] rounded-[24px] border border-white shadow-sm p-6">
           <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Clock size={18} /> Durées estimées par phase</h2>
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
             {[
               { key: 'mecanique', label: 'Mécanique', color: 'text-blue-600' },
               { key: 'electrique', label: 'Électrique', color: 'text-orange-600' },
@@ -205,7 +205,7 @@ function SecuritySection() {
           <input type="password" value={mdp.current} onChange={e => setMdp({ ...mdp, current: e.target.value })}
             className="w-full px-4 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-300" placeholder="••••••••" />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div>
             <label className="text-xs text-stone-400 font-semibold mb-1 block">Nouveau mot de passe</label>
             <input type="password" value={mdp.nouveau} onChange={e => setMdp({ ...mdp, nouveau: e.target.value })}

@@ -1017,7 +1017,7 @@ export default function ChantiersPage() {
                           placeholder="Ex: Clinique Saint-Charles"
                           className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all" />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div>
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><User size={12} className="inline mr-1" />Nom du client</label>
                           <input value={form.client_nom} onChange={e => setForm({ ...form, client_nom: e.target.value })}
@@ -1031,7 +1031,7 @@ export default function ChantiersPage() {
                             style={{ fontSize: '16px' }} />
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div>
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Adresse du chantier</label>
                           <input value={form.client_adresse} onChange={e => setForm({ ...form, client_adresse: e.target.value })}
@@ -1044,7 +1044,7 @@ export default function ChantiersPage() {
                             className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div>
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Latitude *</label>
                           <input value={form.latitude} onChange={e => setForm({ ...form, latitude: e.target.value })} required
@@ -1282,7 +1282,7 @@ export default function ChantiersPage() {
                   placeholder="Ex: Bouira, Alger, Oran..."
                   className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 mb-1 block">Client</label>
                   <input value={editForm.client_nom} onChange={e => setEditForm({ ...editForm, client_nom: e.target.value })}
@@ -1298,7 +1298,7 @@ export default function ChantiersPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-xs font-semibold text-stone-500 mb-1 block">Latitude</label>
                   <input value={editForm.latitude} onChange={e => setEditForm({ ...editForm, latitude: e.target.value })}
@@ -1499,7 +1499,7 @@ export default function ChantiersPage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-2 gap-3 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
                 <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-100">
                   <p className="text-[10px] text-stone-400 uppercase font-semibold mb-1">Client</p>
                   <p className="text-sm font-medium text-stone-700">{detailChantier.chantier?.client_nom || '—'}</p>
