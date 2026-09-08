@@ -4,7 +4,7 @@ import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
 import { reposActif } from '../services/repos-chantier.service';
-import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS } from '../config/checklists';
+import { getChecklistForPhase } from '../config/checklists';
 
 /**
  * Tracking Controller — GPS en route, pointage jour, pause, transfert
@@ -590,18 +590,16 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           if (clCheck.rows.length === 0) {
             await pool.query(
               `INSERT INTO checklists_phases (mission_id, phase, etapes)
-               VALUES ($1, $2, generer_checklist($2))`,
+               VALUES ($1, $2, generer_checklist($2::text))`,
               [missionNextId, nextPhase]
             );
             logger.info('Checklist créée pour mission trigger', { missionNextId, phase: nextPhase });
           }
         } catch (clErr: any) {
           logger.error('Erreur création checklist pour mission trigger', { erreur: clErr.message, missionNextId });
-          // Fallback: manual checklist
+          // Fallback: manual checklist (v25 complète avec auto-contrôle)
           try {
-            const fallbackEtapes = nextPhase === 'electrique'
-              ? ELECTRICAL_STEPS.map(s => ({ ...s }))
-              : VERIFICATION_STEPS.map(s => ({ ...s }));
+            const fallbackEtapes = getChecklistForPhase(nextPhase).map((s: any) => ({ ...s }));
             await pool.query(
               `INSERT INTO checklists_phases (mission_id, phase, etapes)
                VALUES ($1, $2, $3)`,
@@ -641,16 +639,14 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
           try {
             await pool.query(
               `INSERT INTO checklists_phases (mission_id, phase, etapes)
-               VALUES ($1, $2, generer_checklist($2))`,
+               VALUES ($1, $2, generer_checklist($2::text))`,
               [missionNextId, nextPhase]
             );
           } catch (clErr: any) {
             logger.error('Erreur création checklist phase suivante — tentative fallback', { erreur: clErr.message, missionNextId });
             // Fallback: create checklist with hardcoded steps so the mission is never without one
             try {
-              const fallbackEtapes = nextPhase === 'electrique'
-                ? ELECTRICAL_STEPS.map(s => ({ ...s }))
-                : VERIFICATION_STEPS.map(s => ({ ...s }));
+              const fallbackEtapes = getChecklistForPhase(nextPhase).map((s: any) => ({ ...s }));
               await pool.query(
                 `INSERT INTO checklists_phases (mission_id, phase, etapes)
                  VALUES ($1, $2, $3)`,
@@ -793,7 +789,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
       try {
         const clResult = await pool.query(
           `INSERT INTO checklists_phases (mission_id, phase, etapes)
-           VALUES ($1, $2, generer_checklist($2))
+           VALUES ($1, $2, generer_checklist($2::text))
            RETURNING id, phase, etapes`,
           [newMissionId, nextPhase]
         );
@@ -811,9 +807,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         });
         // Try fallback: manual checklist insert without generer_checklist function
         try {
-          const fallbackEtapes = nextPhase === 'electrique'
-            ? ELECTRICAL_STEPS.map(s => ({ ...s }))
-            : VERIFICATION_STEPS.map(s => ({ ...s }));
+          const fallbackEtapes = getChecklistForPhase(nextPhase).map((s: any) => ({ ...s }));
           await pool.query(
             `INSERT INTO checklists_phases (mission_id, phase, etapes)
              VALUES ($1, $2, $3)`,

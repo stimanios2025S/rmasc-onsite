@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { validerCoordonnees } from '../services/geocalcul/calculs-geo';
 import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
-import { MECHANICAL_STEPS, ELECTRICAL_STEPS, VERIFICATION_STEPS, getChecklistForPhase } from '../config/checklists';
+import { getChecklistForPhase } from '../config/checklists';
 import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
@@ -381,7 +381,7 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
             try {
               const clRes = await pool.query(
                 `INSERT INTO checklists_phases (mission_id, phase, etapes)
-                 VALUES ($1, $2, generer_checklist($2))
+                 VALUES ($1, $2, generer_checklist($2::text))
                  RETURNING id, mission_id, phase, etapes, complete, date_mise_a_jour`,
                 [req.params.id, phase]
               );
@@ -392,14 +392,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
                 return res.json(row);
               }
             } catch (_) {
-              // generer_checklist failed — use hardcoded etapes
-              if (phase === 'mecanique') {
-                etapes = MECHANICAL_STEPS.map(s => ({ ...s }));
-              } else if (phase === 'electrique') {
-                etapes = ELECTRICAL_STEPS.map(s => ({ ...s }));
-              } else {
-                etapes = VERIFICATION_STEPS.map(s => ({ ...s }));
-              }
+              // generer_checklist failed — use hardcoded etapes (v25 complètes)
+              etapes = getChecklistForPhase(phase).map((s: any) => ({ ...s }));
               const fbRes = await pool.query(
                 `INSERT INTO checklists_phases (mission_id, phase, etapes)
                  VALUES ($1, $2, $3)
