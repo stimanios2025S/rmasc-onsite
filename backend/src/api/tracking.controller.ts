@@ -696,6 +696,32 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         }
       }
 
+      // ═══ v25: SNAPSHOT auto-contrôle → rapport transmis au vérificateur ═══
+      // Copie la checklist terminée (installation + "Vérifiez votre travail") dans
+      // notifications_retard avec lien rapport, pour que le vérificateur la relise.
+      try {
+        const srcCl = await pool.query(
+          `SELECT etapes FROM checklists_phases WHERE mission_id = $1 ORDER BY date_mise_a_jour DESC LIMIT 1`,
+          [missionId]
+        );
+        if (srcCl.rows.length > 0) {
+          let srcEtapes: any[] = typeof srcCl.rows[0].etapes === 'string'
+            ? JSON.parse(srcCl.rows[0].etapes) : srcCl.rows[0].etapes;
+          if (Array.isArray(srcEtapes) && srcEtapes.length > 0) {
+            const auto = srcEtapes.filter((e: any) =>
+              String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
+            const autoOk = auto.length > 0 && auto.every((e: any) =>
+              e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
+            await pool.query(
+              `INSERT INTO notifications_retard (chantier_id, mission_id, equipe_id, motif, lue)
+               VALUES ($1, $2, $3, $4, FALSE)`,
+              [m.chantier_id, missionNextId || missionId, m.equipe_id,
+               `📋 Auto-contrôle ${m.phase} de ${m.equipe_nom} sur "${m.nom_chantier}" : ${autoOk ? '✅ COMPLET' : '⚠️ PARTIEL'} — rapport : /api/mission/${missionId}/rapport-autocontrole`]
+            );
+          }
+        }
+      } catch (_) { /* snapshot non bloquant */ }
+
       // SSE broadcast
       eventBus.emit('mission_transferee', {
         missionMeca: missionId,

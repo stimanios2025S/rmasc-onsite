@@ -840,6 +840,39 @@ app.get('/api/chantiers/:id/pointages', async (req, res) => {
   }
 });
 
+// GET /api/chantiers/:id/autocontroles — rapports auto-contrôle reçus (pour le vérificateur)
+app.get('/api/chantiers/:id/autocontroles', verifierToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT om.id AS mission_id, om.phase, COALESCE(e.nom, 'Équipe') AS equipe_nom,
+              cl.etapes, TO_CHAR(cl.date_mise_a_jour,'DD/MM/YYYY HH24:MI') AS date
+       FROM ordres_de_mission om
+       LEFT JOIN equipes e ON e.id = om.equipe_id
+       LEFT JOIN checklists_phases cl ON cl.mission_id = om.id AND cl.phase = om.phase::text
+       WHERE om.chantier_id = $1 AND om.phase IN ('mecanique','electrique')
+       ORDER BY cl.date_mise_a_jour DESC`,
+      [req.params.id]
+    );
+    const out = (rows || []).map((r: any) => {
+      let etapes: any[] = [];
+      try { etapes = typeof r.etapes === 'string' ? JSON.parse(r.etapes) : (r.etapes || []); } catch (_) { etapes = []; }
+      const auto = (Array.isArray(etapes) ? etapes : []).filter((e: any) =>
+        String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
+      if (auto.length === 0) return null;
+      let total = 0, ok = 0;
+      for (const e of auto) {
+        if (Array.isArray(e.subtasks) && e.subtasks.length > 0) {
+          for (const s of e.subtasks) { total++; if (s.done) ok++; }
+        } else { total++; if (e.done) ok++; }
+      }
+      return { mission_id: r.mission_id, phase: r.phase, equipe_nom: r.equipe_nom, date: r.date, score: total > 0 ? Math.round((ok / total) * 100) : 0 };
+    }).filter(Boolean);
+    res.json(out);
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
 // GET /api/chantiers/:id/detail — détail complet (missions, fichiers, délais)
 app.get('/api/chantiers/:id/detail', async (req, res) => {
   try {

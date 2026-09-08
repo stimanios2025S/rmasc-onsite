@@ -34,6 +34,40 @@ const PHASE_GRADIENT: Record<string, string> = {
 };
 const TYPE_LABEL: Record<string, string> = { mecanique: 'Mécanique', electrique: 'Électrique', mixte: 'Vérification' };
 
+/* ─── Carte vérificateur : auto-contrôles reçus des équipes ─── */
+function VerifAutocontroleCard({ chantierId }: { chantierId: string }) {
+  const [items, setItems] = useState<any[]>([]);
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/chantiers/${chantierId}/autocontroles`);
+        if (r.ok) { const j = await r.json(); if (!stop) setItems(Array.isArray(j) ? j : []); }
+      } catch (_) { /* silencieux */ }
+    })();
+    return () => { stop = true; };
+  }, [chantierId]);
+  if (items.length === 0) return null;
+  return (
+    <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-emerald-200 shadow-sm p-5">
+      <p className="text-xs font-bold text-emerald-600 uppercase mb-1">📋 Auto-contrôles reçus des équipes</p>
+      <p className="text-[11px] text-stone-500 mb-3">Relisez le PDF de chaque équipe, puis cochez votre contrôle final ci-dessous.</p>
+      <div className="space-y-2">
+        {items.map((it: any) => (
+          <a key={it.mission_id} href={`/api/mission/${it.mission_id}/rapport-autocontrole`} target="_blank" rel="noreferrer"
+            className="flex items-center justify-between gap-3 border border-stone-100 rounded-2xl px-4 py-3 hover:bg-emerald-50/50 transition-colors">
+            <div>
+              <p className="text-sm font-bold text-stone-700">Phase {it.phase === 'mecanique' ? 'Mécanique' : 'Électrique'} — {it.equipe_nom}</p>
+              <p className="text-[11px] text-stone-400">{it.score}% contrôlé • {it.date}</p>
+            </div>
+            <span className="text-xs font-bold text-emerald-600 whitespace-nowrap">📄 Ouvrir PDF →</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── MAIN TECHNICIAN PORTAL ──────────────────────────────────────── */
 export default function MissionActivePage() {
   const router = useRouter();
@@ -1308,7 +1342,6 @@ export default function MissionActivePage() {
         const p2 = all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
         // Vérificateur : pas de Phase 1, contrôle final direct toujours visible
         const p1Done = isVerif ? true : (p1.length > 0 && p1.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done))));
-        const p1Done = p1.length > 0 && p1.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
         const renderEtape = (etape: any) => {
           const i = etape._idx;
           return (
@@ -1371,7 +1404,17 @@ export default function MissionActivePage() {
             {checklist.complete && (
               <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 text-center">
                 <p className="text-sm font-bold text-emerald-600">🎉 Phase terminée ! Pointez votre départ.</p>
+                {!isVerif && mission && (
+                  <a href={`/api/mission/${mission.id}/rapport-autocontrole`} target="_blank" rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 bg-white border border-emerald-300 text-emerald-700 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-50 transition-all">
+                    📄 Mon auto-contrôle en PDF — transmis au vérificateur
+                  </a>
+                )}
               </div>
+            )}
+            {/* Vérificateur : lire l'auto-contrôle de l'équipe avant de contrôler */}
+            {isVerif && missionDetail && (missionDetail as any).chantier_id && (
+              <VerifAutocontroleCard chantierId={(missionDetail as any).chantier_id} />
             )}
           </div>
         );

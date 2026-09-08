@@ -340,6 +340,115 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
     }
   });
 
+  // GET /api/mission/:id/rapport-autocontrole — PDF auto-contrôle ouvrier (transmis au vérificateur)
+  router.get('/:id/rapport-autocontrole', async (req, res) => {
+    try {
+      const missionId = req.params.id;
+      const missionRes = await pool.query(
+        `SELECT om.id, om.phase, om.statut, om.date_declenchement, om.date_fin_effectif,
+                c.nom_chantier, c.adresse, c.client_nom,
+                e.nom AS equipe_nom,
+                cl.etapes, cl.complete, cl.date_mise_a_jour
+         FROM ordres_de_mission om
+         JOIN chantiers c ON c.id = om.chantier_id
+         LEFT JOIN equipes e ON e.id = om.equipe_id
+         LEFT JOIN checklists_phases cl ON cl.mission_id = om.id AND cl.phase = om.phase::text
+         WHERE om.id = $1`, [missionId]
+      );
+      if (missionRes.rows.length === 0) return res.status(404).send('Mission introuvable.');
+      const m = missionRes.rows[0];
+      let etapes: any[] = [];
+      if (m.etapes) {
+        try { etapes = typeof m.etapes === 'string' ? JSON.parse(m.etapes) : m.etapes; } catch (_) { etapes = []; }
+      }
+      if (!Array.isArray(etapes)) etapes = [];
+      // Ne garder que l'auto-contrôle (Phase 2) — c'est le document du vérificateur
+      const auto = etapes.filter((e: any) =>
+        String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
+      const list = auto.length > 0 ? auto : etapes;
+      const countSteps = (arr: any[]) => {
+        let total = 0, ok = 0;
+        for (const e of arr) {
+          if (Array.isArray(e.subtasks) && e.subtasks.length > 0) {
+            for (const s of e.subtasks) { total++; if (s.done) ok++; }
+          } else { total++; if (e.done) ok++; }
+        }
+        return { total, ok };
+      };
+      const { total, ok } = countSteps(list);
+      const score = total > 0 ? Math.round((ok / total) * 100) : 0;
+      const verdict = score === 100 ? 'AUTO-CONTRÔLE COMPLET' : score >= 80 ? 'AUTO-CONTRÔLE PARTIEL' : 'AUTO-CONTRÔLE INCOMPLET';
+      const verdictColor = score === 100 ? '#16a34a' : score >= 80 ? '#d97706' : '#dc2626';
+      const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+      const esc = (s: any) => String(s || '').replace(/</g, '&lt;');
+      const sections = list.map((e: any) => {
+        const subs = Array.isArray(e.subtasks) && e.subtasks.length > 0
+          ? e.subtasks.map((s: any) =>
+              '<div class="step sub"><div class="step-icon ' + (s.done ? 'pass' : 'fail') + '">' + (s.done ? '&#10003;' : '&#10007;') + '</div>'
+              + '<div class="step-body"><div class="step-label">' + esc(s.label) + '</div></div>'
+              + '<span class="step-status ' + (s.done ? 'pass' : 'fail') + '">' + (s.done ? 'OK' : 'A voir') + '</span></div>'
+            ).join('\n')
+          : '<div class="step"><div class="step-icon ' + (e.done ? 'pass' : 'fail') + '">' + (e.done ? '&#10003;' : '&#10007;') + '</div>'
+            + '<div class="step-body"><div class="step-label">' + esc(e.label) + '</div></div></div>';
+        const allOk = e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done));
+        return '<div class="section"><div class="section-title">' + (allOk ? '✅ ' : '⬜ ') + esc(e.label) + '</div>' + subs + '</div>';
+      }).join('\n');
+      const phaseLabel = m.phase === 'mecanique' ? 'Mécanique' : m.phase === 'electrique' ? 'Électrique' : 'Vérification';
+      const html = [
+        '<!DOCTYPE html>', '<html lang="fr">', '<head>', '<meta charset="UTF-8">',
+        '<title>Auto-contrôle ' + esc(phaseLabel) + ' — ' + esc(m.nom_chantier) + '</title>',
+        '<style>',
+        '* { margin: 0; padding: 0; box-sizing: border-box; }',
+        'body { font-family: Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; max-width: 900px; margin: 0 auto; }',
+        '.header { text-align: center; border-bottom: 3px solid #b45309; padding-bottom: 20px; margin-bottom: 24px; }',
+        '.header h1 { font-size: 20px; font-weight: 800; text-transform: uppercase; }',
+        '.header .subtitle { font-size: 12px; color: #666; margin-top: 4px; }',
+        '.meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; margin-bottom: 22px; padding: 14px 18px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; }',
+        '.label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #888; }',
+        '.value { font-size: 14px; font-weight: 700; }',
+        '.score-banner { text-align: center; padding: 18px; border-radius: 12px; margin-bottom: 22px; }',
+        '.score { font-size: 44px; font-weight: 800; }',
+        '.verdict { font-size: 15px; font-weight: 700; text-transform: uppercase; margin-top: 4px; }',
+        '.section { margin-bottom: 18px; }',
+        '.section-title { font-size: 13px; font-weight: 700; padding: 8px 14px; background: #1a1a2e; color: #fff; border-radius: 6px; margin-bottom: 8px; }',
+        '.step { display: flex; align-items: flex-start; gap: 10px; padding: 7px 12px; border-bottom: 1px solid #eee; }',
+        '.step-icon { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }',
+        '.step-icon.pass { background: #dcfce7; color: #16a34a; }',
+        '.step-icon.fail { background: #fee2e2; color: #dc2626; }',
+        '.step-body { flex: 1; }',
+        '.step-label { font-size: 12px; }',
+        '.step-status { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }',
+        '.step-status.pass { background: #dcfce7; color: #16a34a; }',
+        '.step-status.fail { background: #fef3c7; color: #b45309; }',
+        '.footer { text-align: center; margin-top: 30px; padding-top: 16px; border-top: 2px solid #eee; font-size: 11px; color: #999; }',
+        '.print-btn { display: inline-block; padding: 12px 32px; background: #b45309; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }',
+        '@media print { body { padding: 16px; } .no-print { display: none !important; } }',
+        '</style>', '</head>', '<body>',
+        '<div class="header"><h1>🔍 Auto-contrôle — Phase ' + esc(phaseLabel) + '</h1>',
+        '<div class="subtitle">RMASC OnSite — « Vérifiez votre travail » rempli par l’équipe, transmis au vérificateur</div></div>',
+        '<div class="meta">',
+        '<div><div class="label">Chantier</div><div class="value">' + esc(m.nom_chantier) + '</div></div>',
+        '<div><div class="label">Client</div><div class="value">' + esc(m.client_nom) + '</div></div>',
+        '<div><div class="label">Équipe</div><div class="value">' + esc(m.equipe_nom) + '</div></div>',
+        '<div><div class="label">Date</div><div class="value">' + now + '</div></div>',
+        '</div>',
+        '<div class="score-banner" style="background:' + verdictColor + '15;border:2px solid ' + verdictColor + '">',
+        '<div class="score" style="color:' + verdictColor + '">' + score + '%</div>',
+        '<div class="verdict" style="color:' + verdictColor + '">' + verdict + '</div>',
+        '<div style="font-size:12px;color:#555;margin-top:6px">' + ok + ' point(s) contrôlé(s) sur ' + total + '</div></div>',
+        sections,
+        '<div class="footer">Document généré automatiquement au transfert de phase — à relire par le vérificateur.<br>RMASC OnSite — ' + now + '</div>',
+        '<div class="no-print" style="text-align:center;margin-top:20px">',
+        '<button class="print-btn" onclick="window.print()">Imprimer / Sauvegarder en PDF</button></div>',
+        '</body>', '</html>',
+      ].join('\n');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    } catch (err: any) {
+      res.status(500).send('Erreur rapport auto-contrôle: ' + err.message);
+    }
+  });
+
   // GET /api/mission/:id
   router.get('/:id', async (req, res) => {
     try {
