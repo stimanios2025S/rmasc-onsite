@@ -1303,8 +1303,11 @@ export default function MissionActivePage() {
       {/* ═══ CHECKLIST v25: Phase 1 Installation + Phase 2 Vérifiez votre travail ═══ */}
       {checklist && Array.isArray(checklist.etapes) && (isArrive || isEnCours) && (() => {
         const all = checklist.etapes;
-        const p1 = all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => !String(e.id || '').startsWith('ac-') && !String(e.id || '').startsWith('vr-'));
+        const isVerif = checklist.phase === 'verification';
+        const p1 = isVerif ? [] : all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => !String(e.id || '').startsWith('ac-') && !String(e.id || '').startsWith('vr-'));
         const p2 = all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
+        // Vérificateur : pas de Phase 1, contrôle final direct toujours visible
+        const p1Done = isVerif ? true : (p1.length > 0 && p1.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done))));
         const p1Done = p1.length > 0 && p1.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
         const renderEtape = (etape: any) => {
           const i = etape._idx;
@@ -1338,6 +1341,7 @@ export default function MissionActivePage() {
         };
         return (
           <div className="mx-4 mb-4 space-y-3">
+            {p1.length > 0 && (
             <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold text-stone-400 uppercase">🔧 Phase 1 — {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
@@ -1347,17 +1351,20 @@ export default function MissionActivePage() {
               </div>
               <div className="space-y-1.5">{p1.map(renderEtape)}</div>
             </div>
+            )}
             {p2.length > 0 && (
               <div className={`backdrop-blur-md rounded-3xl border shadow-sm p-5 ${p1Done ? 'bg-amber-50/90 border-amber-200' : 'bg-stone-100/80 border-stone-200 opacity-70'}`}>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-bold text-amber-600 uppercase">🔍 Phase 2 — Vérifiez votre travail</p>
+                  <p className="text-xs font-bold text-amber-600 uppercase">{isVerif ? '🛡️ Contrôle final — Vérification' : '🔍 Phase 2 — Vérifiez votre travail'}</p>
                   <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
                     {p2.filter((e: any) => e.done).length}/{p2.length}
                   </span>
                 </div>
-                {!p1Done
-                  ? <p className="text-[11px] text-stone-500 mb-3">Terminez d'abord la Phase 1 pour débloquer l'auto-contrôle.</p>
-                  : <p className="text-[11px] text-amber-700 font-medium mb-3">Contrôlez chaque point avant transfert — obligatoire.</p>}
+                {isVerif
+                  ? <p className="text-[11px] text-amber-700 font-medium mb-3">Cochez chaque point contrôlé — 11 titres méca + élec.</p>
+                  : (!p1Done
+                    ? <p className="text-[11px] text-stone-500 mb-3">Terminez d'abord la Phase 1 pour débloquer l'auto-contrôle.</p>
+                    : <p className="text-[11px] text-amber-700 font-medium mb-3">Contrôlez chaque point avant transfert — obligatoire.</p>)}
                 <div className="space-y-1.5">{p1Done ? p2.map(renderEtape) : null}</div>
               </div>
             )}
