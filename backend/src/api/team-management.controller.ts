@@ -17,6 +17,7 @@ import * as bcrypt from 'bcryptjs';
  *   PATCH  /api/admin/teams/config        — Update system config
  *   GET    /api/admin/teams/missions      — Active missions for reassignment
  *   PATCH  /api/admin/teams/missions/:id/reassign — Reassign mission to different team
+ *   DELETE /api/admin/teams/:id           — Soft-delete team (blocked if active missions)
  */
 export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Router {
   const router = Router();
@@ -37,6 +38,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
             THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT
             ELSE 0 END AS jours_repos_restants
         FROM equipes e
+        WHERE e.actif = TRUE
         ORDER BY e.type, e.nom
       `);
 
@@ -274,6 +276,50 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
         return res.status(409).json({ erreur: 'Ce nom d\'équipe existe déjà.' });
       }
       logger.error('Erreur mise à jour équipe', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── 5.5. DELETE TEAM (soft-delete, pro safety) ───────────────────────
+  router.delete('/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const equipeRes = await pool.query(
+        `SELECT id, nom, statut_equipe FROM equipes WHERE id = $1`, [id]
+      );
+      if (equipeRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Équipe introuvable.' });
+      }
+      const equipe = equipeRes.rows[0];
+
+      // Block if the team has active missions (safety first — reassign before delete)
+      const { rows: actives } = await pool.query(
+        `SELECT COUNT(*)::INT AS n FROM ordres_de_mission
+         WHERE equipe_id = $1 AND statut IN ('en_attente','en_route','en_cours','en_pause','bloque')`,
+        [id]
+      );
+      if (actives[0].n > 0) {
+        return res.status(409).json({
+          erreur: `« ${equipe.nom} » a ${actives[0].n} mission${actives[0].n > 1 ? 's' : ''} active${actives[0].n > 1 ? 's' : ''}. Réassignez-la d'abord, puis supprimez.`,
+        });
+      }
+
+      // Free members, keep their logins, then soft-delete the team
+      await pool.query(
+        `UPDATE utilisateurs SET equipe_id = NULL, date_modification = NOW()
+         WHERE equipe_id = $1`, [id]
+      );
+      await pool.query(
+        `UPDATE equipes SET actif = FALSE, statut_equipe = 'DISPONIBLE',
+                disponible_a_partir_de = NOW(), date_modification = NOW()
+         WHERE id = $1`, [id]
+      );
+
+      logger.info('Équipe supprimée par admin (soft-delete)', { equipeId: id, equipeNom: equipe.nom });
+      res.json({ ok: true, message: `Équipe « ${equipe.nom} » supprimée.` });
+    } catch (err: any) {
+      logger.error('Erreur suppression équipe', { erreur: err.message });
       res.status(500).json({ erreur: err.message });
     }
   });

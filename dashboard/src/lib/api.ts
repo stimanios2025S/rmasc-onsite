@@ -285,6 +285,9 @@ export async function createTeam(data: {
 export async function updateTeam(id: string, data: { nom?: string; type?: string; couleur_hex?: string; actif?: boolean; jours_repos?: number | null }) {
   return apiFetch(`/admin/teams/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
+export async function deleteTeam(id: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/teams/${id}`, { method: 'DELETE' });
+}
 export async function updateTeamMembers(id: string, membres: { id: string; prenom: string; nom: string; telephone?: string | null }[]) {
   return apiFetch(`/admin/teams/${id}/members`, { method: 'PUT', body: JSON.stringify({ membres }) });
 }

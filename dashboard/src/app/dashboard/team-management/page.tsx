@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Loader2, Save, X, CheckCircle, AlertTriangle, Settings,
   Wrench, Zap, Shield, Clock, RefreshCw, ArrowRightLeft, Phone,
-  Edit3, ChevronDown, ChevronUp, Calendar, User, MapPin, Plus, Copy, Eye, EyeOff,
+  Edit3, ChevronDown, ChevronUp, Calendar, User, MapPin, Plus, Copy, Eye, EyeOff, Trash2,
 } from 'lucide-react';
 import {
-  fetchTeamsManagement, updateTeam, updateTeamMembers, createTeam,
+  fetchTeamsManagement, updateTeam, updateTeamMembers, createTeam, deleteTeam,
   fetchSystemConfig, updateSystemConfig,
   fetchMissionsReassign, manageRepos,
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
@@ -238,6 +238,23 @@ export default function TeamManagementPage() {
     const text = createdResult.credentials.map(c => `${c.identifiant} / ${c.mot_de_passe}`).join('\n');
     navigator.clipboard.writeText(text);
     showToast('success', '📋 Tous les identifiants copiés !');
+  };
+
+  // ─── DELETE TEAM ──────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<TeamData | null>(null);
+
+  const handleDeleteTeam = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      const res = await deleteTeam(deleteTarget.id);
+      showToast('success', res.message || '✅ Équipe supprimée.');
+      setDeleteTarget(null);
+      await loadAll();
+    } catch (e: any) {
+      showToast('error', e.message || 'Erreur lors de la suppression.');
+    }
+    setSaving(false);
   };
 
   // ─── REASSIGN ─────────────────────────────────────────────────────
@@ -576,6 +593,15 @@ export default function TeamManagementPage() {
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-[11px] font-semibold text-stone-500 hover:bg-stone-100 transition-all">
                           <Users size={12} /> Membres
                         </button>
+                        <button onClick={() => setDeleteTarget(team)} title={`Supprimer ${team.nom}`}
+                          disabled={team.missions_actives > 0}
+                          className={`flex items-center justify-center gap-1 px-3 py-2 border rounded-xl text-[11px] font-semibold transition-all min-h-[36px] ${
+                            team.missions_actives > 0
+                              ? 'bg-stone-50 border-stone-100 text-stone-300 cursor-not-allowed'
+                              : 'bg-rose-50 border-rose-200 text-rose-500 hover:bg-rose-100'
+                          }`}>
+                          <Trash2 size={12} />
+                        </button>
                       </>
                     )}
                     {isEditingMembers && (
@@ -896,6 +922,44 @@ export default function TeamManagementPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: SUPPRIMER UNE ÉQUIPE ═══ */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => !saving && setDeleteTarget(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-sm p-5 sm:m-4 shadow-2xl pb-safe" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-rose-100 flex items-center justify-center mb-3">
+                <Trash2 size={24} className="text-rose-500" />
+              </div>
+              <h3 className="font-bold text-lg text-stone-800">Supprimer cette équipe ?</h3>
+              <p className="text-sm text-stone-500 mt-1">
+                « <span className="font-bold text-stone-700">{deleteTarget.nom}</span> » sera retirée de la liste.
+                Ses {deleteTarget.membres.length} membre{deleteTarget.membres.length !== 1 ? 's' : ''} seront libérés
+                (leurs comptes restent actifs).
+              </p>
+              {deleteTarget.missions_actives > 0 ? (
+                <div className="mt-3 w-full bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700 font-medium flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  Mission{deleteTarget.missions_actives > 1 ? 's' : ''} en cours — réassignez-{deleteTarget.missions_actives > 1 ? 'les' : 'la'} d'abord.
+                </div>
+              ) : (
+                <p className="text-xs text-stone-400 mt-2">Cette action est réversible : l'équipe reste en base (désactivée).</p>
+              )}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setDeleteTarget(null)} disabled={saving}
+                className="flex-1 py-3 bg-stone-100 rounded-2xl text-sm font-semibold text-stone-500 hover:bg-stone-200 transition-all min-h-[44px]">
+                Annuler
+              </button>
+              <button onClick={handleDeleteTeam} disabled={saving || deleteTarget.missions_actives > 0}
+                className="flex-1 py-3 bg-rose-500 text-white rounded-2xl text-sm font-bold hover:bg-rose-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 min-h-[44px]">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                Supprimer
+              </button>
+            </div>
           </div>
         </div>
       )}
