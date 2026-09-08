@@ -1300,51 +1300,75 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ CHECKLIST (only after arrival confirmed) ═══ */}
-      {checklist && Array.isArray(checklist.etapes) && (isArrive || isEnCours) && (
-        <div className="mx-4 mb-4 bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-stone-400 uppercase">📋 {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
-            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600">
-              {checklist.etapes.filter(e => e.done).length}/{checklist.etapes.length}
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            {checklist.etapes.map((etape, i) => (
-              <div key={etape.id} className="border border-stone-100 rounded-2xl overflow-hidden">
-                <button onClick={() => toggleEtape(i)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                    etape.done ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-sm' : 'bg-stone-100 text-stone-300 border border-stone-200'
-                  }`}>
-                    {etape.done && <CheckCircle size={14} />}
-                  </div>
-                  <span className={`text-sm flex-1 font-medium ${etape.done ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
-                    {i + 1}. {etape.label}
-                  </span>
-                </button>
-                {etape.subtasks && (
-                  <div className="px-4 pb-3 flex gap-2">
-                    {etape.subtasks.map((sub, si) => (
-                      <button key={si} onClick={() => toggleSousTache(i, si)}
-                        className={`flex-1 text-[10px] font-bold px-2 py-2 rounded-xl border transition-all ${
-                          sub.done ? 'bg-emerald-50 text-emerald-600 border-emerald-300' : 'bg-stone-50 text-stone-400 border-stone-200'
-                        }`}>
-                        {sub.done ? '✓ ' : ''}{sub.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {checklist.complete && (
-            <div className="mt-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 text-center">
-              <p className="text-sm font-bold text-emerald-600">🎉 Phase terminée ! Pointez votre départ.</p>
+      {/* ═══ CHECKLIST v25: Phase 1 Installation + Phase 2 Vérifiez votre travail ═══ */}
+      {checklist && Array.isArray(checklist.etapes) && (isArrive || isEnCours) && (() => {
+        const all = checklist.etapes;
+        const p1 = all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => !String(e.id || '').startsWith('ac-') && !String(e.id || '').startsWith('vr-'));
+        const p2 = all.map((e: any, i: number) => ({ ...e, _idx: i })).filter((e: any) => String(e.id || '').startsWith('ac-') || String(e.id || '').startsWith('vr-'));
+        const p1Done = p1.length > 0 && p1.every((e: any) => e.done && (!e.subtasks || e.subtasks.every((s: any) => s.done)));
+        const renderEtape = (etape: any) => {
+          const i = etape._idx;
+          return (
+            <div key={etape.id} className="border border-stone-100 rounded-2xl overflow-hidden">
+              <button onClick={() => toggleEtape(i)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
+                <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
+                  etape.done ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-sm' : 'bg-stone-100 text-stone-300 border border-stone-200'
+                }`}>
+                  {etape.done && <CheckCircle size={14} />}
+                </div>
+                <span className={`text-sm flex-1 font-medium ${etape.done ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
+                  {etape.label}
+                </span>
+              </button>
+              {etape.subtasks && (
+                <div className="px-4 pb-3 grid grid-cols-1 gap-1.5">
+                  {etape.subtasks.map((sub: any, si: number) => (
+                    <button key={si} onClick={() => toggleSousTache(i, si)}
+                      className={`w-full text-left text-[11px] font-medium px-3 py-2 rounded-xl border transition-all ${
+                        sub.done ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-stone-50 text-stone-500 border-stone-200'
+                      }`}>
+                      {sub.done ? '✓ ' : '○ '}{sub.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          );
+        };
+        return (
+          <div className="mx-4 mb-4 space-y-3">
+            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-stone-100 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-stone-400 uppercase">🔧 Phase 1 — {PHASE_LABEL[checklist.phase] || checklist.phase}</p>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600">
+                  {p1.filter((e: any) => e.done).length}/{p1.length}
+                </span>
+              </div>
+              <div className="space-y-1.5">{p1.map(renderEtape)}</div>
+            </div>
+            {p2.length > 0 && (
+              <div className={`backdrop-blur-md rounded-3xl border shadow-sm p-5 ${p1Done ? 'bg-amber-50/90 border-amber-200' : 'bg-stone-100/80 border-stone-200 opacity-70'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold text-amber-600 uppercase">🔍 Phase 2 — Vérifiez votre travail</p>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                    {p2.filter((e: any) => e.done).length}/{p2.length}
+                  </span>
+                </div>
+                {!p1Done
+                  ? <p className="text-[11px] text-stone-500 mb-3">Terminez d'abord la Phase 1 pour débloquer l'auto-contrôle.</p>
+                  : <p className="text-[11px] text-amber-700 font-medium mb-3">Contrôlez chaque point avant transfert — obligatoire.</p>}
+                <div className="space-y-1.5">{p1Done ? p2.map(renderEtape) : null}</div>
+              </div>
+            )}
+            {checklist.complete && (
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 text-center">
+                <p className="text-sm font-bold text-emerald-600">🎉 Phase terminée ! Pointez votre départ.</p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ═══ PHASE 1: POINTAGE MATINAL ═══ */}
       {!isEnRoute && !isArrive && !isTermine && !aBloque && (

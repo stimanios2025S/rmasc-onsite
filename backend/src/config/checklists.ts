@@ -1,6 +1,7 @@
 /**
- * Checklists by phase — used as fallbacks when generer_checklist() SQL function is unavailable.
- * Verification checklist covers ALL steps from both mechanical & electrical guides.
+ * Checklists by phase — RMASC OnSite v25 (pro).
+ * Phase 1 = Installation (worker). Phase 2 = Auto-contrôle "Vérifiez votre travail".
+ * Vérificateur = même titres en contrôle final.
  */
 
 export const MECHANICAL_STEPS = [
@@ -10,12 +11,12 @@ export const MECHANICAL_STEPS = [
   { id: 'm4', label: 'Mise en place de châssis moteur et le moteur', done: false },
   { id: 'm5', label: 'Installation de l\'arcade avec plateau + le contrepoids', done: false },
   { id: 'm6', label: 'L\'élingue et l\'attelage', done: false },
-  { id: 'm7', label: 'Installation de régulateur de vitesse et la poulie bandée', done: false },
+  { id: 'm7', label: 'Installation de régulateur de vitesse et la poulie tendeuse', done: false },
   { id: 'm8', label: 'L\'inspection', done: false },
   { id: 'm9', label: 'Installation des portes paliers', done: false },
   { id: 'm10', label: 'Installation de la cabine', done: false },
   { id: 'm11', label: 'Installation des portes cabine', done: false },
-  { id: 'm12', label: 'L\'équilibrage du contrepoids — PCP = P. cabine 1/2 la charge nominale', done: false },
+  { id: 'm12', label: 'L\'équilibrage du contrepoids — PCP = P. cabine + 1/2 la charge nominale', done: false },
   { id: 'm13', label: 'Installation de l\'échelle et les ressorts dans la cuve', done: false },
 ];
 
@@ -29,68 +30,173 @@ export const ELECTRICAL_STEPS = [
   { id: 'e7', label: 'Installation des capteurs et le COP (poste à boutons)', done: false },
   { id: 'e8', label: 'Mise en place des aimants', done: false },
   { id: 'e9', label: 'Vérification générale', done: false },
-  { id: 'e10', label: 'Réglage des étapes — l\'apprentissage', done: false },
+  { id: 'e10', label: 'L\'apprentissage et réglage des étages', done: false },
 ];
 
-export const VERIFICATION_STEPS = [
-  // ── Phase 1: Pointage matinal ──
-  { id: 'vr01', label: 'Pointage matinal — briefing d\'équipe (absences, tâches, sécurité)', done: false },
-  // ── Phase 2: Vérification conformité mécanique ──
-  { id: 'vr02', label: 'Contrôle pression d\'essayage', done: false, note: '' },
-  { id: 'vr03', label: 'Métrage diamètres — conformité plan', done: false, note: '' },
-  { id: 'vr04', label: 'Vérification conformité métrage usine', done: false, note: '' },
-  { id: 'vr05', label: 'Vérification conformité des soudures', done: false, note: '' },
-  { id: 'vr06', label: 'Vérification conformité des supports (qualité, espacement)', done: false, note: '' },
-  { id: 'vr07', label: 'Détection anomalies sur chantier', done: false, note: '' },
-  { id: 'vr08', label: 'Vérification conformité plomberie', done: false, note: '' },
-  // ── Phase 3: Calepinage ──
-  { id: 'vr09', label: 'Calepinage — correspondance réception/plan', done: false, note: '' },
-  { id: 'vr10', label: 'Entrées/sorties conformes au plan', done: false, note: '' },
-  { id: 'vr11', label: 'Emplacement des flexibles vérifié', done: false, note: '' },
-  { id: 'vr12', label: 'Diamètres, flèches, coudes conformes', done: false, note: '' },
-  // ── Phase 4: Accessibilité points de soudure ──
-  { id: 'vr13', label: 'Accessibilité échelles / escaliers / passerelles', done: false, note: '' },
-  { id: 'vr14', label: 'État échafaudages / plans inclinés', done: false, note: '' },
-  // ── Phase 5: Montage ──
-  { id: 'vr15', label: 'Préparation étiquettes / installation', done: false, note: '' },
-  { id: 'vr16', label: 'Non-ouverture des boîtiers vérifiée', done: false, note: '' },
-  { id: 'vr17', label: 'Plan de maintenance / fiches techniques présents', done: false, note: '' },
-  { id: 'vr18', label: 'Outillage conforme et complet', done: false, note: '' },
-  // ── Phase 6: Nettoyage mécanique ──
-  { id: 'vr19', label: 'Purge / circulation d\'eau effectuée', done: false, note: '' },
-  { id: 'vr20', label: 'Drainages / hydros / trop-pleins en place', done: false, note: '' },
-  { id: 'vr21', label: 'Rétention sous réservoirs vérifiée', done: false, note: '' },
-  { id: 'vr22', label: 'Chicanes aérauliques installées', done: false, note: '' },
-  { id: 'vr23', label: 'Gicleurs en place', done: false, note: '' },
-  { id: 'vr24', label: 'Propreté générale mécanique', done: false, note: '' },
-  // ── Phase 7: Vérification conformité électrique ──
-  { id: 'vr25', label: 'Conformité générale électrique vérifiée', done: false, note: '' },
-  { id: 'vr26', label: 'Accessibilité / disponibilité des prises', done: false, note: '' },
-  { id: 'vr27', label: 'Conformité des travaux électriques', done: false, note: '' },
-  // ── Phase 8: Assemblage & étalonnage ──
-  { id: 'vr28', label: 'Préparation surface de travail', done: false, note: '' },
-  { id: 'vr29', label: 'Assemblage câbles vérifié', done: false, note: '' },
-  { id: 'vr30', label: 'Emballage câbles conforme', done: false, note: '' },
-  { id: 'vr31', label: 'Étalonnage effectué et conforme', done: false, note: '' },
-  // ── Phase 9: Tests fonctionnels ──
-  { id: 'vr32', label: 'Vérification bon fonctionnement mécanisme', done: false, note: '' },
-  { id: 'vr33', label: 'Test 20 ouvertures/fermetures passé', done: false, note: '' },
-  // ── Phase 10: Finition & remise en état ──
-  { id: 'vr34', label: 'Travaux de finition effectués', done: false, note: '' },
-  { id: 'vr35', label: 'Remise en état / propreté générale', done: false, note: '' },
-  { id: 'vr36', label: 'Balisage / zones de circulation en place', done: false, note: '' },
-  // ── Phase 11: Fin de journée ──
-  { id: 'vr37', label: 'Nettoyage / remise en ordre du chantier', done: false, note: '' },
-  { id: 'vr38', label: 'Compte-rendu envoyé à El Ghani', done: false, note: '' },
-  { id: 'vr39', label: 'Photos avancées du chantier', done: false, note: '' },
-  { id: 'vr40', label: 'Briefing sécurité fin de journée', done: false, note: '' },
+// ─── AUTO-CONTRÔLE MÉCANIQUE (Phase 2 ouvrier + contrôle vérificateur) ───
+export const AUTOCONTROLE_MECA = [
+  {
+    id: 'ac-m-rails', label: '1. Rails et guidage', done: false,
+    subtasks: [
+      { label: 'Alignement des rails de cabine et de contrepoids avec une incertitude quasi nulle', done: false },
+      { label: 'Respect de la distance entre les pattes de fixation', done: false },
+      { label: 'Ponçage des rails au niveau des éclisses', done: false },
+      { label: 'Nettoyage des rails-guides et des pattes de fixation', done: false },
+    ],
+  },
+  {
+    id: 'ac-m-machinerie', label: '2. Machinerie', done: false,
+    subtasks: [
+      { label: 'Fixation solide du châssis moteur et du moteur (aucun risque de mouvement ou de vibration)', done: false },
+      { label: 'Installation des stop-câbles (anti-déraillement) sur la poulie de traction et les poulies de renvoi', done: false },
+      { label: 'Installation conforme du régulateur de vitesse', done: false },
+      { label: 'Nettoyage complet du local machine', done: false },
+    ],
+  },
+  {
+    id: 'ac-m-portes', label: '3. Portes palières', done: false,
+    subtasks: [
+      { label: 'Fixation solide des portes palières', done: false },
+      { label: 'Installation des chasse-pieds sous les seuils ou paroi lisse (portes battantes)', done: false },
+      { label: 'Réglages des vantaux des portes', done: false },
+      { label: 'Soudure strictement interdite pour la fixation des portes palières', done: false },
+    ],
+  },
+  {
+    id: 'ac-m-cabine', label: '4. Cabine', done: false,
+    subtasks: [
+      { label: 'Ajustement de la cabine par rapport aux portes palières', done: false },
+      { label: 'Positionnement correct et orientation adéquate des graisseurs', done: false },
+      { label: 'Fixation du garde-corps sur le toit de cabine', done: false },
+      { label: 'Installation de chasse-pieds sous le seuil de la porte de cabine et des portes palières', done: false },
+      { label: 'Fixation de la main courante', done: false },
+      { label: 'Nettoyage de la cabine (le toit et l’intérieur)', done: false },
+    ],
+  },
+  {
+    id: 'ac-m-contrepoids', label: '5. Contrepoids', done: false,
+    subtasks: [
+      { label: 'Équilibrage correct du contrepoids (poids cabine + la moitié de la charge nominale)', done: false },
+      { label: 'Mise en place des stop-gueuses pour bloquer les gueuses', done: false },
+      { label: 'Mise en place du cache de la poulie de renvoi et des tiges de stop-câbles', done: false },
+    ],
+  },
+  {
+    id: 'ac-m-cuvette', label: '6. Cuvette', done: false,
+    subtasks: [
+      { label: 'Fixation de l’échelle d’accès à la cuvette', done: false },
+      { label: 'Mise en place des ressorts (amortisseurs) de cabine et de contrepoids', done: false },
+      { label: 'Installation des récupérateurs d’huile pour garder la cuvette propre', done: false },
+      { label: 'Mise en place du cache de protection du contrepoids en partie basse', done: false },
+      { label: 'Installation des pattes de fixation de départ', done: false },
+      { label: 'Nettoyage de la cuvette', done: false },
+    ],
+  },
 ];
+
+// ─── AUTO-CONTRÔLE ÉLECTRIQUE (Phase 2 ouvrier + contrôle vérificateur) ───
+export const AUTOCONTROLE_ELEC = [
+  {
+    id: 'ac-e-machinerie', label: '1. Machinerie (Local Machine)', done: false,
+    subtasks: [
+      { label: 'Fixation solide de l’armoire électrique et propreté interne (sans poussière ni résidus)', done: false },
+      { label: 'Séparation adéquate puissance / commande (basse tension) contre les perturbations', done: false },
+      { label: 'Serrage de l’armoire électrique', done: false },
+      { label: 'Repérage clair de tous les câbles et borniers selon les schémas', done: false },
+      { label: 'Raccordement correct des alimentations principales et des terres', done: false },
+      { label: 'Bouton d’arrêt d’urgence à proximité du moteur', done: false },
+      { label: 'Éclairage de la salle machine + prise de courant en place', done: false },
+      { label: 'Grille d’aération + porte avec serrure pour sécuriser le local', done: false },
+      { label: 'Protection mécanique des câbles dans les zones de passage ou à risques', done: false },
+      { label: 'Nettoyage complet et final de la salle machine', done: false },
+    ],
+  },
+  {
+    id: 'ac-e-cabine', label: '2. Dans la Cabine', done: false,
+    subtasks: [
+      { label: 'Fixation solide de la boîte d’inspection en toiture de cabine', done: false },
+      { label: 'Fins de course installées et testées (haut, bas, survitesse)', done: false },
+      { label: 'Sirène d’alarme et ventilateur en service', done: false },
+      { label: 'Bouton stop dans le COP (monte-charges)', done: false },
+      { label: 'Photocellule installée et contact de surcharge réglé', done: false },
+      { label: 'Espace opérateur respecté par rapport aux portes palières', done: false },
+      { label: 'Parachute réglé correctement', done: false },
+      { label: 'Nettoyage complet et final de la cabine', done: false },
+    ],
+  },
+  {
+    id: 'ac-e-gaine', label: '3. Dans la Gaine', done: false,
+    subtasks: [
+      { label: 'Cheminement propre des câbles (goulottes, colliers) sans cisaillement ni frottement', done: false },
+      { label: 'Câble pendentif fixé (patte en bois au départ + patte à mi-course)', done: false },
+      { label: 'Réglage correct des portes palières', done: false },
+      { label: 'Câblage correct des contacts de sécurité (chaîne de sécurité)', done: false },
+      { label: 'Éclairage de la gaine raccordé', done: false },
+      { label: 'Nettoyage approfondi de la gaine', done: false },
+    ],
+  },
+  {
+    id: 'ac-e-cuvette', label: '4. Dans la Cuvette', done: false,
+    subtasks: [
+      { label: 'Poulie tendeuse du limiteur de vitesse réglée', done: false },
+      { label: 'Bouton d’arrêt d’urgence + prise à 40 cm du seuil RDC fixés', done: false },
+      { label: 'Mise à la terre effective de toutes les parties métalliques accessibles', done: false },
+      { label: 'Nettoyage complet de la cuvette', done: false },
+    ],
+  },
+  {
+    id: 'ac-e-essais', label: '5. Consignes et Essais Préliminaires', done: false,
+    subtasks: [
+      { label: 'Chaîne de sécurité vérifiée — aucune sécurité pontée avant le départ', done: false },
+      { label: 'Armoire nettoyée et tous les coffrets correctement refermés', done: false },
+    ],
+  },
+];
+
+// ─── VÉRIFICATEUR : contrôle final (mêmes titres, ids vr-*) ───
+function withNote(list: any[], prefix: string) {
+  return list.map((s: any) => ({
+    id: s.id.replace(/^ac-/, prefix),
+    label: s.label,
+    done: false,
+    note: '',
+    subtasks: s.subtasks.map((t: any) => ({ label: t.label, done: false })),
+  }));
+}
+
+export const VERIF_MECA = withNote(AUTOCONTROLE_MECA, 'vr-m-');
+export const VERIF_ELEC = withNote(AUTOCONTROLE_ELEC, 'vr-e-');
+
+export const VERIFICATION_STEPS = [...VERIF_MECA, ...VERIF_ELEC];
+
+// ─── Checklists complètes par phase (installation + auto-contrôle) ───
+export const CHECKLIST_MECANIQUE_COMPLETE = [...MECHANICAL_STEPS, ...AUTOCONTROLE_MECA];
+export const CHECKLIST_ELECTRIQUE_COMPLETE = [...ELECTRICAL_STEPS, ...AUTOCONTROLE_ELEC];
 
 export function getChecklistForPhase(phase: string) {
   switch (phase) {
-    case 'mecanique': return MECHANICAL_STEPS;
-    case 'electrique': return ELECTRICAL_STEPS;
+    case 'mecanique': return CHECKLIST_MECANIQUE_COMPLETE;
+    case 'electrique': return CHECKLIST_ELECTRIQUE_COMPLETE;
     case 'verification': return VERIFICATION_STEPS;
     default: return [];
   }
+}
+
+/** Sépare Phase 1 (installation) et Phase 2 (auto-contrôle) pour l'affichage portail. */
+export function splitPhases(etapes: any[]) {
+  const phase1 = (etapes || []).filter((e: any) => !String(e.id || '').startsWith('ac-'));
+  const phase2 = (etapes || []).filter((e: any) => String(e.id || '').startsWith('ac-'));
+  return { phase1, phase2 };
+}
+
+/** Vrai si toutes les étapes + sous-tâches sont validées. */
+export function isChecklistComplete(etapes: any[]): boolean {
+  if (!Array.isArray(etapes) || etapes.length === 0) return false;
+  return etapes.every((e: any) => {
+    if (!e.done) return false;
+    if (Array.isArray(e.subtasks) && e.subtasks.length > 0) {
+      return e.subtasks.every((s: any) => s.done);
+    }
+    return true;
+  });
 }

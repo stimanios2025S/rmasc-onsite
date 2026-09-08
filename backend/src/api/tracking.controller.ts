@@ -495,6 +495,37 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         return res.status(400).json({ erreur: 'Seules les phases mécanique et électrique peuvent être transférées.' });
       }
 
+      // ═══ v25: VERROU AUTO-CONTRÔLE — installation + "Vérifiez votre travail" obligatoires ═══
+      try {
+        const clRes = await pool.query(
+          `SELECT etapes, complete FROM checklists_phases WHERE mission_id = $1 ORDER BY date_mise_a_jour DESC LIMIT 1`,
+          [missionId]
+        );
+        if (clRes.rows.length > 0) {
+          let etapes: any[] = typeof clRes.rows[0].etapes === 'string'
+            ? JSON.parse(clRes.rows[0].etapes) : clRes.rows[0].etapes;
+          if (!Array.isArray(etapes)) etapes = [];
+          const incompletes = etapes.filter((e: any) => {
+            if (!e.done) return true;
+            if (Array.isArray(e.subtasks) && e.subtasks.length > 0) {
+              return !e.subtasks.every((s: any) => s.done);
+            }
+            return false;
+          });
+          if (incompletes.length > 0) {
+            const firstAuto = incompletes.find((e: any) => String(e.id || '').startsWith('ac-'));
+            if (firstAuto) {
+              return res.status(400).json({
+                erreur: `🔍 Auto-contrôle incomplet — terminez « Vérifiez votre travail » : ${firstAuto.label} (${incompletes.length} point(s) restant(s)).`,
+              });
+            }
+            return res.status(400).json({
+              erreur: `⛔ Installation incomplète — ${incompletes.length} étape(s) restante(s) avant l'auto-contrôle.`,
+            });
+          }
+        }
+      } catch (_) { /* verrou non bloquant si checklist illisible */ }
+
       // Determine next phase
       const nextPhase = m.phase === 'mecanique' ? 'electrique' : 'verification';
       const nextTeamType = nextPhase === 'electrique' ? 'electrique' : 'mixte';

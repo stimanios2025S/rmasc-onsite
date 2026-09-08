@@ -1149,6 +1149,18 @@ $v20$ LANGUAGE plpgsql`);
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_lieux_nom ON lieux_connus (LOWER(nom))`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_log_jour ON agent_recherche_log (fournisseur, date_creation)`);
+    // v25 : checklists PRO — applique le fichier SQL (m7/m12/e10 + auto-contrôle + vérificateur)
+    try {
+      const fsMod = await import('fs');
+      const v25Path = path.join(__dirname, '..', '..', 'database', 'migration-v25-checklists-pro.sql');
+      if (fsMod.existsSync(v25Path)) {
+        const sql = fsMod.readFileSync(v25Path, 'utf8');
+        await pool.query(sql);
+        logger.info('Migration v25 OK — checklists pro (auto-contrôle + vérificateur)');
+      }
+    } catch (v25e: any) {
+      logger.error('Migration v25 échouée (non bloquant)', { erreur: v25e.message });
+    }
     logger.info('Migration v20 OK — planning par phase actif');
     logger.info('Migration v21 OK — réception auto à la fin de vérification');
     logger.info('Migration v22 OK — sortie auto GPS');
