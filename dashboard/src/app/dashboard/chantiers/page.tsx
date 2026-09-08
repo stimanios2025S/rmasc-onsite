@@ -622,7 +622,7 @@ export default function ChantiersPage() {
   return (
     <AdminShell title="Chantiers" subtitle={`${nbActifs} actif${nbActifs > 1 ? 's' : ''}${nbTermines > 0 ? ` • ${nbTermines} terminé${nbTermines > 1 ? 's' : ''}` : ''}`}
       actions={<button onClick={() => setShowWizard(true)}
-        className="flex items-center gap-2 bg-stone-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all">
+        className="flex items-center justify-center gap-2 bg-stone-900 text-white px-5 py-3 rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all min-h-[44px]">
         <Plus size={16} /> Ajouter un Chantier
       </button>}>
       {/* Message */}
@@ -982,48 +982,50 @@ export default function ChantiersPage() {
       {showWizard && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowWizard(false); }}>
-          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh]">
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[85vh]">
             {/* Barre de progression */}
-            <div className="shrink-0 flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 border-b border-stone-100">
+            <div className="shrink-0 flex items-center bg-gradient-to-r from-indigo-50 to-purple-50 px-3 sm:px-8 py-3 sm:py-4 border-b border-stone-100">
               {[1, 2, 3, 4].map(s => (
-                <div key={s} className="flex items-center flex-1 last:flex-none">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step > s ? 'bg-emerald-500 text-white' : step === s ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-stone-200 text-stone-400'}`}>
-                    {step > s ? <CheckCircle size={18} /> : s}
+                <div key={s} className="flex items-center flex-1 last:flex-none min-w-0">
+                  <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all shrink-0 ${step > s ? 'bg-emerald-500 text-white' : step === s ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-stone-200 text-stone-400'}`}>
+                    {step > s ? <CheckCircle size={15} /> : s}
                   </div>
                   <span className={`ml-3 text-xs font-semibold hidden sm:block ${step >= s ? 'text-stone-800' : 'text-stone-300'}`}>
                     {s === 1 ? 'Client' : s === 2 ? 'Complexité' : s === 3 ? 'Documents' : 'Planning'}
                   </span>
-                  {s < 4 && <div className={`flex-1 h-0.5 mx-3 ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
+                  {s < 4 && <div className={`flex-1 h-0.5 mx-1.5 sm:mx-3 min-w-[8px] ${step > s ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
                 </div>
               ))}
-              <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-4 text-stone-300 hover:text-stone-500"><X size={22} /></button>
+              <button onClick={() => { setShowWizard(false); resetForm(); }} className="ml-2 sm:ml-4 text-stone-300 hover:text-stone-500 shrink-0 p-1"><X size={22} /></button>
             </div>
 
             {/* Contenu scrollable */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-8" style={{ WebkitOverflowScrolling: 'touch' }}>
               {/* STEP 1: CLIENT */}
               {step === 1 && (
-                <div className="space-y-5">
+                <div className="space-y-4 sm:space-y-5">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <Building2 size={18} className="text-indigo-500" />
-                      <h4 className="font-bold text-stone-700">Informations Générales & Client</h4>
+                      <Building2 size={18} className="text-indigo-500 shrink-0" />
+                      <h4 className="font-bold text-stone-700 text-[15px] sm:text-base">Informations Générales & Client</h4>
                     </div>
                     <p className="text-xs text-stone-400 mb-4">Saisissez les détails du projet et du client</p>
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       <div>
                         <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Nom du projet *</label>
                         <input value={form.nom_projet} onChange={e => setForm({ ...form, nom_projet: e.target.value })} required
-                          placeholder="Ex: Clinique Saint-Charles"
-                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all" />
+                          placeholder="Ex: Clinique Saint-Charles" autoComplete="off"
+                          style={{ fontSize: '16px' }}
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all" />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><User size={12} className="inline mr-1" />Nom du client</label>
                           <input value={form.client_nom} onChange={e => setForm({ ...form, client_nom: e.target.value })}
-                            placeholder="Dr. Martin" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            placeholder="Dr. Martin" autoComplete="off" style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><Phone size={12} className="inline mr-1" />Téléphone</label>
                           <input value={form.client_telephone} onChange={e => setForm({ ...form, client_telephone: e.target.value })}
                             placeholder="+213..." type="tel" inputMode="tel" autoComplete="tel"
@@ -1032,37 +1034,38 @@ export default function ChantiersPage() {
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Adresse du chantier</label>
                           <input value={form.client_adresse} onChange={e => setForm({ ...form, client_adresse: e.target.value })}
-                            placeholder="15 Rue des Capucins, Alger" className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            placeholder="15 Rue des Capucins, Alger" autoComplete="off" style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block">📏 Zone de travail (m)</label>
                           <input value={form.rayon_geofencing} onChange={e => setForm({ ...form, rayon_geofencing: e.target.value })}
-                            type="number" min="10" max="500" placeholder="50"
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            type="number" min="10" max="500" placeholder="50" inputMode="numeric" style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Latitude *</label>
                           <input value={form.latitude} onChange={e => setForm({ ...form, latitude: e.target.value })} required
-                            type="number" step="any" placeholder="36.7525"
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            type="number" step="any" placeholder="36.7525" inputMode="decimal" style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <label className="text-xs font-semibold text-stone-500 mb-1.5 block"><MapPin size={12} className="inline mr-1" />Longitude *</label>
                           <input value={form.longitude} onChange={e => setForm({ ...form, longitude: e.target.value })} required
-                            type="number" step="any" placeholder="3.0588"
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                            type="number" step="any" placeholder="3.0588" inputMode="decimal" style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         </div>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-stone-500 mb-1.5 block">📅 Date limite (Échéance)</label>
                         <input value={form.date_echeance} onChange={e => setForm({ ...form, date_echeance: e.target.value })}
-                          type="datetime-local"
-                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all" />
+                          type="datetime-local" style={{ fontSize: '16px', minHeight: '48px' }}
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all" />
                         <p className="text-[10px] text-stone-400 mt-1">L'équipe doit terminer avant cette date</p>
                       </div>
                       <div>
@@ -1126,7 +1129,7 @@ export default function ChantiersPage() {
                   </div>
 
                   {/* DXF */}
-                  <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${dxfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'}`}>
+                  <div className={`border-2 border-dashed rounded-2xl p-4 sm:p-6 text-center transition-all ${dxfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'}`}>
                     {dxfFile ? (
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1150,7 +1153,7 @@ export default function ChantiersPage() {
                   </div>
 
                   {/* PDF */}
-                  <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${pdfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'}`}>
+                  <div className={`border-2 border-dashed rounded-2xl p-4 sm:p-6 text-center transition-all ${pdfFile ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-stone-50 hover:border-indigo-300'}`}>
                     {pdfFile ? (
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1178,7 +1181,8 @@ export default function ChantiersPage() {
                     <label className="text-xs font-semibold text-stone-500 mb-1.5 block">Spécifications techniques</label>
                     <textarea value={form.fiche_technique} onChange={e => setForm({ ...form, fiche_technique: e.target.value })}
                       placeholder="Type motorisation, dimensions gaine, vitesse, nombre étages..." rows={4}
-                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm text-stone-700 outline-none focus:border-indigo-400 transition-all resize-none" />
+                      style={{ fontSize: '16px' }}
+                      className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-700 outline-none focus:border-indigo-400 transition-all resize-none" />
                   </div>
                 </div>
               )}
@@ -1193,29 +1197,29 @@ export default function ChantiersPage() {
                     </div>
                     <p className="text-xs text-stone-400 mb-4">Date de démarrage prévue pour chaque équipe (optionnel — modifiable après création)</p>
                     <div className="space-y-4">
-                      <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4">
+                      <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3 sm:p-4">
                         <label className="text-xs font-bold text-blue-700 mb-1.5 flex items-center gap-1.5">
                           <Wrench size={13} /> 🔧 Mécanique — début prévu
                         </label>
                         <input value={form.date_debut_mecanique} onChange={e => setForm({ ...form, date_debut_mecanique: e.target.value })}
-                          type="datetime-local"
-                          className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-sm text-stone-700 outline-none focus:border-blue-400 transition-all" />
+                          type="datetime-local" style={{ fontSize: '16px', minHeight: '48px' }}
+                          className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-stone-700 outline-none focus:border-blue-400 transition-all" />
                       </div>
-                      <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4">
+                      <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-3 sm:p-4">
                         <label className="text-xs font-bold text-orange-700 mb-1.5 flex items-center gap-1.5">
                           <Zap size={13} /> ⚡ Électrique — début prévu
                         </label>
                         <input value={form.date_debut_electrique} onChange={e => setForm({ ...form, date_debut_electrique: e.target.value })}
-                          type="datetime-local"
-                          className="w-full px-4 py-3 bg-white border border-orange-200 rounded-xl text-sm text-stone-700 outline-none focus:border-orange-400 transition-all" />
+                          type="datetime-local" style={{ fontSize: '16px', minHeight: '48px' }}
+                          className="w-full px-4 py-3 bg-white border border-orange-200 rounded-xl text-stone-700 outline-none focus:border-orange-400 transition-all" />
                       </div>
-                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4">
+                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-3 sm:p-4">
                         <label className="text-xs font-bold text-emerald-700 mb-1.5 flex items-center gap-1.5">
                           <Shield size={13} /> 🛡️ Vérification — début prévu
                         </label>
                         <input value={form.date_debut_verification} onChange={e => setForm({ ...form, date_debut_verification: e.target.value })}
-                          type="datetime-local"
-                          className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl text-sm text-stone-700 outline-none focus:border-emerald-400 transition-all" />
+                          type="datetime-local" style={{ fontSize: '16px', minHeight: '48px' }}
+                          className="w-full px-4 py-3 bg-white border border-emerald-200 rounded-xl text-stone-700 outline-none focus:border-emerald-400 transition-all" />
                       </div>
                       <p className="text-[10px] text-stone-400 leading-relaxed bg-stone-50 rounded-xl px-3 py-2">
                         💡 Laissez vide si pas de planning. Les dates sont informatives : elles n'empêchent jamais une équipe de commencer à travailler.
@@ -1228,13 +1232,13 @@ export default function ChantiersPage() {
             </div>
 
             {/* Boutons */}
-            <div className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-8 py-4 border-t border-stone-100 bg-white pb-safe">
+            <div className="shrink-0 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-8 py-3 sm:py-4 border-t border-stone-100 bg-white pb-safe">
               {step > 1 ? (
                 <button type="button" onClick={() => setStep(step - 1)}
-                  className="flex items-center justify-center gap-2 text-sm font-medium text-stone-500 hover:text-stone-700 px-4 py-3 rounded-xl min-w-[100px]">
-                  <ChevronLeft size={18} /> Retour
+                  className="flex items-center justify-center gap-1.5 text-sm font-medium text-stone-500 hover:text-stone-700 px-3 sm:px-4 py-3 rounded-xl shrink-0">
+                  <ChevronLeft size={18} /> <span className="hidden min-[380px]:inline">Retour</span>
                 </button>
-              ) : <div className="min-w-[100px]" />}
+              ) : <div className="shrink-0 w-2 sm:min-w-[100px]" />}
               {step < 4 ? (
                 <button type="button" onClick={() => setStep(step + 1)}
                   disabled={(step === 1 && (!form.nom_projet || !form.latitude || !form.longitude))}

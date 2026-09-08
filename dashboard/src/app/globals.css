@@ -677,3 +677,14 @@ table { border-collapse: collapse; }
   .map-stat { min-width: 64px; padding: 7px 10px; }
   .map-stat__label { font-size: 9px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WIZARD AJOUT CHANTIER — iPhone : aucun zoom auto, scroll tactile,
+   datetime-local lisible, carte qui ne casse jamais la modale
+   ═══════════════════════════════════════════════════════════════════════════ */
+input[type="datetime-local"] { min-height: 48px; -webkit-appearance: none; appearance: none; }
+input[type="datetime-local"]::-webkit-calendar-picker-indicator { opacity: 0.55; cursor: pointer; }
+/* Le clavier iOS ne doit jamais masquer le champ actif dans le wizard */
+@media (max-width: 768px) {
+  input, select, textarea { font-size: 16px !important; }
+}

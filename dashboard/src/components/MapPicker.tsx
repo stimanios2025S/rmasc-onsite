@@ -173,24 +173,25 @@ export default function MapPicker({ onPositionChange, onRayonChange, initialLat 
     <div className="space-y-3">
       {/* ═══ BARRE DE RECHERCHE RÉELLE ═══ */}
       <div className="relative">
-        <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-2xl px-4 py-2.5 shadow-sm focus-within:border-indigo-400 transition-all">
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-white border border-stone-200 rounded-2xl px-3 sm:px-4 py-2.5 shadow-sm focus-within:border-indigo-400 transition-all">
           <Search size={16} className="text-stone-300 flex-shrink-0" />
           <input
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); rechercherAdresse(); } }}
-            placeholder="Rechercher une adresse, une ville, un lieu..."
-            className="bg-transparent text-sm text-stone-700 outline-none flex-1 placeholder:text-stone-300"
+            placeholder="Adresse, ville, lieu…"
+            className="bg-transparent text-stone-700 outline-none flex-1 min-w-0 placeholder:text-stone-300"
+            style={{ fontSize: '16px' }}
           />
           {recherche && (
-            <button onClick={() => { setRecherche(''); setResultats([]); }} className="text-stone-300 hover:text-stone-500">
+            <button onClick={() => { setRecherche(''); setResultats([]); }} className="text-stone-300 hover:text-stone-500 shrink-0 p-1">
               <X size={15} />
             </button>
           )}
           <button onClick={rechercherAdresse}
-            className="text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 px-4 py-1.5 rounded-xl transition-all flex items-center gap-1.5">
+            className="text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 px-3 sm:px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 shrink-0 min-h-[36px]">
             {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-            <span className="hidden sm:inline">Rechercher</span>
+            <span className="hidden min-[420px]:inline">Rechercher</span>
           </button>
         </div>
 
@@ -219,14 +220,14 @@ export default function MapPicker({ onPositionChange, onRayonChange, initialLat 
       </div>
 
       {/* ═══ COORDONNÉES + MÉTRAGE + LOCALISATION ═══ */}
-      <div className="bg-stone-50 rounded-2xl border border-stone-100 p-4 space-y-3">
+      <div className="bg-stone-50 rounded-2xl border border-stone-100 p-3 sm:p-4 space-y-3">
         {/* Coordonnées */}
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-mono text-stone-600">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-xs font-mono text-stone-600 break-all min-w-0">
             📍 {position.lat.toFixed(6)}, {position.lng.toFixed(6)}
           </div>
           <button onClick={utiliserMaPosition}
-            className="text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+            className="text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 shrink-0 min-h-[36px]">
             {locating ? <Loader2 size={14} className="animate-spin" /> : <Navigation size={14} />}
             Ma position
           </button>
