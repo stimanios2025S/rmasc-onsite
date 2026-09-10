@@ -1013,7 +1013,10 @@ export default function ChantiersPage() {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className={`w-3 h-3 mt-0.5 rounded-full shrink-0 ${STATUT_DOT[c.statut] || 'bg-stone-300'}`} />
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-stone-800">{c.nom}</p>
+                    <p className="text-sm text-stone-800">
+                      <span className="font-bold">Nom du projet :</span>{' '}
+                      <span className="font-semibold">{c.nom}</span>
+                    </p>
                     <p className="text-[10px] text-stone-400 font-mono">{c.ref}</p>
                     {/* ═══ LIEU — visible dès l'aperçu de la carte ═══ */}
                     <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-600 mt-1 truncate">
@@ -1311,7 +1314,10 @@ export default function ChantiersPage() {
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-3 h-3 mt-0.5 rounded-full shrink-0 bg-emerald-400" />
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-stone-700">{c.nom}</p>
+                        <p className="text-sm text-stone-700">
+                          <span className="font-bold">Nom du projet :</span>{' '}
+                          <span className="font-semibold">{c.nom}</span>
+                        </p>
                         <p className="text-[10px] text-stone-400 font-mono">{c.ref}</p>
                         <p className="flex items-center gap-1 text-[11px] font-semibold text-stone-400 mt-1 truncate">
                           <MapPin size={12} className="shrink-0" />
