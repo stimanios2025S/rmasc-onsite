@@ -119,6 +119,17 @@ export function creerVehiculeRouter(pool: Pool, logger: LoggerService, geoflotte
     }
   });
 
+  // ─── DIAGNOSTIC GeoFlotte : pourquoi le login échoue (réponse exacte) ──
+  router.get('/diag', async (_req, res) => {
+    try {
+      if (!geoflotte) return res.status(400).json({ erreur: 'Service GeoFlotte absent.' });
+      const diag = await geoflotte.diagnostiquer();
+      res.json(diag);
+    } catch (err: any) {
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   // ─── SYNC MANUELLE GeoFlotte ─────────────────────────────────────────
   router.post('/sync', async (_req, res) => {
     try {

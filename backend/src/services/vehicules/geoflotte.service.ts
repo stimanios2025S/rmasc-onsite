@@ -43,6 +43,11 @@ export class GeoflotteService {
   private get company(): string {
     return (process.env.GEOFLOTTE_COMPANY || 'rmasc').trim();
   }
+  // Token collé manuellement (localStorage → usertoken) = mode garanti.
+  // Si le login auto est rejeté par le portail, ce token contourne tout.
+  private get tokenManuel(): string {
+    return (process.env.GEOFLOTTE_TOKEN || '').trim();
+  }
   private get intervalle(): number {
     return parseInt(process.env.GEOFLOTTE_INTERVALLE_MS || '60000', 10) || 60000;
   }
@@ -99,9 +104,70 @@ export class GeoflotteService {
     return null;
   }
 
+  // ─── DIAGNOSTIC : expose pourquoi le portail rejette le login ────────────
+  // Appelé par GET /api/admin/vehicules/diag — montre la réponse EXACTE du
+  // portail pour chaque forme de login, sans jamais afficher le mot de passe.
+  async diagnostiquer(): Promise<any> {
+    const U = this.user, C = this.company;
+    const base = this.api;
+    const essais: Array<{ nom: string; corps: any }> = [
+      { nom: 'username/password', corps: { username: U, password: '***' } },
+      { nom: 'username/password+remember', corps: { username: U, password: '***', rememberMe: true } },
+      { nom: 'login/password', corps: { login: U, password: '***' } },
+      { nom: 'account+username', corps: { account: C, username: U, password: '***' } },
+      { nom: 'account+login', corps: { account: C, login: U, password: '***' } },
+      { nom: 'client+username', corps: { client: C, username: U, password: '***' } },
+      { nom: 'company+username', corps: { company: C, username: U, password: '***' } },
+      { nom: 'societe+username', corps: { societe: C, username: U, password: '***' } },
+      { nom: 'slash', corps: { username: `${C}/${U}`, password: '***' } },
+      { nom: 'dot', corps: { username: `${C}.${U}`, password: '***' } },
+      { nom: 'loginContact', corps: { loginContact: U, password: '***' } },
+      { nom: 'email', corps: { email: U, password: '***' } },
+    ];
+    const P = this.pass;
+    const resultats: any[] = [];
+    for (const e of essais) {
+      const vraiCorps = JSON.parse(JSON.stringify(e.corps).replace('"***"', JSON.stringify(P)));
+      const brut = await this.postJSON('/getsession', vraiCorps, false);
+      const copie = brut && typeof brut === 'object' ? { ...brut } : brut;
+      if (copie && typeof copie === 'object') {
+        for (const k of ['token', 'usertoken', 'accessToken', 'access_token']) {
+          if (typeof (copie as any)[k] === 'string') (copie as any)[k] = '◼︎◼︎◼︎(reçu, masqué)';
+        }
+        if (copie.data && typeof copie.data === 'object') {
+          for (const k of ['token', 'usertoken']) {
+            if (typeof (copie.data as any)[k] === 'string') (copie.data as any)[k] = '◼︎◼︎◼︎(reçu, masqué)';
+          }
+        }
+      }
+      resultats.push({ essai: e.nom, reponse: copie });
+      if (this.extraireToken(brut)) {
+        resultats.push({ essai: '✅ LOGIN OK avec', reponse: e.nom });
+        break;
+      }
+    }
+    // Token manuel présent ? le tester
+    let tokenManuelOk: boolean | null = null;
+    if (this.tokenManuel) {
+      this.token = this.tokenManuel;
+      const chk = await this.postJSON('/checkSession', {});
+      tokenManuelOk = !!(chk && (chk as any).error !== true);
+      const flotte = tokenManuelOk ? await this.lirePositions() : [];
+      return { base, user: U, company: C, tokenManuel: 'présent', tokenManuelOk, vehiculesLus: flotte.length, echantillon: flotte.slice(0, 2), essais: resultats };
+    }
+    return { base, user: U, company: C, tokenManuel: 'absent', essais: resultats };
+  }
+
   // ─── LOGIN réel : POST /getsession (champ société inclus) ────────────────
   private async connecter(): Promise<boolean> {
-    // Session existante encore valide ?
+    // 1) Token manuel (garanti) — prioritaire
+    if (this.tokenManuel) {
+      this.token = this.tokenManuel;
+      const chk = await this.postJSON('/checkSession', {});
+      if (chk && (chk as any).error !== true) return true;
+      this.logger.error('GEOFLOTTE_TOKEN rejeté (expiré ?) — bascule login auto.');
+    }
+    // 2) Session existante encore valide ?
     if (this.token) {
       const chk = await this.postJSON('/checkSession', {});
       if (chk && (chk as any).error !== true) return true;
