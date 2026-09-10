@@ -679,9 +679,11 @@ app.get('/api/chantiers/suggestion-vehicule', verifierToken, async (_req, res) =
 });
 
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
+// forceVehiculeId : véhicule choisi dans le wizard (manipulable). '' = sans véhicule.
+// Sinon auto-assign du 1er véhicule DISPONIBLE — même règle que GET suggestion-vehicule.
 app.post('/api/chantiers', verifierToken, async (req, res) => {
   try {
-    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId,
+    const { nom, client_nom, adresse, latitude, longitude, rayon_geofencing, complexite, reference_commande_erp, dxfUrl, pdfUrl, ficheTechnique, date_echeance, forceEquipeId, forceVehiculeId,
             date_debut_mecanique, date_debut_electrique, date_debut_verification } = req.body;
     if (!nom) {
       return res.status(400).json({ erreur: 'nom requis.' });
@@ -766,6 +768,43 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
       } catch (smsErr) {
         logger.error('Erreur programmation SMS création chantier', { erreur: (smsErr as any).message });
       }
+
+      // 🚗 Véhicule auto-assigné à la mission créée :
+      // - forceVehiculeId fourni (choix admin dans le wizard, '' = sans véhicule) → on l'utilise
+      // - sinon 1er véhicule DISPONIBLE (même règle que suggestion-vehicule)
+      // - l'admin peut le changer à tout moment après (edit / détail)
+      let vehiculeNom: string | null = null;
+      try {
+        let vehiculeId: string | null = null;
+        if (forceVehiculeId) {
+          const fv = await pool.query(
+            `SELECT id, nom FROM vehicules WHERE id = $1 AND actif = TRUE AND statut = 'DISPONIBLE'`,
+            [forceVehiculeId]);
+          if (fv.rows.length > 0) vehiculeId = fv.rows[0].id;
+        } else if (forceVehiculeId !== '') {
+          const av = await pool.query(
+            `SELECT id FROM vehicules WHERE actif = TRUE AND statut = 'DISPONIBLE' ORDER BY nom ASC LIMIT 1`);
+          if (av.rows.length > 0) vehiculeId = av.rows[0].id;
+        }
+        if (vehiculeId && missionId) {
+          await pool.query(`UPDATE vehicules SET statut = 'EN_MISSION', date_modification = NOW() WHERE id = $1`, [vehiculeId]);
+          await pool.query(`UPDATE ordres_de_mission SET vehicule_id = $1 WHERE id = $2`, [vehiculeId, missionId]);
+          await pool.query(
+            `INSERT INTO vehicules_affectations (vehicule_id, equipe_id, mission_id, chantier_id)
+             VALUES ($1, $2, $3, $4)`,
+            [vehiculeId, equipe.id, missionId, chantierId]);
+          const vn = await pool.query(`SELECT nom FROM vehicules WHERE id = $1`, [vehiculeId]);
+          vehiculeNom = vn.rows[0]?.nom || null;
+          logger.info('Véhicule auto-assigné à la création', { chantierId, missionId, vehiculeNom });
+        }
+      } catch (vehErr: any) {
+        logger.error('Erreur auto-assign véhicule création', { erreur: vehErr.message });
+      }
+      res.status(201).json({
+        chantierId, missionId, equipeNom, vehiculeNom,
+        message: `Chantier "${nom}" créé — équipe "${equipeNom}"${vehiculeNom ? ` + 🚗 ${vehiculeNom}` : ''}.`,
+      });
+      return;
     }
 
     res.status(201).json({ chantierId, missionId, equipeNom, message: `Chantier "${nom}" créé.` });

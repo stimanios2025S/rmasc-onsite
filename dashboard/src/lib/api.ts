@@ -125,6 +125,9 @@ export interface NouveauChantier {
   ficheTechnique?: string;
   date_echeance?: string;
   forceEquipeId?: string;
+  // '' = sans véhicule (l'admin laisse vide) ; sinon id du véhicule choisi ;
+  // undefined = auto-assign du 1er DISPONIBLE côté backend
+  forceVehiculeId?: string;
   date_debut_mecanique?: string;
   date_debut_electrique?: string;
   date_debut_verification?: string;
@@ -134,6 +137,7 @@ export interface CreerChantierResult {
   chantierId: string;
   missionId: string | null;
   equipeNom: string | null;
+  vehiculeNom?: string | null;
   message: string;
 }
 

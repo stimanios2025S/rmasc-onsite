@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, fetchSuggestionVehicule, fetchVehicules, assignerVehicule, reassignerEquipe, changerVehiculeChantier, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type VehiculeData, type ReposChantier } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, fetchSuggestionVehicule, fetchVehicules, reassignerEquipe, changerVehiculeChantier, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type VehiculeData, type ReposChantier } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -659,6 +659,11 @@ export default function ChantiersPage() {
       let pdfUrl = form.pdf_url;
       if (dxfFile) dxfUrl = await uploadFile(dxfFile, 'dxf');
       if (pdfFile) pdfUrl = await uploadFile(pdfFile, 'pdf');
+      // 🚗 L'admin voit la suggestion auto et choisit :
+      // - véhicule sélectionné → assigné direct (forceVehiculeId)
+      // - "Sans véhicule" (l'admin l'a vidé) → '' = mission sans véhicule
+      // - jamais touché (suggestion gardée) → undefined = backend auto-assigne le 1er DISPONIBLE
+      const vehiculeTouched = vehiculeChoisiId !== (vehiculeSuggere?.id || '');
       const res = await creerChantier({
         nom: form.nom_projet,
         client_nom: form.client_nom || undefined,
@@ -675,25 +680,16 @@ export default function ChantiersPage() {
         date_debut_electrique: form.date_debut_electrique || undefined,
         date_debut_verification: form.date_debut_verification || undefined,
         forceEquipeId: equipeChoisieId || undefined,
+        forceVehiculeId: vehiculeTouched ? (vehiculeChoisiId || '') : undefined,
       });
-      // Véhicule optionnel : assigné à la mission créée (vide = sans véhicule)
-      let vehiculeNom: string | null = null;
-      if (vehiculeChoisiId && res.missionId) {
-        try {
-          const vRes = await assignerVehicule(vehiculeChoisiId, res.missionId);
-          vehiculeNom = vehiculesDispo.find(v => v.id === vehiculeChoisiId)?.nom || null;
-          void vRes;
-        } catch (e: any) {
-          setMessage({ type: 'error', text: `Chantier créé mais véhicule non assigné : ${e.message || 'erreur'}` });
-        }
-      }
-      if (!vehiculeChoisiId || !res.missionId || vehiculeNom) {
-        // Backend auto-assigns first DISPONIBLE team
-        if (res.equipeNom) {
-          setMessage({ type: 'success', text: `Chantier créé — équipe "${res.equipeNom}"${vehiculeNom ? ` + 🚗 ${vehiculeNom}` : ''} !` });
-        } else {
-          setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
-        }
+      // Le backend assigne le véhicule (choix admin OU auto) — res.vehiculeNom le confirme
+      const vehiculeNom = res.vehiculeNom || (vehiculeTouched && vehiculeChoisiId
+        ? vehiculesDispo.find(v => v.id === vehiculeChoisiId)?.nom || null
+        : null);
+      if (res.equipeNom) {
+        setMessage({ type: 'success', text: `Chantier créé — équipe "${res.equipeNom}"${vehiculeNom ? ` + 🚗 ${vehiculeNom}` : ''} !` });
+      } else {
+        setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
       }
       setShowWizard(false);
       setStep(1);
