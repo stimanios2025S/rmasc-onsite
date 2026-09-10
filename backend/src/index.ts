@@ -31,6 +31,8 @@ import { creerMagasinierRouter } from './api/magasinier.controller';
 import { SmsService } from './services/sms/sms.service';
 import { SmsWorker } from './services/sms/sms.worker';
 import { PlaceAgentService } from './services/places/place-agent.service';
+import { GeoflotteService } from './services/vehicules/geoflotte.service';
+import { creerVehiculeRouter } from './api/vehicule.controller';
 import path from 'path';
 import https from 'https';
 import { creerPages } from './views';
@@ -180,6 +182,10 @@ app.use('/api/materiel', creerMaterielRouter(pool, logger, smsService));
 
 // Routes team management (admin)
 app.use('/api/admin/teams', creerTeamManagementRouter(pool, logger));
+
+// Routes véhicules GPS (admin) — GeoFlotte live + assignation optionnelle
+const geoflotteService = new GeoflotteService(pool, logger);
+app.use('/api/admin/vehicules', creerVehiculeRouter(pool, logger, geoflotteService));
 
 // Routes magasinier (warehouse manager — auth + portal + admin management)
 app.use('/api/magasinier', creerMagasinierRouter(pool, logger));
@@ -1227,6 +1233,18 @@ $v20$ LANGUAGE plpgsql`);
     } catch (v25e: any) {
       logger.error('Migration v25 échouée (non bloquant)', { erreur: v25e.message });
     }
+    // v26 : véhicules GPS (GeoFlotte) + assignation optionnelle + usine RMASC mémorisée
+    try {
+      const fsMod = await import('fs');
+      const v26Path = path.join(__dirname, '..', '..', 'database', 'migration-v26-vehicules.sql');
+      if (fsMod.existsSync(v26Path)) {
+        const sql = fsMod.readFileSync(v26Path, 'utf8');
+        await pool.query(sql);
+        logger.info('Migration v26 OK — véhicules GPS + usine RMASC');
+      }
+    } catch (v26e: any) {
+      logger.error('Migration v26 échouée (non bloquant)', { erreur: v26e.message });
+    }
     logger.info('Migration v20 OK — planning par phase actif');
     logger.info('Migration v21 OK — réception auto à la fin de vérification');
     logger.info('Migration v22 OK — sortie auto GPS');
@@ -1253,6 +1271,10 @@ const port = parseInt(PORT, 10);
     // Démarrer le worker SMS (file d'attente sms_outbox)
     const smsWorker = new SmsWorker(pool, smsService, logger);
     smsWorker.demarrer();
+    // Démarrer le polling GeoFlotte (positions véhicules — gratuit, non bloquant)
+    try { geoflotteService.demarrer(); } catch (e: any) {
+      logger.error('GeoFlotte démarrage impossible (mode manuel actif)', { erreur: e.message });
+    }
   });
 })();
 

@@ -8,6 +8,7 @@ const PILLS = [
   { label: "Vue d'ensemble", href: '/dashboard' },
   { label: 'Chantiers', href: '/dashboard/chantiers' },
   { label: 'Équipes', href: '/dashboard/team-management' },
+  { label: 'Véhicules', href: '/dashboard/vehicules' },
   { label: 'Incidents', href: '/dashboard/incidents' },
   { label: 'Demandes', href: '/dashboard/demandes' },
   { label: 'Magasin', href: '/dashboard/magasiniers' },

@@ -4,6 +4,7 @@ import { LoggerService } from '../services/notifications/logger.service';
 import { SmsService } from '../services/sms/sms.service';
 import { eventBus } from '../services/events/event-bus';
 import { reposActif } from '../services/repos-chantier.service';
+import { libererVehiculeMission, transfererVehiculeMission } from './vehicule.controller';
 import { getChecklistForPhase } from '../config/checklists';
 
 /**
@@ -170,6 +171,8 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
              WHERE id = $1`,
             [equipeId]
           );
+          // 🚗 Fin de journée = vraie fin → le véhicule redevient DISPONIBLE
+          try { if (missionId) await libererVehiculeMission(pool, missionId); } catch {}
         } catch (finErr: any) {
           logger.error('Erreur fin de journée — repos', { erreur: finErr.message, equipeId });
         }
@@ -732,6 +735,11 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         chantierId: m.chantier_id,
       });
 
+      // 🚗 Le véhicule suit le chantier vers la phase suivante (meca→elec→verif)
+      if (missionNextId) {
+        try { await transfererVehiculeMission(pool, missionId, missionNextId); } catch {}
+      }
+
       const nextLabel = nextPhase === 'electrique' ? 'Électrique' : 'Vérification';
       res.json({
         ok: true,
@@ -810,6 +818,9 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
          `${m.equipe_nom} a accepté la phase ${nextPhaseLabel} (transition depuis ${m.phase})`]
       );
       const newMissionId = result.rows[0].id;
+
+      // 🚗 Même équipe qui continue → son véhicule continue avec elle
+      try { await transfererVehiculeMission(pool, missionId, newMissionId); } catch {}
 
       // Create checklist for the new phase — critical, must not fail silently
       try {

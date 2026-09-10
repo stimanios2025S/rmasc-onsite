@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import {
   fetchTeamsManagement, updateTeam, updateTeamMembers, createTeam, deleteTeam,
+  updateMemberCredentials,
   fetchSystemConfig, updateSystemConfig,
   fetchMissionsReassign, manageRepos,
   type TeamData, type TeamMember, type MissionReassign, type SystemConfig,
@@ -60,7 +61,7 @@ export default function TeamManagementPage() {
   // Create team modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ nom: '', type: 'mecanique', couleur_hex: '#2196F3', jours_repos: '' });
-  const [createMembers, setCreateMembers] = useState<{ prenom: string; nom: string; telephone: string; role: string }[]>([]);
+  const [createMembers, setCreateMembers] = useState<{ prenom: string; nom: string; telephone: string; role: string; identifiant: string; mot_de_passe: string }[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
   const [createdResult, setCreatedResult] = useState<{ equipe: any; credentials: { identifiant: string; mot_de_passe: string }[] } | null>(null);
   const [showCredentials, setShowCredentials] = useState(true);
@@ -199,7 +200,7 @@ export default function TeamManagementPage() {
     setShowCreateModal(true);
   };
   const addCreateMember = () => {
-    setCreateMembers([...createMembers, { prenom: '', nom: '', telephone: '', role: 'technicien' }]);
+    setCreateMembers([...createMembers, { prenom: '', nom: '', telephone: '', role: 'technicien', identifiant: '', mot_de_passe: '' }]);
   };
   const removeCreateMember = (idx: number) => {
     setCreateMembers(createMembers.filter((_, i) => i !== idx));
@@ -211,9 +212,17 @@ export default function TeamManagementPage() {
   };
   const handleCreateTeam = async () => {
     if (!createForm.nom.trim()) { showToast('error', 'Nom de l\'équipe requis.'); return; }
+    const membres = createMembers.filter(m => m.prenom.trim() && m.nom.trim());
+    // Identifiant + mot de passe MANUELS obligatoires (patron) — auto si vides
+    for (const m of membres) {
+      if (!m.identifiant.trim()) m.identifiant = `${m.prenom.trim()}.${m.nom.trim()}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9.]/g, '');
+      if (!m.mot_de_passe || m.mot_de_passe.length < 4) {
+        showToast('error', `Mot de passe (4 min) requis pour ${m.prenom} ${m.nom}.`);
+        return;
+      }
+    }
     setCreateLoading(true);
     try {
-      const membres = createMembers.filter(m => m.prenom.trim() && m.nom.trim());
       const result = await createTeam({
         nom: createForm.nom.trim(),
         type: createForm.type,
@@ -238,6 +247,34 @@ export default function TeamManagementPage() {
     const text = createdResult.credentials.map(c => `${c.identifiant} / ${c.mot_de_passe}`).join('\n');
     navigator.clipboard.writeText(text);
     showToast('success', '📋 Tous les identifiants copiés !');
+  };
+
+  // ─── MEMBER CREDENTIALS (identifiant + password anytime) ───────────
+  const [credTarget, setCredTarget] = useState<TeamMember | null>(null);
+  const [credForm, setCredForm] = useState({ identifiant: '', mot_de_passe: '' });
+  const [showCredPass, setShowCredPass] = useState(true);
+
+  const openCredModal = (m: TeamMember) => {
+    setCredTarget(m);
+    setCredForm({ identifiant: '', mot_de_passe: '' });
+    setShowCredPass(true);
+  };
+  const handleSaveCred = async () => {
+    if (!credTarget) return;
+    const data: { identifiant?: string; mot_de_passe?: string } = {};
+    if (credForm.identifiant.trim()) data.identifiant = credForm.identifiant.trim();
+    if (credForm.mot_de_passe) data.mot_de_passe = credForm.mot_de_passe;
+    if (Object.keys(data).length === 0) { showToast('error', 'Rien à modifier.'); return; }
+    setSaving(true);
+    try {
+      const res = await updateMemberCredentials(credTarget.id, data);
+      showToast('success', res.message || '✅ Identifiants mis à jour.');
+      setCredTarget(null);
+      await loadAll();
+    } catch (e: any) {
+      showToast('error', e.message || 'Erreur.');
+    }
+    setSaving(false);
   };
 
   // ─── DELETE TEAM ──────────────────────────────────────────────────
@@ -569,10 +606,18 @@ export default function TeamManagementPage() {
                             </>
                           )}
                         </div>
-                        {m.telephone && !isEditingMembers && (
-                          <a href={`tel:${m.telephone}`} className="text-stone-300 hover:text-emerald-500 transition-colors">
-                            <Phone size={14} />
-                          </a>
+                        {!isEditingMembers && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            {m.telephone && (
+                              <a href={`tel:${m.telephone}`} className="text-stone-300 hover:text-emerald-500 transition-colors p-1">
+                                <Phone size={14} />
+                              </a>
+                            )}
+                            <button onClick={() => openCredModal(m)} title="Changer identifiant / mot de passe"
+                              className="text-stone-300 hover:text-indigo-500 transition-colors p-1">
+                              <Eye size={14} />
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -903,6 +948,12 @@ export default function TeamManagementPage() {
                             <option value="ingenieur">📐 Ingénieur</option>
                           </select>
                         </div>
+                        <div className="flex gap-2">
+                          <input value={m.identifiant} onChange={e => updateCreateMember(i, 'identifiant', e.target.value)}
+                            placeholder="Identifiant * (ex: mohamed.benali)" className="flex-1 px-3 py-2 bg-indigo-50/50 border border-indigo-200 rounded-xl text-xs outline-none focus:border-indigo-400 font-mono" style={{ fontSize: '16px' }} />
+                          <input value={m.mot_de_passe} onChange={e => updateCreateMember(i, 'mot_de_passe', e.target.value)}
+                            placeholder="Mot de passe * (4 min)" type="text" className="flex-1 px-3 py-2 bg-amber-50/50 border border-amber-200 rounded-xl text-xs outline-none focus:border-amber-400 font-mono" style={{ fontSize: '16px' }} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -922,6 +973,47 @@ export default function TeamManagementPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: IDENTIFIANTS MEMBRE (ID + password anytime) ═══ */}
+      {credTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => !saving && setCredTarget(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-sm p-5 sm:m-4 shadow-2xl pb-safe" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-lg text-stone-800">🔑 Accès membre</h3>
+              <button onClick={() => setCredTarget(null)} className="text-stone-300 hover:text-stone-500"><X size={22} /></button>
+            </div>
+            <p className="text-xs text-stone-400 mb-4">{credTarget.prenom} {credTarget.nom} — laissez vide ce que vous ne changez pas.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Identifiant de connexion</label>
+                <input value={credForm.identifiant} onChange={e => setCredForm({ ...credForm, identifiant: e.target.value })}
+                  placeholder="Ex: mohamed.benali" style={{ fontSize: '16px' }}
+                  className="w-full px-4 py-3 bg-indigo-50/50 border border-indigo-200 rounded-xl text-sm outline-none focus:border-indigo-400 font-mono" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Nouveau mot de passe (4 min)</label>
+                <div className="relative">
+                  <input value={credForm.mot_de_passe} onChange={e => setCredForm({ ...credForm, mot_de_passe: e.target.value })}
+                    placeholder="Ex: Rmasc2026!" type={showCredPass ? 'text' : 'password'} style={{ fontSize: '16px' }}
+                    className="w-full px-4 py-3 pr-11 bg-amber-50/50 border border-amber-200 rounded-xl text-sm outline-none focus:border-amber-400 font-mono" />
+                  <button onClick={() => setShowCredPass(!showCredPass)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-white flex items-center justify-center text-stone-400 hover:text-stone-600">
+                    {showCredPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setCredTarget(null)} disabled={saving}
+                className="flex-1 py-3 bg-stone-100 rounded-2xl text-sm font-semibold text-stone-500 hover:bg-stone-200 transition-all min-h-[44px]">Annuler</button>
+              <button onClick={handleSaveCred} disabled={saving}
+                className="flex-1 py-3 bg-indigo-500 text-white rounded-2xl text-sm font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 min-h-[44px]">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Sauvegarder
+              </button>
+            </div>
           </div>
         </div>
       )}

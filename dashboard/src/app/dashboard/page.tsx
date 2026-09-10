@@ -507,6 +507,9 @@ export default function DashboardPage() {
                   {eq.statut_equipe === 'EN_MISSION' ? 'En mission' : eq.statut_equipe === 'EN_REPOS' ? 'En repos' : 'Disponible'}
                 </span>
                 {eq.membres_noms && <p className="text-[10px] text-stone-400 mt-1.5 truncate">👤 {eq.membres_noms}</p>}
+                {eq.statut_equipe === 'EN_REPOS' && (eq.jours_repos_restants ?? 0) > 0 && (
+                  <p className="text-[10px] font-bold text-amber-600 mt-1 truncate">🌙 Repos: {eq.jours_repos_restants}j restant{(eq.jours_repos_restants ?? 0) > 1 ? 's' : ''}</p>
+                )}
               </div>
             ))}
             {equipes.length === 0 && <p className="col-span-3 py-8 text-center text-stone-400 text-sm">Aucune équipe.</p>}

@@ -68,7 +68,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
     }
   });
 
-  // ─── 1.5. CREATE NEW TEAM ─────────────────────────────────────────────
+  // ─── 1.5. CREATE NEW TEAM (identifiants + mots de passe MANUELS du patron) ─
   router.post('/', async (req, res) => {
     try {
       const { nom, type, couleur_hex, jours_repos, membres } = req.body;
@@ -95,7 +95,7 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       const createdMembers: any[] = [];
       const credentials: { identifiant: string; mot_de_passe: string }[] = [];
 
-      // Create team members if provided
+      // Create team members if provided — identifiant + mot de passe MANUELS (patron)
       if (Array.isArray(membres) && membres.length > 0) {
         for (const m of membres) {
           if (!m.prenom || !m.nom) continue;
@@ -104,29 +104,33 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
           const nomMembre = m.nom.trim();
           const role = m.role || 'technicien';
 
-          // Generate login: prenom.nom (lowercase, no spaces, no accents)
-          const identifiantBase = `${prenom}.${nomMembre}`
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[̀-ͯ]/g, '')  // remove combining diacritical marks (accents)
-            .replace(/[^a-z0-9.]/g, '')
-            .replace(/\.\./g, '.')
-            .replace(/^\.|\.$/g, '');
-
-          // Ensure unique identifiant
-          let identifiant = identifiantBase;
-          let suffix = 1;
-          while (true) {
-            const { rows: existing } = await pool.query(
-              `SELECT id FROM utilisateurs WHERE identifiant = $1`, [identifiant]
-            );
-            if (existing.length === 0) break;
-            identifiant = `${identifiantBase}.${suffix}`;
-            suffix++;
+          // Identifiant manuel obligatoire (sinon auto prenom.nom) — normalisé en minuscules
+          function normaliserIdentifiant(brut: string): string {
+            return String(brut).trim().toLowerCase()
+              .normalize('NFD').replace(/[̀-ͯ]/g, '')
+              .replace(/[^a-z0-9._-]/g, '').replace(/\.\./g, '.')
+              .replace(/^\.|\.$/g, '').slice(0, 50);
+          }
+          let identifiant = (m.identifiant && String(m.identifiant).trim())
+            ? normaliserIdentifiant(m.identifiant)
+            : normaliserIdentifiant(`${prenom}.${nomMembre}`);
+          if (!identifiant) {
+            return res.status(400).json({ erreur: `Identifiant invalide pour ${prenom} ${nomMembre}.` });
           }
 
-          // Generate temporary password
-          const motDePasse = `rmasc${Math.random().toString(36).slice(-6)}`;
+          // Unicité stricte : jamais d'auto-suffixe silencieux (le patron voit l'erreur et corrige)
+          const { rows: existe } = await pool.query(
+            `SELECT id FROM utilisateurs WHERE identifiant = $1
+             UNION SELECT id FROM magasiniers WHERE identifiant = $1`, [identifiant]);
+          if (existe.length > 0) {
+            return res.status(409).json({ erreur: `Identifiant « ${identifiant} » déjà utilisé. Choisissez un autre.` });
+          }
+
+          // Mot de passe manuel obligatoire (min 4) — plus de génération aléatoire
+          const motDePasse = String(m.mot_de_passe || '');
+          if (motDePasse.length < 4) {
+            return res.status(400).json({ erreur: `Mot de passe requis (4 caractères min) pour ${prenom} ${nomMembre}.` });
+          }
           const motDePasseHash = await bcrypt.hash(motDePasse, 10);
 
           const email = `${identifiant}@rmasc.dz`;
@@ -320,6 +324,62 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       res.json({ ok: true, message: `Équipe « ${equipe.nom} » supprimée.` });
     } catch (err: any) {
       logger.error('Erreur suppression équipe', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
+  // ─── 5.6. MEMBER CREDENTIALS — changer identifiant / mot de passe ─────
+  // PATCH /api/admin/teams/members/:memberId { identifiant?, mot_de_passe? }
+  router.patch('/members/:memberId', async (req, res) => {
+    try {
+      const { memberId } = req.params;
+      const { identifiant, mot_de_passe } = req.body || {};
+
+      const { rows: users } = await pool.query(
+        `SELECT id, prenom, nom FROM utilisateurs WHERE id = $1`, [memberId]);
+      if (users.length === 0) return res.status(404).json({ erreur: 'Membre introuvable.' });
+
+      const sets: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (identifiant !== undefined) {
+        const propre = String(identifiant).trim().toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9._-]/g, '').replace(/\.\./g, '.')
+          .replace(/^\.|\.$/g, '').slice(0, 50);
+        if (!propre) return res.status(400).json({ erreur: 'Identifiant invalide.' });
+        const { rows: existe } = await pool.query(
+          `SELECT id FROM utilisateurs WHERE identifiant = $1 AND id != $2
+           UNION SELECT id FROM magasiniers WHERE identifiant = $1`, [propre, memberId]);
+        if (existe.length > 0) {
+          return res.status(409).json({ erreur: `Identifiant « ${propre} » déjà utilisé.` });
+        }
+        sets.push(`identifiant = $${idx++}`); values.push(propre);
+        sets.push(`email = $${idx++}`); values.push(`${propre}@rmasc.dz`);
+      }
+
+      if (mot_de_passe !== undefined) {
+        if (String(mot_de_passe).length < 4) {
+          return res.status(400).json({ erreur: 'Mot de passe : 4 caractères minimum.' });
+        }
+        const hash = await bcrypt.hash(String(mot_de_passe), 10);
+        sets.push(`mot_de_passe_hash = $${idx++}`); values.push(hash);
+      }
+
+      if (sets.length === 0) return res.status(400).json({ erreur: 'Rien à modifier (identifiant / mot_de_passe).' });
+      sets.push('date_modification = NOW()');
+      values.push(memberId);
+
+      const { rows } = await pool.query(
+        `UPDATE utilisateurs SET ${sets.join(', ')} WHERE id = $${idx}
+         RETURNING id, prenom, nom, identifiant, telephone, role::text AS role`, values);
+
+      logger.info('Identifiants membre modifiés', { memberId, champs: Object.keys(req.body || {}) });
+      res.json({ ok: true, membre: rows[0], message: `Identifiants de ${rows[0].prenom} ${rows[0].nom} mis à jour.` });
+    } catch (err: any) {
+      if (err.code === '23505') return res.status(409).json({ erreur: 'Cet identifiant existe déjà.' });
+      logger.error('Erreur identifiants membre', { erreur: err.message });
       res.status(500).json({ erreur: err.message });
     }
   });

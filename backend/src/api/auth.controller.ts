@@ -17,14 +17,16 @@ export function creerAuthRouter(pool: Pool, logger: LoggerService): Router {
         return;
       }
 
+      // Identifiant insensible à la casse + espaces (le patron tape à la main)
+      const identifiantPropre = String(identifiant).trim();
       const { rows } = await pool.query(
         `SELECT u.id, u.identifiant, u.email, u.prenom, u.nom, u.role,
                 u.equipe_id AS "equipeId", u.mot_de_passe_hash,
                 e.nom AS "nomEquipe", e.type AS "typeEquipe"
          FROM utilisateurs u
          LEFT JOIN equipes e ON e.id = u.equipe_id
-         WHERE u.identifiant = $1 AND u.actif = TRUE`,
-        [identifiant]
+         WHERE LOWER(u.identifiant) = LOWER($1) AND u.actif = TRUE`,
+        [identifiantPropre]
       );
 
       if (rows.length === 0) {

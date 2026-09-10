@@ -8,6 +8,7 @@ import { EquipeRepository } from '../repositories/equipe.repository';
 import { BlocageService } from '../services/moduleC/blocage.service';
 import { NotificationService } from '../services/notifications/notification.service';
 import { eventBus } from '../services/events/event-bus';
+import { libererVehiculeMission, transfererVehiculeMission } from './vehicule.controller';
 import { reposActif, sweepReposExpires, joursRestants } from '../services/repos-chantier.service';
 
 export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService?: SmsService): Router {
@@ -158,6 +159,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
                   chantierId: m.chantier_id, missionId: nm.id,
                 });
                 logger.info('SMS phase suivante envoyé', { phase: nextPhase, equipe: nm.equipe_nom });
+                // 🚗 Le véhicule suit le chantier vers la phase suivante
+                try { await transfererVehiculeMission(pool, missionId, nm.id); } catch {}
               }
             } catch (smsErr) {
               logger.error('Erreur SMS phase suivante', { erreur: (smsErr as any).message });
@@ -751,6 +754,9 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
         [m.chantier_id, id, m.equipe_id,
          `🏁 Vérification TERMINÉE sur "${m.nom_chantier}" — équipe ${m.equipe_nom} — Tout est en ordre !`]
       );
+
+      // 🚗 Vérification TERMINÉE = vraie fin du chantier → véhicule DISPONIBLE
+      try { await libererVehiculeMission(pool, id); } catch {}
 
       // SSE broadcast
       try {

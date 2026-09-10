@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type ReposChantier } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, fetchVehicules, assignerVehicule, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type VehiculeData, type ReposChantier } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -283,6 +283,10 @@ export default function ChantiersPage() {
   const [equipesMeca, setEquipesMeca] = useState<EquipeData[]>([]);
   const [equipeSuggeree, setEquipeSuggeree] = useState<EquipeData | null>(null);
   const [equipeChoisieId, setEquipeChoisieId] = useState('');
+  // ─── VÉHICULE OPTIONNEL (l'admin assigne, ou vide = sans véhicule) ───
+  const [vehiculesDispo, setVehiculesDispo] = useState<VehiculeData[]>([]);
+  const [vehiculeSuggere, setVehiculeSuggere] = useState<VehiculeData | null>(null);
+  const [vehiculeChoisiId, setVehiculeChoisiId] = useState('');
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
@@ -332,6 +336,13 @@ export default function ChantiersPage() {
       setEquipesMeca(res.equipes || []);
       setEquipeSuggeree(res.suggestion || null);
       setEquipeChoisieId(res.suggestion?.id || '');
+    } catch (_) { }
+    try {
+      const vehs = await fetchVehicules();
+      setVehiculesDispo(vehs || []);
+      const premierDispo = (vehs || []).find((v: VehiculeData) => v.statut === 'DISPONIBLE') || null;
+      setVehiculeSuggere(premierDispo);
+      setVehiculeChoisiId(premierDispo?.id || '');
     } catch (_) { }
   }
 
@@ -422,16 +433,30 @@ export default function ChantiersPage() {
         date_debut_verification: form.date_debut_verification || undefined,
         forceEquipeId: equipeChoisieId || undefined,
       });
-      // Backend auto-assigns first DISPONIBLE team
-      if (res.equipeNom) {
-        setMessage({ type: 'success', text: `Chantier créé et équipe "${res.equipeNom}" assignée automatiquement !` });
-      } else {
-        setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
+      // Véhicule optionnel : assigné à la mission créée (vide = sans véhicule)
+      let vehiculeNom: string | null = null;
+      if (vehiculeChoisiId && res.missionId) {
+        try {
+          const vRes = await assignerVehicule(vehiculeChoisiId, res.missionId);
+          vehiculeNom = vehiculesDispo.find(v => v.id === vehiculeChoisiId)?.nom || null;
+          void vRes;
+        } catch (e: any) {
+          setMessage({ type: 'error', text: `Chantier créé mais véhicule non assigné : ${e.message || 'erreur'}` });
+        }
+      }
+      if (!vehiculeChoisiId || !res.missionId || vehiculeNom) {
+        // Backend auto-assigns first DISPONIBLE team
+        if (res.equipeNom) {
+          setMessage({ type: 'success', text: `Chantier créé — équipe "${res.equipeNom}"${vehiculeNom ? ` + 🚗 ${vehiculeNom}` : ''} !` });
+        } else {
+          setMessage({ type: 'success', text: res.message || 'Chantier créé !' });
+        }
       }
       setShowWizard(false);
       setStep(1);
       resetForm();
       setEquipeChoisieId('');
+      setVehiculeChoisiId('');
       await loadChantiers();
       await loadEquipes();
     } catch (e: any) {
@@ -1266,6 +1291,39 @@ export default function ChantiersPage() {
                           />
                           {equipesMeca.length === 0 && (
                             <p className="text-xs text-amber-600 mt-2">⚠️ Aucune équipe mécanique active — le chantier sera créé sans mission.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ─── VÉHICULE (optionnel) : l'admin assigne, ou vide = sans véhicule ─── */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">🚗</span>
+                          <h4 className="font-bold text-stone-700">Véhicule <span className="font-normal text-stone-400 text-xs">(optionnel)</span></h4>
+                        </div>
+                        <p className="text-xs text-stone-400 mb-3">Laissez vide si l'équipe part sans véhicule. Sinon choisissez un véhicule disponible.</p>
+                        <div className="bg-sky-50/50 border border-sky-100 rounded-2xl p-3 sm:p-4">
+                          {vehiculeSuggere && (
+                            <div className="flex items-center gap-2 mb-3 bg-white border border-sky-200 rounded-xl px-3 py-2">
+                              <span className="text-base">🤖</span>
+                              <p className="text-xs text-stone-600">
+                                Suggestion auto : <span className="font-bold text-sky-700">{vehiculeSuggere.nom}</span>
+                                {vehiculeSuggere.immatriculation && <span className="text-stone-400"> — {vehiculeSuggere.immatriculation}</span>}
+                              </p>
+                            </div>
+                          )}
+                          <select value={vehiculeChoisiId} onChange={e => setVehiculeChoisiId(e.target.value)}
+                            style={{ fontSize: '16px' }}
+                            className="w-full px-4 py-3 bg-white border border-sky-200 rounded-xl text-sm text-stone-700 outline-none focus:border-sky-400 transition-all min-h-[48px]">
+                            <option value="">— Sans véhicule —</option>
+                            {vehiculesDispo.map(v => (
+                              <option key={v.id} value={v.id}>
+                                🚗 {v.nom}{v.immatriculation ? ` (${v.immatriculation})` : ''}{v.statut !== 'DISPONIBLE' ? ` — ${v.statut}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          {vehiculesDispo.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-2">⚠️ Aucun véhicule enregistré — ajoutez-les dans la page Véhicules.</p>
                           )}
                         </div>
                       </div>

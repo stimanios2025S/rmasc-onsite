@@ -320,6 +320,44 @@ export async function reassignMission(missionId: string, equipeId: string) {
     method: 'PATCH', body: JSON.stringify({ equipe_id: equipeId }),
   });
 }
+export async function updateMemberCredentials(memberId: string, data: { identifiant?: string; mot_de_passe?: string }) {
+  return apiFetch<{ ok: boolean; message?: string; membre?: any }>(`/admin/teams/members/${memberId}`, {
+    method: 'PATCH', body: JSON.stringify(data),
+  });
+}
+
+// ─── VÉHICULES GPS (Admin — GeoFlotte live + assignation optionnelle) ──
+export interface VehiculeData {
+  id: string; nom: string; immatriculation: string | null; imei: string | null;
+  geoflotte_id: string | null; statut: string; actif: boolean; date_creation: string;
+  latitude: number | null; longitude: number | null; vitesse_kmh: number | null;
+  en_mouvement: boolean | null; adresse: string | null; date_position: string | null;
+  equipe_nom: string | null; equipe_id: string | null; chantier_nom: string | null;
+}
+export async function fetchVehicules(): Promise<VehiculeData[]> {
+  return apiFetch('/admin/vehicules');
+}
+export async function createVehicule(data: { nom: string; immatriculation?: string; imei?: string; geoflotte_id?: string }) {
+  return apiFetch<{ ok: boolean; vehicule: VehiculeData }>(`/admin/vehicules`, { method: 'POST', body: JSON.stringify(data) });
+}
+export async function updateVehicule(id: string, data: { nom?: string; immatriculation?: string | null; imei?: string | null; geoflotte_id?: string | null; statut?: string; actif?: boolean }) {
+  return apiFetch<{ ok: boolean; vehicule: VehiculeData }>(`/admin/vehicules/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+export async function deleteVehicule(id: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/vehicules/${id}`, { method: 'DELETE' });
+}
+export async function syncVehicules() {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/vehicules/sync`, { method: 'POST' });
+}
+export async function assignerVehicule(vehicule_id: string, mission_id: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/vehicules/assigner`, { method: 'POST', body: JSON.stringify({ vehicule_id, mission_id }) });
+}
+export async function libererVehicule(id: string) {
+  return apiFetch<{ ok: boolean; message?: string }>(`/admin/vehicules/${id}/liberer`, { method: 'POST' });
+}
+export async function fetchVehiculesHistorique(vehicule_id?: string) {
+  return apiFetch<any[]>(`/admin/vehicules/historique/liste${vehicule_id ? `?vehicule_id=${vehicule_id}` : ''}`);
+}
 
 // ─── TIMESHEET (Admin daily timeline) ───────────────────────────────
 export interface TimesheetEvent {
