@@ -48,6 +48,12 @@ export class GeoflotteService {
   private get tokenManuel(): string {
     return (process.env.GEOFLOTTE_TOKEN || '').trim();
   }
+  // Refresh token (localStorage → refreshToken) : le portail tue le usertoken
+  // côté serveur ("Invalid token") → on en remint un frais via /getNewToken.
+  // C'est ça qui rend la connexion durable, sans recopier le token à la main.
+  private get refreshManuel(): string {
+    return (process.env.GEOFLOTTE_REFRESH_TOKEN || '').trim();
+  }
   private get intervalle(): number {
     return parseInt(process.env.GEOFLOTTE_INTERVALLE_MS || '60000', 10) || 60000;
   }
@@ -193,6 +199,26 @@ export class GeoflotteService {
       // sous une enveloppe inattendue → on garde le token et on laisse
       // synchroniser() trancher (0 véhicule lu ≠ rejet).
       this.logger.error('GEOFLOTTE_TOKEN incertain (flotte vide + checkSession KO) — bascule login auto.');
+    }
+    // 1b) Token expiré côté serveur → refresh auto via /getNewToken
+    // (refreshToken du localStorage, origine utils/auth.js comme le front).
+    if (this.refreshManuel) {
+      try {
+        const savedToken = this.token;
+        this.token = '';
+        const j = await this.postJSON('/getNewToken',
+          { refreshToken: this.refreshManuel, origin: 'utils/auth.js' }, false);
+        const frais = this.extraireToken(j);
+        if (frais) {
+          this.token = frais;
+          const flotte = await this.lirePositions();
+          if (flotte.length > 0) {
+            this.logger.info(`GeoFlotte refresh OK — ${flotte.length} véhicule(s), token renouvelé.`);
+            return true;
+          }
+        }
+        this.token = savedToken;
+      } catch { /* fallback login auto ci-dessous */ }
     }
     // 2) Session existante encore valide ?
     if (this.token) {
