@@ -43,9 +43,11 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
       const mission = rows[0];
 
       // Repos de CETTE équipe sur CE chantier (actifs + historique récent) → l'ouvrier voit ses repos
+      // + TOUS les repos actifs de l'équipe (même sur d'autres chantiers) : une méca en repos
+      // n'a pas de mission active (rows vide) mais doit quand même voir son repos + countdown.
       try {
         const reposRes = await pool.query(
-          `SELECT rc.id, rc.jours_prevus,
+          `SELECT rc.id, rc.chantier_id, c.nom_chantier, rc.jours_prevus,
                   TO_CHAR(rc.date_debut,'YYYY-MM-DD HH24:MI') AS date_debut,
                   TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS date_fin_prevue,
                   rc.statut, rc.motif,
@@ -53,7 +55,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
                     THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
                     ELSE 0 END AS jours_restants
            FROM repos_chantier rc
-           WHERE rc.equipe_id = $1 AND rc.chantier_id = $2
+           JOIN chantiers c ON c.id = rc.chantier_id
+           WHERE rc.equipe_id = $1 AND (rc.chantier_id = $2 OR rc.statut = 'actif')
            ORDER BY (rc.statut = 'actif') DESC, rc.date_creation DESC
            LIMIT 5`,
           [mission.equipe_id, mission.chantier_id]

@@ -17,12 +17,21 @@ export function creerEquipeRouter(pool: Pool): Router {
 
       // Repos-chantier actif ? → l'équipe reste EN_REPOS jusqu'à la fin
       // prévue (même si disponible_a_partir_de a été écrasé entre-temps).
+      // IMPORTANT : ne jamais écraser EN_MISSION — une méca peut être en mission
+      // sur un chantier ET en repos ciblé sur un autre ; sa mission prime.
       const reposHold = await pool.query(
         `SELECT MAX(date_fin_prevue) AS fin FROM repos_chantier
          WHERE equipe_id = $1 AND statut = 'actif'`,
         [equipe_id]
       );
-      if (reposHold.rows[0]?.fin) {
+      const missionActiveHold = await pool.query(
+        `SELECT 1 FROM ordres_de_mission
+         WHERE equipe_id = $1 AND statut IN ('en_attente','en_route','en_cours','en_pause','bloque')
+         LIMIT 1`,
+        [equipe_id]
+      );
+      const aMissionActive = missionActiveHold.rows.length > 0;
+      if (reposHold.rows[0]?.fin && !aMissionActive) {
         await pool.query(
           `UPDATE equipes SET statut_equipe = 'EN_REPOS', disponible_a_partir_de = $2,
                   date_modification = NOW() WHERE id = $1`,

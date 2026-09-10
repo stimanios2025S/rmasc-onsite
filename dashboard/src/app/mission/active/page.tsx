@@ -74,7 +74,31 @@ function VerifAutocontroleCard({ chantierId }: { chantierId: string }) {
   );
 }
 
-/* ─── CARTE REPOS OUVRIER : l'ouvrier voit ses repos (actifs + passés) ─── */
+/* ─── COUNTDOWN REPOS : j/h/m/s temps réel jusqu'à la fin prévue ─── */
+function useReposCountdown(dateFinPrevue?: string | null) {
+  const [label, setLabel] = useState('Calcul...');
+  useEffect(() => {
+    if (!dateFinPrevue) { setLabel('—'); return; }
+    const tick = () => {
+      const diff = new Date(dateFinPrevue).getTime() - Date.now();
+      if (!Number.isFinite(diff)) { setLabel('—'); return; }
+      if (diff <= 0) { setLabel('Disponible maintenant !'); return; }
+      const j = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setLabel(j > 0 ? `${j}j ${h}h ${m}m` : h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [dateFinPrevue]);
+  return label;
+}
+
+/* ─── CARTE REPOS OUVRIER : l'ouvrier voit ses repos (actifs + passés) ───
+ * Toutes les équipes (méca / élec / vérif) : repos actifs avec countdown
+ * temps réel + fin prévue + motif, puis historique. */
 function ReposOuvrierCard({ repos, compact }: { repos: ReposInfo[]; compact?: boolean }) {
   if (!Array.isArray(repos) || repos.length === 0) return null;
   const actifs = repos.filter(r => r.statut === 'actif');
@@ -101,18 +125,7 @@ function ReposOuvrierCard({ repos, compact }: { repos: ReposInfo[]; compact?: bo
       </div>
       <div className="space-y-2">
         {actifs.map(r => (
-          <div key={r.id} className="flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/60 px-3.5 py-2.5">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-stone-700 truncate">
-                {r.nom_chantier || 'Chantier'}
-                <span className="ml-2 text-violet-600">😴 {r.jours_restants}j restants</span>
-              </p>
-              <p className="text-[10px] text-stone-400">
-                {r.jours_prevus}j prévus • fin prévue {fmtFin(r.date_fin_prevue)}
-                {r.motif ? ` • ${r.motif}` : ''}
-              </p>
-            </div>
-          </div>
+          <ReposActifRow key={r.id} r={r} fmtFin={fmtFin} />
         ))}
         {!compact && passes.slice(0, 3).map(r => (
           <div key={r.id} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 opacity-70">
@@ -128,6 +141,46 @@ function ReposOuvrierCard({ repos, compact }: { repos: ReposInfo[]; compact?: bo
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── LIGNE REPOS GÉNÉRIQUE (écran EN_REPOS) avec countdown live ─── */
+function ReposGeneriqueRow({ r }: { r: ReposInfo }) {
+  const countdown = useReposCountdown(r.date_fin_prevue);
+  return (
+    <div className="bg-violet-50 border border-violet-200 rounded-2xl px-4 py-3 text-center">
+      <p className="text-xs font-bold text-violet-700">😴 {r.nom_chantier || 'Repos'}</p>
+      <p className="text-[11px] text-stone-500 mt-0.5">
+        {r.jours_prevus}j prévus • {r.jours_restants}j restants
+        {r.motif ? ` • ${r.motif}` : ''}
+      </p>
+      <p className="text-sm font-black text-violet-600 tabular-nums mt-1">⏳ {countdown}</p>
+    </div>
+  );
+}
+
+/* ─── LIGNE REPOS ACTIF avec countdown temps réel (toutes équipes) ─── */
+function ReposActifRow({ r, fmtFin }: { r: ReposInfo; fmtFin: (d: string) => string }) {
+  const countdown = useReposCountdown(r.date_fin_prevue);
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-violet-50/60 px-3.5 py-2.5">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-stone-700 truncate">
+            {r.nom_chantier || 'Chantier'}
+            <span className="ml-2 text-violet-600">😴 {r.jours_restants}j restants</span>
+          </p>
+          <p className="text-[10px] text-stone-400">
+            {r.jours_prevus}j prévus • fin prévue {fmtFin(r.date_fin_prevue)}
+            {r.motif ? ` • ${r.motif}` : ''}
+          </p>
+        </div>
+      </div>
+      <div className="mt-2 bg-white rounded-xl border border-violet-100 px-3 py-2 text-center">
+        <p className="text-[10px] text-violet-400 uppercase font-semibold">Reprise dans</p>
+        <p className="text-lg font-black text-violet-600 tabular-nums">⏳ {countdown}</p>
       </div>
     </div>
   );
@@ -947,6 +1000,8 @@ export default function MissionActivePage() {
   );
 
   // ═══ STATE C: DISPONIBLE ═══
+  // Une méca sans mission peut quand même avoir des repos (terminés ou actifs
+  // sur un autre chantier) → on les affiche toujours avec le countdown.
   if (equipeStatus?.statut_equipe === 'DISPONIBLE' && !mission) {
     return (
       <TechnicianShell equipeNom={equipeNom} phaseEquipe={phaseEquipe} onLogout={() => { deconnecter(); }}>
@@ -963,6 +1018,11 @@ export default function MissionActivePage() {
             Synchronisation en direct...
           </div>
         </div>
+        {Array.isArray(equipeStatus?.repos) && equipeStatus.repos.length > 0 && (
+          <div className="pb-6 w-full">
+            <ReposOuvrierCard repos={equipeStatus.repos} />
+          </div>
+        )}
       </TechnicianShell>
     );
   }
@@ -1034,17 +1094,11 @@ export default function MissionActivePage() {
                 <p className="text-xs text-amber-600 font-semibold">Règle applicable</p>
                 <p className="text-xs text-stone-400 mt-1">3 jours de repos obligatoires après chaque mission terminée.</p>
               </div>
-              {/* ═══ L'OUVRIER VOIT SES REPOS (chantier + jours + motif) ═══ */}
+              {/* ═══ L'OUVRIER VOIT SES REPOS (chantier + jours + motif + countdown live) ═══ */}
               {Array.isArray(equipeStatus?.repos) && equipeStatus.repos.length > 0 && (
                 <div className="mt-4 w-full max-w-xs space-y-2">
                   {equipeStatus.repos.filter(r => r.statut === 'actif').map(r => (
-                    <div key={r.id} className="bg-violet-50 border border-violet-200 rounded-2xl px-4 py-3 text-center">
-                      <p className="text-xs font-bold text-violet-700">😴 {r.nom_chantier || 'Chantier'}</p>
-                      <p className="text-[11px] text-stone-500 mt-0.5">
-                        {r.jours_prevus}j prévus • {r.jours_restants}j restants
-                        {r.motif ? ` • ${r.motif}` : ''}
-                      </p>
-                    </div>
+                    <ReposGeneriqueRow key={r.id} r={r} />
                   ))}
                 </div>
               )}

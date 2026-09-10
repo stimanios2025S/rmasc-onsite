@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Pool } from 'pg';
 import { verifierToken } from '../middleware/auth.middleware';
 import { LoggerService } from '../services/notifications/logger.service';
-import { reposActif } from '../services/repos-chantier.service';
+import { reposActif, sweepReposExpires, joursRestants, cloturerRepos } from '../services/repos-chantier.service';
 import * as bcrypt from 'bcryptjs';
 
 /**
@@ -530,18 +530,29 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
       const equipe = equipeRes.rows[0];
 
       if (action === 'annuler') {
-        // Cancel repos — set team back to DISPONIBLE immediately
+        // Annuler TOUT : repos-chantiers actifs (missions reprises) + statut générique.
+        // Avant : on ne touchait que equipes → le repos_chantier restait 'actif',
+        // la mission restait en_pause et le portail ouvrier restait bloqué.
+        try { await sweepReposExpires(pool, id); } catch (_) { /* non bloquant */ }
+        const { rows: actifs } = await pool.query(
+          `SELECT id, missions FROM repos_chantier WHERE equipe_id = $1 AND statut = 'actif'`,
+          [id]
+        );
+        for (const r of actifs) {
+          const snaps = (typeof r.missions === 'string' ? JSON.parse(r.missions) : r.missions) || [];
+          await cloturerRepos(pool, r.id, snaps, true);
+        }
         await pool.query(
           `UPDATE equipes SET statut_equipe = 'DISPONIBLE',
            disponible_a_partir_de = NOW(),
            date_modification = NOW()
            WHERE id = $1`, [id]
         );
-        logger.info('Repos annulé par admin', { equipeId: id, equipeNom: equipe.nom });
+        logger.info('Repos annulé par admin', { equipeId: id, equipeNom: equipe.nom, reposChantiersClotures: actifs.length });
         res.json({ ok: true, message: `Repos de "${equipe.nom}" annulé. Équipe de nouveau disponible.` });
 
       } else if (action === 'prolonger') {
-        // Prolong repos by X additional days
+        // Prolong repos by X additional days (générique + repos-chantiers actifs)
         if (!jours || jours <= 0) {
           return res.status(400).json({ erreur: 'Nombre de jours requis (> 0).' });
         }
@@ -556,6 +567,26 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
            RETURNING disponible_a_partir_de`,
           [jours, id]
         );
+        // Repos-chantier actifs : décaler la fin prévue + le planning déjà décalé
+        try {
+          const { rows: rcActifs } = await pool.query(
+            `SELECT rc.id, rc.chantier_id FROM repos_chantier rc
+             WHERE rc.equipe_id = $1 AND rc.statut = 'actif'`, [id]
+          );
+          for (const rc of rcActifs) {
+            await pool.query(
+              `UPDATE repos_chantier SET date_fin_prevue = date_fin_prevue + ($2 || ' days')::INTERVAL,
+                      date_modification = NOW() WHERE id = $1`, [rc.id, jours]);
+            await pool.query(
+              `UPDATE chantiers SET
+                 date_debut_mecanique = CASE WHEN date_debut_mecanique IS NOT NULL AND date_debut_mecanique > NOW() THEN date_debut_mecanique + ($2 || ' days')::INTERVAL ELSE date_debut_mecanique END,
+                 date_debut_electrique = CASE WHEN date_debut_electrique IS NOT NULL AND date_debut_electrique > NOW() THEN date_debut_electrique + ($2 || ' days')::INTERVAL ELSE date_debut_electrique END,
+                 date_debut_verification = CASE WHEN date_debut_verification IS NOT NULL AND date_debut_verification > NOW() THEN date_debut_verification + ($2 || ' days')::INTERVAL ELSE date_debut_verification END,
+                 date_echeance = CASE WHEN date_echeance IS NOT NULL AND date_echeance > NOW() THEN date_echeance + ($2 || ' days')::INTERVAL ELSE date_echeance END,
+                 date_modification = NOW()
+               WHERE id = $1`, [rc.chantier_id, jours]);
+          }
+        } catch (_) { /* non bloquant */ }
         logger.info('Repos prolongé par admin', { equipeId: id, equipeNom: equipe.nom, joursAjoutes: jours });
         res.json({
           ok: true,
@@ -580,6 +611,22 @@ export function creerTeamManagementRouter(pool: Pool, logger: LoggerService): Ro
            WHERE id = $3`,
           [newStatus, date_fin, id]
         );
+        // Repos-chantier actifs alignés sur la même fin (ou clôturés si date passée)
+        try {
+          const { rows: rcActifs } = await pool.query(
+            `SELECT id, missions FROM repos_chantier WHERE equipe_id = $1 AND statut = 'actif'`, [id]
+          );
+          if (isPast) {
+            for (const rc of rcActifs) {
+              const snaps = (typeof rc.missions === 'string' ? JSON.parse(rc.missions) : rc.missions) || [];
+              await cloturerRepos(pool, rc.id, snaps, true);
+            }
+          } else {
+            await pool.query(
+              `UPDATE repos_chantier SET date_fin_prevue = $2, date_modification = NOW()
+               WHERE equipe_id = $1 AND statut = 'actif'`, [id, date_fin]);
+          }
+        } catch (_) { /* non bloquant */ }
         logger.info('Repos défini par admin', { equipeId: id, equipeNom: equipe.nom, dateFin: date_fin, statut: newStatus });
         res.json({
           ok: true,
