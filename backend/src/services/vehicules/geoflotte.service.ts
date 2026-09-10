@@ -292,7 +292,19 @@ export class GeoflotteService {
     // getSession({username, password...}) → token + claims (IDClient 4082).
     await this.ouvrirSessionNavigateur();
     const U = this.user, P = this.pass, C = this.company;
+    // Formulaire réel : 3 champs → Entreprise + Login + Mot de passe.
+    // Les essais username-seul sont donc rejetés ("identifiant incorrect").
     const payloads: any[] = [
+      { entreprise: C, login: U, password: P, rememberMe: true },
+      { entreprise: C, login: U, password: P },
+      { entreprise: C, username: U, password: P },
+      { enterprise: C, login: U, password: P },
+      { societe: C, login: U, password: P },
+      { entreprise: C, loginContact: U, password: P },
+      { nomEntreprise: C, login: U, password: P },
+      { raisonSociale: C, login: U, password: P },
+      { codeSociete: C, login: U, password: P },
+      { codeEntreprise: C, login: U, password: P },
       { username: U, password: P, rememberMe: true },
       { username: U, password: P },
       { login: U, password: P },
