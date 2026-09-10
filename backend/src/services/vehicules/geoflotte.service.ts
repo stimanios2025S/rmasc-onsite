@@ -99,8 +99,8 @@ export class GeoflotteService {
           headers: { Cookie: this.cookies, 'User-Agent': 'RMASC-OnSite/1.0', Accept: 'application/json' },
         } as any);
         if (!res.ok) continue;
-        const data = await res.json().catch(() => null);
-        const liste = Array.isArray(data) ? data : data?.positions || data?.units || data?.devices || data?.data || [];
+        const data: any = await res.json().catch(() => null);
+        const liste: any[] = Array.isArray(data) ? data : data?.positions || data?.units || data?.devices || data?.data || [];
         const positions: PositionVehicule[] = [];
         for (const d of Array.isArray(liste) ? liste : []) {
           const lat = Number(d.lat ?? d.latitude ?? d.y);
