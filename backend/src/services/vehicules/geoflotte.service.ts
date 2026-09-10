@@ -262,6 +262,7 @@ export class GeoflotteService {
     if (Array.isArray(j)) return j;
     if (typeof j !== 'object') return [];
     const clesDirectes = ['result', 'data', 'list', 'liste', 'rows', 'items', 'results',
+      'recordset', 'recordsets', 'Recordset', 'RecordSet',
       'vehicules', 'vehicles', 'units', 'devices', 'trames', 'frames',
       'TrameReelListe', 'trameReelListe', 'tramesreels', 'TramesReels', 'tramesReels'];
     for (const k of clesDirectes) {
@@ -291,23 +292,31 @@ export class GeoflotteService {
   private normaliser(d: any): PositionVehicule | null {
     if (!d || typeof d !== 'object') return null;
     const p = d.position || d.pos || d.coord || d;
-    const lat = Number(d.lat ?? d.latitude ?? d.Latitude ?? p.lat ?? p.latitude ?? d.y ?? d.Y);
-    const lng = Number(d.lng ?? d.lon ?? d.longitude ?? d.Longitude ?? p.lng ?? p.lon ?? p.longitude ?? d.x ?? d.X);
+    // Format réel /tramesreels : latitudeReel / longitudeReel / vitesseReel /
+    // tempsReel / lieuReel / codeVehicule / numeroMatricule / NISBaliseReel.
+    const lat = Number(d.latitudeReel ?? d.lat ?? d.latitude ?? d.Latitude ?? p.lat ?? p.latitude ?? d.y ?? d.Y);
+    const lng = Number(d.longitudeReel ?? d.lng ?? d.lon ?? d.longitude ?? d.Longitude ?? p.lng ?? p.lon ?? p.longitude ?? d.x ?? d.X);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     if (lat === 0 && lng === 0) return null;
     const identifiant = String(
-      d.imei ?? d.IMEI ?? d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
-      d.immatriculation ?? d.plaque ?? d.id ?? d.name ?? d.nom ?? d.label ?? d.vehicule ?? '').trim();
-    const nom = String(d.name ?? d.nom ?? d.label ?? d.vehicule ?? d.immatriculation ?? d.plaque ?? identifiant).trim().slice(0, 100);
-    const vitesse = Number(d.vitesse ?? d.speed ?? d.vitesse_kmh ?? d.speed_kmh ?? 0) || 0;
+      d.NISBaliseReel ?? d.imei ?? d.IMEI ?? d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
+      d.NIVehicule ?? d.numeroMatricule ?? d.immatriculation ?? d.plaque ?? d.id ??
+      d.codeVehicule ?? d.name ?? d.nom ?? d.label ?? d.vehicule ?? '').trim();
+    const nom = String(d.codeVehicule ?? d.name ?? d.nom ?? d.label ?? d.vehicule ??
+      d.numeroMatricule ?? d.immatriculation ?? d.plaque ?? d.NIVehicule ?? identifiant).trim().slice(0, 100);
+    const vitesse = Number(d.vitesseReel ?? d.vitesse ?? d.speed ?? d.vitesse_kmh ?? d.speed_kmh ?? 0) || 0;
+    const moteur = d.Moteur ?? d.EtatMoteur ?? null;
+    const enMouvement = (typeof moteur === 'number')
+      ? (moteur === 1 || vitesse > 3)
+      : Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? (vitesse > 3));
     return {
       identifiant: identifiant || nom,
       nom: nom || undefined,
       latitude: lat, longitude: lng,
       vitesse_kmh: vitesse,
-      en_mouvement: Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? (vitesse > 3)),
-      adresse: d.address ?? d.adresse ?? d.adress ?? undefined,
-      date_position: d.time ?? d.date ?? d.timestamp ?? d.dateTrame ?? d.datetrame ?? undefined,
+      en_mouvement: enMouvement,
+      adresse: d.lieuReel ?? d.address ?? d.adresse ?? d.adress ?? undefined,
+      date_position: d.tempsReel ?? d.time ?? d.date ?? d.timestamp ?? d.dateTrame ?? d.datetrame ?? undefined,
     };
   }
 
