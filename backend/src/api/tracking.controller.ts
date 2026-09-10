@@ -675,7 +675,13 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         chantier: m.nom_chantier, missionSrc: missionId, missionNext: missionNextId,
       });
 
-      // 📲 SMS à l'équipe de la phase suivante
+      // 🚗 D'abord : le véhicule suit le chantier vers la phase suivante
+      // (fait AVANT le SMS pour que le véhicule apparaisse dans le WhatsApp pro)
+      if (missionNextId) {
+        try { await transfererVehiculeMission(pool, missionId, missionNextId); } catch {}
+      }
+
+      // 📲 SMS à l'équipe de la phase suivante (enrichi auto : véhicule inclus)
       if (equipeNextNom !== 'Aucune' && missionNextId) {
         try {
           const nextTeamRes = await pool.query(
@@ -735,10 +741,7 @@ export function creerTrackingRouter(pool: Pool, logger: LoggerService, smsServic
         chantierId: m.chantier_id,
       });
 
-      // 🚗 Le véhicule suit le chantier vers la phase suivante (meca→elec→verif)
-      if (missionNextId) {
-        try { await transfererVehiculeMission(pool, missionId, missionNextId); } catch {}
-      }
+      // 🚗 Déjà transféré avant le SMS (voir plus haut)
 
       const nextLabel = nextPhase === 'electrique' ? 'Électrique' : 'Vérification';
       res.json({

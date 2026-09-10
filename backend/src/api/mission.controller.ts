@@ -170,6 +170,8 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
               );
               if (nextMission.rows.length > 0 && nextMission.rows[0].equipe_id) {
                 const nm = nextMission.rows[0];
+                // 🚗 D'abord : le véhicule suit le chantier (pour qu'il soit dans le WhatsApp)
+                try { await transfererVehiculeMission(pool, missionId, nm.id); } catch {}
                 const telRes = await pool.query(
                   `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
                      AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
@@ -182,8 +184,6 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
                   chantierId: m.chantier_id, missionId: nm.id,
                 });
                 logger.info('SMS phase suivante envoyé', { phase: nextPhase, equipe: nm.equipe_nom });
-                // 🚗 Le véhicule suit le chantier vers la phase suivante
-                try { await transfererVehiculeMission(pool, missionId, nm.id); } catch {}
               }
             } catch (smsErr) {
               logger.error('Erreur SMS phase suivante', { erreur: (smsErr as any).message });

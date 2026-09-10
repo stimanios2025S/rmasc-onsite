@@ -1100,88 +1100,128 @@ export default function ChantiersPage() {
                     </div>
                   </div>
                 )}
-                {/* ═══ VÉHICULE ASSIGNÉ (visible dès l'aperçu) ═══ */}
-                {c.vehicule_nom ? (
-                  <div className="flex items-center gap-2 bg-sky-50/70 border border-sky-100 rounded-xl px-3 py-1.5 mb-3">
-                    <span className="text-sm shrink-0">🚗</span>
-                    <p className="text-[11px] font-bold text-sky-700 truncate">
-                      {c.vehicule_nom}
-                      {c.vehicule_immat && <span className="font-mono font-medium text-sky-500"> ({c.vehicule_immat})</span>}
-                    </p>
-                  </div>
-                ) : null}
+                {/* ═══ VÉHICULE ASSIGNÉ (visible dès l'aperçu, changeable comme l'équipe) ═══ */}
+                <div className="mt-2">
+                  {c.vehicule_nom ? (
+                    <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-1.5">
+                      <div className="w-7 h-7 rounded-lg bg-sky-500/10 flex items-center justify-center shrink-0">
+                        <span className="text-sm">🚗</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[10px] font-semibold text-sky-400 uppercase tracking-wider">Véhicule</span>
+                        <p className="text-xs font-bold text-sky-800 truncate">
+                          {c.vehicule_nom}
+                          {c.vehicule_immat && <span className="font-mono font-medium text-sky-500"> ({c.vehicule_immat})</span>}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); ouvrirDetail(c.id); }}
+                        title="Changer de véhicule (comme l'équipe)"
+                        className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold bg-white text-sky-600 border border-sky-200 hover:bg-sky-100 transition-all">
+                        <ArrowRightLeft size={10} /> Changer
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); ouvrirDetail(c.id); }}
+                      title="Assigner un véhicule"
+                      className="w-full flex items-center gap-2 bg-stone-50 border border-dashed border-stone-200 rounded-xl px-3 py-1.5 hover:bg-sky-50 hover:border-sky-200 transition-all">
+                      <span className="text-sm shrink-0 opacity-40">🚗</span>
+                      <span className="text-[11px] font-semibold text-stone-400">Véhicule : <span className="italic">non assigné — cliquer pour assigner</span></span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-stone-500 mb-3">
-                <span>{c.client_nom || 'Client inconnu'}</span>
-                {c.complexite && (
-                  <>
-                    <span className="text-stone-300">•</span>
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+              {/* ═══ DÉTAILS UNIFORMES — Client: / Complexité: / Échéance: ═══ */}
+              <div className="bg-stone-50/70 border border-stone-100 rounded-xl px-3 py-2 mb-3 space-y-1">
+                <p className="text-[11px] text-stone-600">
+                  <span className="font-bold text-stone-700">Client :</span>{' '}
+                  {c.client_nom || <span className="italic text-stone-400">non renseigné</span>}
+                  {c.complexite && (
+                    <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                       c.complexite === 'DIFFICILE' ? 'bg-rose-50 text-rose-600 border-rose-200'
                       : c.complexite === 'FACILE' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                       : 'bg-amber-50 text-amber-600 border-amber-200'
-                    }`}>{c.complexite}</span>
-                  </>
-                )}
+                    }`}>Complexité : {c.complexite}</span>
+                  )}
+                </p>
                 {c.date_echeance && (
-                  <>
-                    <span className="text-stone-300">•</span>
+                  <p className="text-[11px] text-stone-600">
+                    <span className="font-bold text-stone-700">Échéance :</span>{' '}
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                       new Date(c.date_echeance) < new Date() ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'
                     }`}>
-                      ⏰ {new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                      ⏰ {new Date(c.date_echeance).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </span>
-                  </>
+                  </p>
                 )}
               </div>
 
-              {/* Planning prévu par phase */}
+              {/* Planning prévu par phase — format uniforme Label : valeur */}
               {(c.date_debut_mecanique || c.date_debut_electrique || c.date_debut_verification) && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
+                <div className="bg-stone-50/70 border border-stone-100 rounded-xl px-3 py-2 mb-3 space-y-1">
+                  <p className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Planning :</p>
                   {c.date_debut_mecanique && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      🔧 {new Date(c.date_debut_mecanique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                    </span>
+                    <p className="text-[11px] text-stone-600">
+                      <span className="font-bold text-stone-700">🔧 Mécanique :</span>{' '}
+                      {new Date(c.date_debut_mecanique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
                   )}
                   {c.date_debut_electrique && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
-                      ⚡ {new Date(c.date_debut_electrique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                    </span>
+                    <p className="text-[11px] text-stone-600">
+                      <span className="font-bold text-stone-700">⚡ Électrique :</span>{' '}
+                      {new Date(c.date_debut_electrique).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
                   )}
                   {c.date_debut_verification && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      🛡️ {new Date(c.date_debut_verification).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                    </span>
+                    <p className="text-[11px] text-stone-600">
+                      <span className="font-bold text-stone-700">🛡️ Vérification :</span>{' '}
+                      {new Date(c.date_debut_verification).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
                   )}
                 </div>
               )}
 
               {(c.dxf || c.pdf) && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {c.dxf && (
-                    <a href={`https://onsite.sarl-rmasc.com${c.dxf}`} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-full transition-all">
-                      <FileText size={11} /> Plan CAD
-                    </a>
-                  )}
-                  {c.pdf && (
-                    <a href={`https://onsite.sarl-rmasc.com${c.pdf}`} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-full transition-all">
-                      <FileText size={11} /> Fiche Technique
-                    </a>
-                  )}
+                <div className="bg-stone-50/70 border border-stone-100 rounded-xl px-3 py-2 mb-3">
+                  <p className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Documents :</p>
+                  <div className="flex flex-wrap gap-2">
+                    {c.dxf && (
+                      <a href={`https://onsite.sarl-rmasc.com${c.dxf}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-full transition-all">
+                        <FileText size={11} /> Plan CAD
+                      </a>
+                    )}
+                    {c.pdf && (
+                      <a href={`https://onsite.sarl-rmasc.com${c.pdf}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-full transition-all">
+                        <FileText size={11} /> Fiche Technique
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-[10px] text-stone-400 mb-1">
-                <span className="flex items-center gap-1">📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
-                <span className="flex items-center gap-2 font-medium">
-                  {c.en_cours > 0 && <span className="text-indigo-600">🔄 {c.en_cours}</span>}
-                  {(c.en_attente ?? 0) > 0 && <span className="text-amber-500">⏳ {c.en_attente}</span>}
-                  {(c.bloquee ?? 0) > 0 && <span className="text-rose-500">🚫 {c.bloquee}</span>}
-                  {(c.terminee ?? 0) > 0 && <span className="text-emerald-500">✅ {c.terminee}</span>}
-                </span>
+              <div className="bg-stone-50/70 border border-stone-100 rounded-xl px-3 py-2 mb-1">
+                <p className="text-[11px] text-stone-600">
+                  <span className="font-bold text-stone-700">Position :</span>{' '}
+                  <span className="font-mono">📍 {c.lat?.toFixed(2)}, {c.lng?.toFixed(2)}</span>
+                </p>
+                <p className="text-[11px] text-stone-600 mt-0.5">
+                  <span className="font-bold text-stone-700">Missions :</span>{' '}
+                  <span className="font-medium">
+                    {c.en_cours > 0 && <span className="text-indigo-600">🔄 {c.en_cours} en cours </span>}
+                    {(c.en_attente ?? 0) > 0 && <span className="text-amber-500">⏳ {c.en_attente} en attente </span>}
+                    {(c.bloquee ?? 0) > 0 && <span className="text-rose-500">🚫 {c.bloquee} bloquée(s) </span>}
+                    {(c.terminee ?? 0) > 0 && <span className="text-emerald-500">✅ {c.terminee} terminée(s)</span>}
+                    {c.en_cours === 0 && (c.en_attente ?? 0) === 0 && (c.bloquee ?? 0) === 0 && (c.terminee ?? 0) === 0 && (
+                      <span className="italic text-stone-400">aucune</span>
+                    )}
+                  </span>
+                </p>
               </div>
 
               {/* ═══ TRACKING + RÉASSIGNER + REPOS BUTTONS ═══ */}

@@ -752,27 +752,10 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
         [missionId]
       );
 
-      // 📲 SMS à l'équipe mécanique assignée
-      try {
-        const telRes = await pool.query(
-          `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
-             AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
-          [equipe.id]
-        );
-        await smsService.notifierNouvelleMission({
-          equipeId: equipe.id, equipeNom: equipe.nom,
-          telephone: telRes.rows[0]?.telephone || null,
-          phase: 'mecanique', chantierNom: nom, adresse: adresse || null,
-          chantierId: chantierId, missionId: missionId!,
-        });
-      } catch (smsErr) {
-        logger.error('Erreur programmation SMS création chantier', { erreur: (smsErr as any).message });
-      }
-
-      // 🚗 Véhicule auto-assigné à la mission créée :
+      // 🚗 Véhicule auto-assigné à la mission créée (AVANT le SMS pour qu'il soit dans le WhatsApp) :
       // - forceVehiculeId fourni (choix admin dans le wizard, '' = sans véhicule) → on l'utilise
       // - sinon 1er véhicule DISPONIBLE (même règle que suggestion-vehicule)
-      // - l'admin peut le changer à tout moment après (edit / détail)
+      // - l'admin peut le changer à tout moment après (edit / détail / bouton carte)
       let vehiculeNom: string | null = null;
       try {
         let vehiculeId: string | null = null;
@@ -799,6 +782,23 @@ app.post('/api/chantiers', verifierToken, async (req, res) => {
         }
       } catch (vehErr: any) {
         logger.error('Erreur auto-assign véhicule création', { erreur: vehErr.message });
+      }
+
+      // 📲 SMS à l'équipe mécanique assignée (véhicule déjà assigné → inclus dans le WhatsApp pro)
+      try {
+        const telRes = await pool.query(
+          `SELECT telephone FROM utilisateurs WHERE equipe_id = $1 AND actif = TRUE
+             AND telephone IS NOT NULL AND telephone <> '' ORDER BY date_creation LIMIT 1`,
+          [equipe.id]
+        );
+        await smsService.notifierNouvelleMission({
+          equipeId: equipe.id, equipeNom: equipe.nom,
+          telephone: telRes.rows[0]?.telephone || null,
+          phase: 'mecanique', chantierNom: nom, adresse: adresse || null,
+          chantierId: chantierId, missionId: missionId!,
+        });
+      } catch (smsErr) {
+        logger.error('Erreur programmation SMS création chantier', { erreur: (smsErr as any).message });
       }
       res.status(201).json({
         chantierId, missionId, equipeNom, vehiculeNom,

@@ -77,13 +77,15 @@ export class SmsService {
   // ─── Messages types ───────────────────────────────────────────────────
 
   /** WhatsApp pro à l'équipe quand une mission lui est assignée.
-   *  Deadline (date admin) + client + chantier + adresse + lien GPS cliquable + lien appli.
-   *  Les champs manquants sont enrichis auto depuis la BDD (chantiers + mission). */
+   *  Deadline (date admin) + client + chantier + adresse + véhicule assigné +
+   *  lien GPS cliquable + lien appli.
+   *  Les champs manquants sont enrichis auto depuis la BDD (chantiers + mission + véhicule). */
   async notifierNouvelleMission(args: {
     equipeId: string; equipeNom: string; telephone: string | null;
     phase: string; chantierNom: string; adresse?: string | null;
     clientNom?: string | null; dateDebut?: string | null; dateEcheance?: string | null;
     latitude?: number | null; longitude?: number | null;
+    vehiculeNom?: string | null; vehiculeImmat?: string | null;
     lienAppli?: string | null;
     chantierId: string; missionId: string;
   }): Promise<void> {
@@ -94,14 +96,18 @@ export class SmsService {
     let dateEcheance = args.dateEcheance ?? null;
     let latitude = args.latitude ?? null;
     let longitude = args.longitude ?? null;
+    let vehiculeNom = args.vehiculeNom ?? null;
+    let vehiculeImmat = args.vehiculeImmat ?? null;
     try {
-      if (!clientNom || !adresse || !dateDebut || !dateEcheance || latitude == null || longitude == null) {
+      if (!clientNom || !adresse || !dateDebut || !dateEcheance || latitude == null || longitude == null || !vehiculeNom) {
         const { rows } = await this.pool.query(
           `SELECT c.client_nom, c.adresse, c.date_echeance,
                   c.date_debut_mecanique, c.date_debut_electrique, c.date_debut_verification,
                   ST_Y(c.coordonnees::geometry) AS lat, ST_X(c.coordonnees::geometry) AS lng,
-                  om.date_declenchement AS mission_debut, om.date_echeance AS mission_fin
+                  om.date_declenchement AS mission_debut, om.date_echeance AS mission_fin,
+                  v.nom AS vehicule_nom, v.immatriculation AS vehicule_immat
            FROM chantiers c LEFT JOIN ordres_de_mission om ON om.id = $2
+           LEFT JOIN vehicules v ON v.id = om.vehicule_id
            WHERE c.id = $1 LIMIT 1`,
           [args.chantierId, args.missionId]
         );
@@ -112,6 +118,8 @@ export class SmsService {
           if (latitude == null && r.lat != null) latitude = Number(r.lat);
           if (longitude == null && r.lng != null) longitude = Number(r.lng);
           if (!dateEcheance) dateEcheance = r.mission_fin || r.date_echeance || null;
+          if (!vehiculeNom) vehiculeNom = r.vehicule_nom || null;
+          if (!vehiculeImmat) vehiculeImmat = r.vehicule_immat || null;
           if (!dateDebut) {
             const ph = (args.phase || '').toLowerCase();
             dateDebut = (ph.startsWith('elec') ? r.date_debut_electrique
@@ -141,6 +149,7 @@ export class SmsService {
     if (clientNom) lignes.push(`🤝 Client : ${clientNom}`);
     lignes.push(`🏗️ Chantier : ${args.chantierNom}`);
     lignes.push(`📍 Adresse : ${adresse || 'à confirmer sur place'}`);
+    if (vehiculeNom) lignes.push(`🚗 Véhicule : ${vehiculeNom}${vehiculeImmat ? ` (${vehiculeImmat})` : ''}`);
     if (latitude != null && longitude != null
         && Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude))) {
       const lat = Number(latitude), lng = Number(longitude);

@@ -31,7 +31,6 @@ export interface ChantierData {
   date_debut_mecanique?: string | null;
   date_debut_electrique?: string | null;
   date_debut_verification?: string | null;
-  mission_id?: string | null;
   motifs_blocage?: string | null;
   nb_blocages?: number;
   blocage_ids?: string | null;
