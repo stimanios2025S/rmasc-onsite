@@ -138,11 +138,15 @@ export class GeoflotteService {
     const { rows: vehicules } = await this.pool.query(
       `SELECT id, nom, immatriculation, imei, geoflotte_id FROM vehicules WHERE actif = TRUE`);
     let maj = 0;
+    let crees = 0;
+    const matchedIdx = new Set<number>();
     for (const v of vehicules) {
       const cles = [v.geoflotte_id, v.imei, v.nom, v.immatriculation].filter(Boolean).map((s: string) => s.toLowerCase());
-      const p = positions.find(pos =>
+      const idx = positions.findIndex(pos =>
         cles.some(c => pos.identifiant.toLowerCase().includes(c) || (pos.nom || '').toLowerCase().includes(c)));
-      if (!p) continue;
+      if (idx === -1) continue;
+      matchedIdx.add(idx);
+      const p = positions[idx];
       await this.pool.query(
         `INSERT INTO vehicules_positions (vehicule_id, latitude, longitude, vitesse_kmh, en_mouvement, adresse, date_position, date_reception)
          VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()), NOW())
@@ -154,7 +158,37 @@ export class GeoflotteService {
         [v.id, p.latitude, p.longitude, p.vitesse_kmh, p.en_mouvement, p.adresse || null, p.date_position || null]);
       maj++;
     }
-    this.logger.info(`GeoFlotte sync OK — ${positions.length} position(s) lue(s), ${maj} véhicule(s) mis à jour.`);
-    return maj;
+    // ─── IMPORT AUTO : tout véhicule vu sur GeoFlotte mais absent chez nous est créé ───
+    // C'est ça qui remplit la page Véhicules toute seule (nom réel + position directe).
+    for (let i = 0; i < positions.length; i++) {
+      if (matchedIdx.has(i)) continue;
+      const p = positions[i];
+      const nom = String(p.nom || p.identifiant || `Véhicule ${i + 1}`).trim().slice(0, 100);
+      if (!nom) continue;
+      try {
+        const ins = await this.pool.query(
+          `INSERT INTO vehicules (nom, imei, geoflotte_id) VALUES ($1, $2, $3)
+           ON CONFLICT (nom) DO NOTHING RETURNING id`,
+          [nom, p.identifiant || null, p.identifiant || null]);
+        let vehId: string | null = ins.rows[0]?.id || null;
+        if (!vehId) {
+          const ex = await this.pool.query(`SELECT id FROM vehicules WHERE nom = $1`, [nom]);
+          vehId = ex.rows[0]?.id || null;
+        }
+        if (!vehId) continue;
+        await this.pool.query(
+          `INSERT INTO vehicules_positions (vehicule_id, latitude, longitude, vitesse_kmh, en_mouvement, adresse, date_position, date_reception)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()), NOW())
+           ON CONFLICT (vehicule_id) DO UPDATE SET
+             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
+             vitesse_kmh = EXCLUDED.vitesse_kmh, en_mouvement = EXCLUDED.en_mouvement,
+             adresse = EXCLUDED.adresse, date_position = EXCLUDED.date_position,
+             date_reception = NOW()`,
+          [vehId, p.latitude, p.longitude, p.vitesse_kmh, p.en_mouvement, p.adresse || null, p.date_position || null]);
+        crees++;
+      } catch { /* un véhicule en échec ne bloque pas les autres */ }
+    }
+    this.logger.info(`GeoFlotte sync OK — ${positions.length} lue(s), ${maj} maj, ${crees} importé(s).`);
+    return maj + crees;
   }
 }
