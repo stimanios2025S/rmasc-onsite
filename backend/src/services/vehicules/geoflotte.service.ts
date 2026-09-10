@@ -160,12 +160,24 @@ export class GeoflotteService {
 
   // ─── LOGIN réel : POST /getsession (champ société inclus) ────────────────
   private async connecter(): Promise<boolean> {
-    // 1) Token manuel (garanti) — prioritaire
+    // 1) Token manuel (garanti) — prioritaire.
+    // Le checkSession avec corps vide peut répondre error:true même avec un
+    // token valide → on valide le token sur la FLOTTE RÉELLE, pas sur checkSession.
     if (this.tokenManuel) {
       this.token = this.tokenManuel;
+      try {
+        const flotte = await this.lirePositions();
+        if (flotte.length > 0) {
+          this.logger.info(`GeoFlotte token manuel OK — ${flotte.length} véhicule(s).`);
+          return true;
+        }
+      } catch { /* fallback checkSession ci-dessous */ }
       const chk = await this.postJSON('/checkSession', {});
       if (chk && (chk as any).error !== true) return true;
-      this.logger.error('GEOFLOTTE_TOKEN rejeté (expiré ?) — bascule login auto.');
+      // Dernier filet : le token est peut-être valide mais la flotte répond
+      // sous une enveloppe inattendue → on garde le token et on laisse
+      // synchroniser() trancher (0 véhicule lu ≠ rejet).
+      this.logger.error('GEOFLOTTE_TOKEN incertain (flotte vide + checkSession KO) — bascule login auto.');
     }
     // 2) Session existante encore valide ?
     if (this.token) {
@@ -277,12 +289,16 @@ export class GeoflotteService {
 
   // ─── Sync : login → flotte+trames → match ou IMPORT AUTO → upsert ────────
   async synchroniser(): Promise<number> {
-    if (!this.configure) return 0;
+    if (!this.configure && !this.tokenManuel) return 0;
     const ok = await this.connecter();
-    if (!ok) {
+    // Si le token manuel existe, on tente la lecture même si connecter() doute :
+    // connecter() peut se tromper quand la flotte répond sous une enveloppe
+    // inattendue. Seule la lecture réelle tranche.
+    if (!ok && !this.tokenManuel) {
       this.logger.error('GeoFlotte login impossible — vérifiez GEOFLOTTE_USER/PASS/COMPANY (mode manuel actif).');
       return 0;
     }
+    if (!ok && this.tokenManuel) this.token = this.tokenManuel;
     const positions = await this.lirePositions();
     if (positions.length === 0) {
       this.logger.info('GeoFlotte connecté mais 0 véhicule lu (endpoints muets — mode manuel actif).');
