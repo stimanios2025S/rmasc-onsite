@@ -255,19 +255,37 @@ export class GeoflotteService {
   }
 
   // ─── Extraction tolérante d'un tableau depuis n'importe quelle enveloppe ─
-  private tableauDe(j: any): any[] {
-    if (!j) return [];
+  // La réponse /tramesreels arrive sous enveloppe variable (result/data/liste/
+  // TrameReelListe...) → recherche récursive du premier tableau de positions.
+  private tableauDe(j: any, profondeur = 0): any[] {
+    if (!j || profondeur > 3) return [];
     if (Array.isArray(j)) return j;
-    for (const k of ['result', 'data', 'list', 'rows', 'vehicules', 'vehicles', 'units', 'devices', 'trames', 'frames']) {
+    if (typeof j !== 'object') return [];
+    const clesDirectes = ['result', 'data', 'list', 'liste', 'rows', 'items', 'results',
+      'vehicules', 'vehicles', 'units', 'devices', 'trames', 'frames',
+      'TrameReelListe', 'trameReelListe', 'tramesreels', 'TramesReels', 'tramesReels'];
+    for (const k of clesDirectes) {
       const v = (j as any)[k];
-      if (Array.isArray(v)) return v;
-      if (v && typeof v === 'object') {
-        for (const k2 of ['result', 'data', 'list', 'rows']) {
-          if (Array.isArray((v as any)[k2])) return (v as any)[k2];
+      if (Array.isArray(v) && v.length > 0) return v;
+    }
+    // Sinon : premier tableau non vide trouvé en profondeur (objets avec lat/lng en priorité)
+    let fallback: any[] = [];
+    for (const k of Object.keys(j)) {
+      const v = (j as any)[k];
+      if (Array.isArray(v) && v.length > 0) {
+        const premier = v[0];
+        if (premier && typeof premier === 'object' &&
+          ('lat' in premier || 'latitude' in premier || 'Latitude' in premier || 'lng' in premier ||
+           'lon' in premier || 'longitude' in premier || 'Longitude' in premier || 'y' in premier || 'x' in premier)) {
+          return v;
         }
+        if (fallback.length === 0) fallback = v;
+      } else if (v && typeof v === 'object') {
+        const sous = this.tableauDe(v, profondeur + 1);
+        if (sous.length > 0) return sous;
       }
     }
-    return [];
+    return fallback;
   }
 
   private normaliser(d: any): PositionVehicule | null {
@@ -294,17 +312,26 @@ export class GeoflotteService {
   }
 
   // ─── Lecture flotte + temps réel ─────────────────────────────────────────
+  // Payload réel vu dans Network (Temps Réel v2.0) :
+  //   POST /api/tramesreels  {app:"TrameReelListe", version:446}  → 200 2.3kB
   private async lirePositions(): Promise<PositionVehicule[]> {
     const C = this.company, U = this.user;
-    const corpses: any[] = [{}, { client: C }, { account: C }, { username: U }];
-    const endpoints = [
-      '/allinfovehiculebyclient', '/getVehicleDetailListByClient',
-      '/getVehicleListByClientWithMileage', '/getVehiculesCountByClient',
-      '/tramesreels', '/lasttajettrames',
+    const trameBody: any = { app: 'TrameReelListe', version: 446 };
+    const corpsesGeneriques: any[] = [
+      {}, { client: C }, { account: C }, { username: U },
+      { IDClient: 4082 }, { idClient: 4082 }, { client: 4082 },
+    ];
+    const endpoints: Array<{ ep: string; bodies: any[] }> = [
+      { ep: '/tramesreels', bodies: [trameBody, { ...trameBody, client: C }, { ...trameBody, IDClient: 4082 }] },
+      { ep: '/lasttajettramesNew', bodies: [trameBody] },
+      { ep: '/lasttajettrames', bodies: [trameBody] },
+      { ep: '/allinfovehiculebyclient', bodies: corpsesGeneriques },
+      { ep: '/getVehicleDetailListByClient', bodies: corpsesGeneriques },
+      { ep: '/getVehicleListByClientWithMileage', bodies: corpsesGeneriques },
     ];
     const bruts: any[] = [];
-    for (const ep of endpoints) {
-      for (const body of corpses) {
+    for (const { ep, bodies } of endpoints) {
+      for (const body of bodies) {
         const j = await this.postJSON(ep, body);
         // Token mort → on l'efface une fois, le login auto prendra le relais
         if (this.estTokenInvalide(j)) { this.marquerTokenInvalide(); return []; }
@@ -314,6 +341,7 @@ export class GeoflotteService {
           break; // ce endpoint parle → corps suivant inutile
         }
       }
+      if (bruts.length > 0 && (ep === '/tramesreels' || ep.startsWith('/lasttajet'))) break;
     }
     const positions: PositionVehicule[] = [];
     for (const d of bruts) {
