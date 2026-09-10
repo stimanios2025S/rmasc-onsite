@@ -23,6 +23,7 @@ export interface PositionVehicule {
 
 export class GeoflotteService {
   private token = '';
+  private cookies = '';
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private pool: Pool, private logger: LoggerService) {}
@@ -81,21 +82,82 @@ export class GeoflotteService {
     this.timer = null;
   }
 
-  // ─── HTTP helper (timeout 20s) ───────────────────────────────────────────
-  // Retourne { status, json } — le appelant décide (Invalid token = refresh auto).
+  // ─── HTTP helper navigateur (timeout 20s, cookies persistés) ────────────
+  // Imite le front Quasar : Origin/Referer/UA navigateur + jar de cookies.
+  // Les tokens GeoFlotte sont liés à la session navigateur → on rejoue la
+  // session complète (GET / → POST login → cookies + Bearer).
   private async postJSON(path: string, body: any, avecToken = true): Promise<any> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 20000);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'User-Agent': 'RMASC-OnSite/1.0' };
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'Origin': this.base,
+        'Referer': this.base + '/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      };
       if (avecToken && this.token) headers.Authorization = `Bearer ${this.token}`;
+      if (this.cookies) headers.Cookie = this.cookies;
       const res = await fetch(this.api + path, {
         method: 'POST', headers, body: JSON.stringify(body ?? {}), signal: ctrl.signal,
       } as any);
+      const setCookie = (res.headers as any)?.get?.('set-cookie') || (res.headers as any)?.get?.('Set-Cookie');
+      if (setCookie) {
+        const morceaux = Array.isArray(setCookie) ? setCookie : String(setCookie).split(/,(?=[^;]+=[^;]+)/);
+        const jar: Record<string, string> = {};
+        for (const c of this.cookies.split(';')) {
+          const [k, ...r] = c.trim().split('=');
+          if (k) jar[k] = r.join('=');
+        }
+        for (const m of morceaux) {
+          const [k, ...r] = String(m).trim().split(';')[0].split('=');
+          if (k && k.trim() && !/expires|path|domain|secure|httponly|same-site/i.test(k.trim())) jar[k.trim()] = r.join('=');
+        }
+        this.cookies = Object.entries(jar).filter(([k, v]) => k && v !== undefined).map(([k, v]) => `${k}=${v}`).join('; ');
+      }
       const txt = await res.text().catch(() => '');
+      // 401/403 = session morte → le appelant retente un login complet
+      if (res.status === 401 || res.status === 403) {
+        try {
+          const j = txt ? JSON.parse(txt) : null;
+          if (this.estTokenInvalide(j)) return j;
+          return { error: true, message: 'session-expiree', status: res.status };
+        } catch { return { error: true, message: 'session-expiree', status: res.status }; }
+      }
       if (!res.ok) return null;
       try { return txt ? JSON.parse(txt) : null; } catch { return null; }
     } catch { return null; } finally { clearTimeout(t); }
+  }
+
+  // Ouvre la session navigateur : GET / (cookies initiaux) puis GET /api perso.
+  private async ouvrirSessionNavigateur(): Promise<void> {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 20000);
+      const res = await fetch(this.base + '/', {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          ...(this.cookies ? { Cookie: this.cookies } : {}),
+        },
+        signal: ctrl.signal,
+      } as any);
+      clearTimeout(t);
+      const setCookie = (res.headers as any)?.get?.('set-cookie');
+      if (setCookie) {
+        const jar: Record<string, string> = {};
+        for (const c of this.cookies.split(';')) {
+          const [k, ...r] = c.trim().split('=');
+          if (k) jar[k] = r.join('=');
+        }
+        for (const m of String(setCookie).split(/,(?=[^;]+=[^;]+)/)) {
+          const [k, ...r] = String(m).trim().split(';')[0].split('=');
+          if (k && k.trim() && !/expires|path|domain|secure|httponly|same-site/i.test(k.trim())) jar[k.trim()] = r.join('=');
+        }
+        this.cookies = Object.entries(jar).filter(([k]) => k).map(([k, v]) => `${k}=${v}`).join('; ');
+      }
+    } catch { /* cookies optionnels, le Bearer suffit parfois */ }
   }
 
   // Le portail répond {"error":true,"message":"Invalid token"} quand le
@@ -225,22 +287,30 @@ export class GeoflotteService {
       const chk = await this.postJSON('/checkSession', {});
       if (chk && (chk as any).error !== true) return true;
     }
+    // 3) Login auto façon navigateur : GET / (cookies) → POST /getsession.
+    // Le store Vuex fait LOGIN({username, password, rememberMe}) puis
+    // getSession({username, password...}) → token + claims (IDClient 4082).
+    await this.ouvrirSessionNavigateur();
     const U = this.user, P = this.pass, C = this.company;
     const payloads: any[] = [
       { username: U, password: P, rememberMe: true },
       { username: U, password: P },
       { login: U, password: P },
       { identifiant: U, password: P },
+      { email: U, password: P },
+      { loginContact: U, password: P },
       { account: C, username: U, password: P },
       { account: C, login: U, password: P },
       { client: C, username: U, password: P },
       { societe: C, username: U, password: P },
       { dossier: C, username: U, password: P },
+      { company: C, username: U, password: P },
       { username: `${C}/${U}`, password: P },
       { username: `${C}_${U}`, password: P },
       { username: `${C}.${U}`, password: P },
-      { loginContact: U, password: P },
+      { username: `${U}@${C}`, password: P },
     ];
+    // 3a) /getsession direct
     for (const body of payloads) {
       const j = await this.postJSON('/getsession', body, false);
       const tok = this.extraireToken(j);
@@ -249,6 +319,25 @@ export class GeoflotteService {
         this.logger.info('GeoFlotte login OK (getsession).');
         return true;
       }
+    }
+    // 3b) /getSessionByLogin (variante vue dans app.js) puis /getsession
+    for (const body of payloads) {
+      const j = await this.postJSON('/getSessionByLogin', body, false);
+      const tok = this.extraireToken(j);
+      if (tok) {
+        this.token = tok;
+        this.logger.info('GeoFlotte login OK (getSessionByLogin).');
+        return true;
+      }
+    }
+    // 3c) Rejoue la session navigateur une fois (cookies frais) + 1er payload
+    await this.ouvrirSessionNavigateur();
+    const j = await this.postJSON('/getsession', { username: U, password: P, rememberMe: true }, false);
+    const tok = this.extraireToken(j);
+    if (tok) {
+      this.token = tok;
+      this.logger.info('GeoFlotte login OK (getsession retry cookies).');
+      return true;
     }
     this.token = '';
     return false;
