@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, fetchVehicules, assignerVehicule, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type VehiculeData, type ReposChantier } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, fetchSuggestionVehicule, fetchVehicules, assignerVehicule, reassignerEquipe, changerVehiculeChantier, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type VehiculeData, type ReposChantier } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -243,6 +243,238 @@ function TeamSearchBar({
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   VEHICLE SEARCH BAR — même pattern que TeamSearchBar.
+   L'admin voit la suggestion auto, la garde ou en choisit un autre.
+   ═══════════════════════════════════════════════════════════════ */
+const VEH_STATUT_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  DISPONIBLE: { label: 'Disponible', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  EN_MISSION: { label: 'En mission', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+  EN_PANNE: { label: 'En panne', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
+};
+
+function VehicleSearchBar({
+  vehicules,
+  selectedId,
+  onSelect,
+  disabled,
+  placeholder,
+  allowEmpty = true,
+}: {
+  vehicules: VehiculeData[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  allowEmpty?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const selectedVehicule = vehicules.find(v => v.id === selectedId);
+
+  useEffect(() => {
+    if (selectedVehicule) setQuery('');
+  }, [selectedVehicule?.id]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return vehicules;
+    const q = query.toLowerCase().trim();
+    return vehicules.filter(v =>
+      v.nom.toLowerCase().includes(q) ||
+      (v.immatriculation || '').toLowerCase().includes(q) ||
+      v.statut.toLowerCase().includes(q) ||
+      (v.equipe_nom || '').toLowerCase().includes(q)
+    );
+  }, [vehicules, query]);
+
+  function updatePosition() {
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < 320) {
+      setDropPos({ top: rect.top - 8, left: rect.left, width: rect.width });
+    } else {
+      setDropPos({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
+  }
+
+  function openDropdown() {
+    updatePosition();
+    setOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => updatePosition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => { window.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition); };
+  }, [open]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!open) { if (e.key === 'ArrowDown' || e.key === 'Enter') { openDropdown(); setHighlightIdx(0); e.preventDefault(); } return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && highlightIdx >= 0 && filtered[highlightIdx]) {
+      e.preventDefault();
+      onSelect(filtered[highlightIdx].id);
+      setOpen(false);
+      setQuery('');
+      setHighlightIdx(-1);
+    }
+    else if (e.key === 'Escape') { setOpen(false); setHighlightIdx(-1); }
+  }
+
+  const spaceBelow = typeof window !== 'undefined' ? window.innerHeight - dropPos.top - 40 : 400;
+  const openUpward = spaceBelow < 320;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      {!open && selectedVehicule && !disabled ? (
+        <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-sky-100 transition-all" onClick={() => openDropdown()}>
+          <span className="text-base shrink-0">🚗</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-sky-800 truncate block">{selectedVehicule.nom}</span>
+            {selectedVehicule.immatriculation && (
+              <p className="text-[10px] text-sky-500 truncate mt-0.5 font-mono">{selectedVehicule.immatriculation}</p>
+            )}
+          </div>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${VEH_STATUT_LABELS[selectedVehicule.statut]?.bg || 'bg-stone-100'} ${VEH_STATUT_LABELS[selectedVehicule.statut]?.color || 'text-stone-500'} border`}>
+            {VEH_STATUT_LABELS[selectedVehicule.statut]?.label || selectedVehicule.statut}
+          </span>
+          {allowEmpty && (
+            <button onClick={(e) => { e.stopPropagation(); onSelect(''); setQuery(''); }} className="ml-auto text-stone-300 hover:text-rose-500 shrink-0"><X size={14} /></button>
+          )}
+        </div>
+      ) : (
+        <div className={`flex items-center gap-2 bg-stone-50 border rounded-xl px-3 py-2.5 transition-all ${open ? 'border-sky-400 ring-2 ring-sky-100' : 'border-stone-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-text'}`}
+          onClick={() => { if (!disabled) openDropdown(); }}>
+          <Search size={14} className={`${open ? 'text-sky-400' : 'text-stone-300'} shrink-0`} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setHighlightIdx(0); if (!open) { updatePosition(); setOpen(true); } }}
+            onFocus={() => { if (!disabled) { updatePosition(); setOpen(true); } }}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder || 'Rechercher un véhicule...'}
+            disabled={disabled}
+            className="bg-transparent text-sm text-stone-700 outline-none flex-1 placeholder:text-stone-300 disabled:cursor-not-allowed"
+          />
+          {query && (
+            <button onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="text-stone-300 hover:text-stone-500 shrink-0">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {open && !disabled && (
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[9999] bg-white rounded-2xl border border-stone-200 shadow-2xl shadow-stone-300/30 overflow-hidden flex flex-col"
+            style={{
+              top: openUpward ? 'auto' : dropPos.top,
+              bottom: openUpward ? window.innerHeight - dropPos.top : 'auto',
+              left: dropPos.left,
+              width: dropPos.width,
+              maxHeight: '300px',
+            }}
+          >
+            <div className="flex items-center gap-2 px-4 py-2 bg-stone-50 border-b border-stone-100 shrink-0">
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                {filtered.length} véhicule{filtered.length !== 1 ? 's' : ''}
+              </span>
+              {query && (
+                <span className="text-[10px] text-stone-300">· pour &quot;{query}&quot;</span>
+              )}
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-[10px] font-medium text-emerald-500">
+                  {vehicules.filter(v => v.statut === 'DISPONIBLE').length} dispo
+                </span>
+                <span className="text-[10px] font-medium text-blue-500">
+                  {vehicules.filter(v => v.statut === 'EN_MISSION').length} en mission
+                </span>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {allowEmpty && !query && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onSelect(''); setOpen(false); setQuery(''); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left bg-white hover:bg-stone-50 border-b border-stone-50">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-stone-100 text-stone-400">
+                    <X size={14} />
+                  </div>
+                  <span className="text-sm font-semibold text-stone-500">— Sans véhicule —</span>
+                </button>
+              )}
+              {filtered.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <Search size={24} className="text-stone-200 mx-auto mb-2" />
+                  <p className="text-xs text-stone-400">Aucun véhicule trouvé</p>
+                  <p className="text-[10px] text-stone-300 mt-1">Essayez un autre terme de recherche</p>
+                </div>
+              ) : (
+                filtered.map((v, idx) => {
+                  const isSel = v.id === selectedId;
+                  const statutInfo = VEH_STATUT_LABELS[v.statut] || { label: v.statut, color: 'text-stone-500', bg: 'bg-stone-100' };
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={(e) => { e.stopPropagation(); onSelect(v.id); setOpen(false); setQuery(''); }}
+                      onMouseEnter={() => setHighlightIdx(idx)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all ${isSel ? 'bg-sky-50' : idx === highlightIdx ? 'bg-stone-50' : 'bg-white'} hover:bg-sky-50 border-b border-stone-50 last:border-0`}
+                    >
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-sky-100 text-sky-600 text-base">
+                        🚗
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-stone-800 truncate">{v.nom}</span>
+                          {isSel && <CheckCircle size={12} className="text-sky-500 shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {v.immatriculation && (
+                            <span className="text-[10px] font-mono text-stone-400">{v.immatriculation}</span>
+                          )}
+                          {v.equipe_nom && (
+                            <>
+                              <span className="text-stone-200">·</span>
+                              <span className="text-[10px] text-stone-400 truncate">👥 {v.equipe_nom}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 border ${statutInfo.bg} ${statutInfo.color}`}>
+                        {statutInfo.label}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const PHASE_ICON: Record<string, any> = { mecanique: Wrench, electrique: Zap, verification: Shield };
 const PHASE_COLOR: Record<string, string> = {
   mecanique: 'text-blue-600 bg-blue-50',
@@ -290,7 +522,10 @@ export default function ChantiersPage() {
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '', date_echeance: '', date_debut_mecanique: '', date_debut_electrique: '', date_debut_verification: '' });
+  const [editForm, setEditForm] = useState({ nom: '', client_nom: '', adresse: '', latitude: '', longitude: '', complexite: 'MOYENNE', rayonGeofencing: 50, equipe_id: '', vehicule_id: '', date_echeance: '', date_debut_mecanique: '', date_debut_electrique: '', date_debut_verification: '' });
+  // ─── CHANGER LE VÉHICULE À TOUT MOMENT (détail + edit) ───
+  const [vehiculeChangeId, setVehiculeChangeId] = useState('');
+  const [vehiculeChanging, setVehiculeChanging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [equipes, setEquipes] = useState<EquipeData[]>([]);
   const [reassignChantier, setReassignChantier] = useState<ChantierData | null>(null);
@@ -337,13 +572,21 @@ export default function ChantiersPage() {
       setEquipeSuggeree(res.suggestion || null);
       setEquipeChoisieId(res.suggestion?.id || '');
     } catch (_) { }
+    // Suggestion véhicule manipulable (même pattern que les équipes) — via le backend
     try {
-      const vehs = await fetchVehicules();
-      setVehiculesDispo(vehs || []);
-      const premierDispo = (vehs || []).find((v: VehiculeData) => v.statut === 'DISPONIBLE') || null;
-      setVehiculeSuggere(premierDispo);
-      setVehiculeChoisiId(premierDispo?.id || '');
-    } catch (_) { }
+      const vRes = await fetchSuggestionVehicule();
+      setVehiculesDispo(vRes.vehicules || []);
+      setVehiculeSuggere(vRes.suggestion || null);
+      setVehiculeChoisiId(vRes.suggestion?.id || '');
+    } catch (_) {
+      try {
+        const vehs = await fetchVehicules();
+        setVehiculesDispo(vehs || []);
+        const premierDispo = (vehs || []).find((v: VehiculeData) => v.statut === 'DISPONIBLE') || null;
+        setVehiculeSuggere(premierDispo);
+        setVehiculeChoisiId(premierDispo?.id || '');
+      } catch (_) { }
+    }
   }
 
   async function loadTeamPositions() {
@@ -490,11 +733,14 @@ export default function ChantiersPage() {
       complexite: c.complexite || 'MOYENNE',
       rayonGeofencing: 50,
       equipe_id: currentEquipe?.id || '',
+      vehicule_id: c.vehicule_id || '',
       date_echeance: c.date_echeance ? c.date_echeance.slice(0, 16) : '',
       date_debut_mecanique: (c.date_debut_mecanique || '').slice(0, 16),
       date_debut_electrique: (c.date_debut_electrique || '').slice(0, 16),
       date_debut_verification: (c.date_debut_verification || '').slice(0, 16),
     });
+    // Charger la flotte pour le sélecteur véhicule (changement à tout moment)
+    fetchVehicules().then(v => setVehiculesDispo(v || [])).catch(() => { });
   }
 
   async function handleSauvegarder() {
@@ -521,6 +767,23 @@ export default function ChantiersPage() {
         } catch (smsErr: any) {
           // Si le backend bloque (équipe sur site), afficher l'erreur mais ne pas empêcher la sauvegarde du chantier
           setMessage({ type: 'error', text: smsErr.message || 'Chantier mis à jour, mais erreur réassignation.' });
+          setSaving(false);
+          setEditChantier(null);
+          await loadChantiers();
+          return;
+        }
+      }
+      // Si le véhicule a changé, le changer à tout moment (ancien libéré, nouveau EN_MISSION)
+      if ((editForm.vehicule_id || '') !== (editChantier.vehicule_id || '')) {
+        try {
+          const vRes = await changerVehiculeChantier(editChantier.id, editForm.vehicule_id || null);
+          setMessage({ type: 'success', text: `Chantier mis à jour. ${vRes.message || ''}`.trim() });
+          setSaving(false);
+          setEditChantier(null);
+          await loadChantiers();
+          return;
+        } catch (vErr: any) {
+          setMessage({ type: 'error', text: vErr.message || 'Chantier mis à jour, mais erreur changement véhicule.' });
           setSaving(false);
           setEditChantier(null);
           await loadChantiers();
@@ -557,9 +820,28 @@ export default function ChantiersPage() {
         const data = await res.json();
         setDetailChantier(data);
         setReposList(data.repos || []);
+        // Pré-remplir le changeur de véhicule avec le véhicule de la mission active
+        const active = (data.missions || []).find((m: any) => m.statut !== 'termine') || (data.missions || [])[0];
+        setVehiculeChangeId(active?.vehicule_id || '');
+        try { const v = await fetchVehicules(); setVehiculesDispo(v || []); } catch (_) { }
       }
     } catch (_) { }
     setDetailLoading(false);
+  }
+
+  // ─── CHANGER LE VÉHICULE DEPUIS LE DÉTAIL (à tout moment) ───
+  async function handleChangerVehiculeDetail(chantierId: string) {
+    if (vehiculeChanging) return;
+    setVehiculeChanging(true);
+    try {
+      const res = await changerVehiculeChantier(chantierId, vehiculeChangeId || null);
+      setMessage({ type: 'success', text: res.message || 'Véhicule mis à jour.' });
+      await ouvrirDetail(chantierId);
+      await loadChantiers();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Erreur changement véhicule.' });
+    }
+    setVehiculeChanging(false);
   }
 
   // ─── REPOS CHANTIER : ouvrir la modale (pré-sélectionne l'équipe du chantier) ───
@@ -822,6 +1104,16 @@ export default function ChantiersPage() {
                     </div>
                   </div>
                 )}
+                {/* ═══ VÉHICULE ASSIGNÉ (visible dès l'aperçu) ═══ */}
+                {c.vehicule_nom ? (
+                  <div className="flex items-center gap-2 bg-sky-50/70 border border-sky-100 rounded-xl px-3 py-1.5 mb-3">
+                    <span className="text-sm shrink-0">🚗</span>
+                    <p className="text-[11px] font-bold text-sky-700 truncate">
+                      {c.vehicule_nom}
+                      {c.vehicule_immat && <span className="font-mono font-medium text-sky-500"> ({c.vehicule_immat})</span>}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2 text-xs text-stone-500 mb-3">
@@ -1295,13 +1587,13 @@ export default function ChantiersPage() {
                         </div>
                       </div>
 
-                      {/* ─── VÉHICULE (optionnel) : l'admin assigne, ou vide = sans véhicule ─── */}
+                      {/* ─── VÉHICULE (optionnel) : suggestion auto manipulable comme les équipes ─── */}
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-base">🚗</span>
                           <h4 className="font-bold text-stone-700">Véhicule <span className="font-normal text-stone-400 text-xs">(optionnel)</span></h4>
                         </div>
-                        <p className="text-xs text-stone-400 mb-3">Laissez vide si l'équipe part sans véhicule. Sinon choisissez un véhicule disponible.</p>
+                        <p className="text-xs text-stone-400 mb-3">Le véhicule choisi ici est assigné à la mission créée — gardez la suggestion ou changez-la avant de créer. Vide = sans véhicule.</p>
                         <div className="bg-sky-50/50 border border-sky-100 rounded-2xl p-3 sm:p-4">
                           {vehiculeSuggere && (
                             <div className="flex items-center gap-2 mb-3 bg-white border border-sky-200 rounded-xl px-3 py-2">
@@ -1312,16 +1604,12 @@ export default function ChantiersPage() {
                               </p>
                             </div>
                           )}
-                          <select value={vehiculeChoisiId} onChange={e => setVehiculeChoisiId(e.target.value)}
-                            style={{ fontSize: '16px' }}
-                            className="w-full px-4 py-3 bg-white border border-sky-200 rounded-xl text-sm text-stone-700 outline-none focus:border-sky-400 transition-all min-h-[48px]">
-                            <option value="">— Sans véhicule —</option>
-                            {vehiculesDispo.map(v => (
-                              <option key={v.id} value={v.id}>
-                                🚗 {v.nom}{v.immatriculation ? ` (${v.immatriculation})` : ''}{v.statut !== 'DISPONIBLE' ? ` — ${v.statut}` : ''}
-                              </option>
-                            ))}
-                          </select>
+                          <VehicleSearchBar
+                            vehicules={vehiculesDispo}
+                            selectedId={vehiculeChoisiId}
+                            onSelect={(id) => setVehiculeChoisiId(id)}
+                            placeholder="🚗 Choisir le véhicule…"
+                          />
                           {vehiculesDispo.length === 0 && (
                             <p className="text-xs text-amber-600 mt-2">⚠️ Aucun véhicule enregistré — ajoutez-les dans la page Véhicules.</p>
                           )}
@@ -1511,6 +1799,33 @@ export default function ChantiersPage() {
                   </>
                 )}
               </div>
+
+              {/* ═══ VÉHICULE ASSIGNÉ — changeable à tout moment ═══ */}
+              <div className="border-t border-stone-100 pt-4 mt-2">
+                <label className="text-xs font-semibold text-stone-500 mb-1.5 flex items-center gap-1.5">
+                  <span className="text-sm">🚗</span> Véhicule assigné
+                </label>
+                {editChantier.vehicule_nom ? (
+                  <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-2">
+                    <span className="text-base">🚗</span>
+                    <p className="text-[11px] text-sky-700 font-medium">
+                      Actuel : <span className="font-bold">{editChantier.vehicule_nom}</span>
+                      {editChantier.vehicule_immat && <span className="font-mono"> ({editChantier.vehicule_immat})</span>}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 mb-2">
+                    <p className="text-[11px] text-stone-400 font-medium">Aucun véhicule assigné — mission sans véhicule.</p>
+                  </div>
+                )}
+                <VehicleSearchBar
+                  vehicules={vehiculesDispo}
+                  selectedId={editForm.vehicule_id}
+                  onSelect={(id) => setEditForm({ ...editForm, vehicule_id: id })}
+                  placeholder="🚗 Rechercher un véhicule par nom, plaque…"
+                />
+                <p className="text-[10px] text-stone-400 mt-1.5">💡 Changeable à tout moment — l'ancien est libéré, le nouveau passe EN_MISSION. Vide = sans véhicule.</p>
+              </div>
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setEditChantier(null)}
                   className="flex-1 bg-stone-100 text-stone-500 py-3 rounded-xl text-sm font-semibold hover:bg-stone-200 transition-all">Annuler</button>
@@ -1627,6 +1942,50 @@ export default function ChantiersPage() {
                 </div>
               </div>
 
+              {/* ═══ VÉHICULE : véhicule actuel + changement à tout moment ═══ */}
+              <div className="mb-6 bg-sky-50/60 border border-sky-200 rounded-2xl p-4">
+                <h4 className="font-bold text-stone-800 mb-3 flex items-center gap-2 text-sm">
+                  <span className="text-base">🚗</span> Véhicule assigné
+                </h4>
+                {(() => {
+                  const active = (detailChantier.missions || []).find((m: any) => m.statut !== 'termine') || (detailChantier.missions || [])[0];
+                  return (
+                    <>
+                      {active?.vehicule_nom ? (
+                        <div className="flex items-center gap-2 bg-white border border-sky-200 rounded-xl px-3 py-2 mb-3">
+                          <span className="text-base">🚗</span>
+                          <p className="text-xs text-stone-600">
+                            <span className="font-bold text-sky-700">{active.vehicule_nom}</span>
+                            {active.vehicule_immat && <span className="text-stone-400 font-mono"> ({active.vehicule_immat})</span>}
+                            <span className="text-stone-400"> — {active.phase === 'mecanique' ? '🔧 Mécanique' : active.phase === 'electrique' ? '⚡ Électrique' : '🛡️ Vérification'}</span>
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-stone-400 mb-3">Aucun véhicule assigné — mission sans véhicule.</p>
+                      )}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <VehicleSearchBar
+                            vehicules={vehiculesDispo}
+                            selectedId={vehiculeChangeId}
+                            onSelect={(id) => setVehiculeChangeId(id)}
+                            placeholder="🚗 Changer de véhicule…"
+                          />
+                        </div>
+                        <button
+                          onClick={() => handleChangerVehiculeDetail(detailChantier.chantier?.id || detailChantier.chantier?.id_chantier)}
+                          disabled={vehiculeChanging}
+                          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 transition-all shrink-0 min-h-[44px]">
+                          {vehiculeChanging ? <Loader2 size={14} className="animate-spin" /> : <span>🔄</span>}
+                          Changer
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-stone-400 mt-2">💡 Changeable à tout moment — l'ancien est libéré, le nouveau passe EN_MISSION. Vide = sans véhicule.</p>
+                    </>
+                  );
+                })()}
+              </div>
+
               {/* ═══ REPOS : équipes en pause sur ce chantier ═══ */}
               {reposList.length > 0 && (
                 <div className="mb-6">
@@ -1692,6 +2051,7 @@ export default function ChantiersPage() {
                               {m.phase === 'mecanique' ? '🔧 Mécanique' : m.phase === 'electrique' ? '⚡ Électrique' : '🛡️ Vérification'}
                             </span>
                             {m.equipe_nom && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">👥 {m.equipe_nom}</span>}
+                            {m.vehicule_nom && <span className="text-[10px] font-semibold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">🚗 {m.vehicule_nom}</span>}
                             {(m as any).repos_id && (
                               <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full border border-violet-200">
                                 <Moon size={9} className="inline mr-0.5" />{(m as any).repos_jours_restants ?? 0}j repos

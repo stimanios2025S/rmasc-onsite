@@ -724,5 +724,135 @@ export function creerAdminRouter(pool: Pool, logger: LoggerService, smsService?:
     }
   });
 
+  // ─── CHANGER LE VÉHICULE ASSIGNÉ À TOUT MOMENT ───────────────────
+  // PATCH /api/admin/chantiers/:id/vehicule { vehicule_id | null }
+  // - vehicule_id = nouveau véhicule à assigner (doit être DISPONIBLE ou déjà sur cette mission)
+  // - vehicule_id = null / '' = retirer le véhicule (mission sans véhicule)
+  // Le véhicule suit la mission active du chantier : ancien libéré, nouveau EN_MISSION,
+  // historique vehicules_affectations chaîné, ordres_de_mission.vehicule_id mis à jour.
+  router.patch('/chantiers/:id/vehicule', async (req: any, res) => {
+    try {
+      const chantierId = req.params.id;
+      const { vehicule_id } = req.body; // string | null
+
+      const chantierRes = await pool.query(
+        `SELECT id, nom_chantier FROM chantiers WHERE id = $1`, [chantierId]
+      );
+      if (chantierRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Chantier introuvable.' });
+      }
+      const chantier = chantierRes.rows[0];
+
+      const missionRes = await pool.query(
+        `SELECT om.id, om.phase, om.statut, om.vehicule_id,
+                v.nom AS ancien_vehicule_nom
+         FROM ordres_de_mission om
+         LEFT JOIN vehicules v ON v.id = om.vehicule_id
+         WHERE om.chantier_id = $1 AND om.statut IN ('en_attente', 'en_route', 'en_cours', 'en_pause', 'bloque')
+         ORDER BY om.date_creation DESC LIMIT 1`,
+        [chantierId]
+      );
+      if (missionRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Aucune mission active sur ce chantier.' });
+      }
+      const mission = missionRes.rows[0];
+
+      // Retirer le véhicule (vide = sans véhicule)
+      if (!vehicule_id) {
+        if (mission.vehicule_id) {
+          await pool.query(
+            `UPDATE vehicules_affectations SET statut = 'terminee', date_fin = NOW()
+             WHERE mission_id = $1 AND statut = 'en_cours'`, [mission.id]);
+          await pool.query(
+            `UPDATE ordres_de_mission SET vehicule_id = NULL, date_modification = NOW() WHERE id = $1`,
+            [mission.id]);
+          // Libérer l'ancien seulement si aucune autre mission active ne l'utilise
+          const autres = await pool.query(
+            `SELECT 1 FROM ordres_de_mission WHERE vehicule_id = $1 AND id != $2 AND statut != 'termine' LIMIT 1`,
+            [mission.vehicule_id, mission.id]);
+          if (autres.rows.length === 0) {
+            await pool.query(
+              `UPDATE vehicules SET statut = 'DISPONIBLE', date_modification = NOW() WHERE id = $1`,
+              [mission.vehicule_id]);
+          }
+          logger.info('Véhicule retiré du chantier', { chantierId, missionId: mission.id, ancien: mission.ancien_vehicule_nom });
+          eventBus.emit('vehicule_change', {
+            chantierId, chantierNom: chantier.nom_chantier, missionId: mission.id,
+            vehiculeId: null, vehiculeNom: null,
+            message: `🚗 Véhicule retiré de "${chantier.nom_chantier}"`,
+          });
+        }
+        return res.json({ ok: true, message: '🚗 Véhicule retiré — mission sans véhicule.' });
+      }
+
+      // Même véhicule → rien à faire
+      if (mission.vehicule_id === vehicule_id) {
+        return res.json({ ok: true, message: 'Véhicule déjà assigné à cette mission.' });
+      }
+
+      const vRes = await pool.query(
+        `SELECT id, nom, statut FROM vehicules WHERE id = $1 AND actif = TRUE`, [vehicule_id]);
+      if (vRes.rows.length === 0) {
+        return res.status(404).json({ erreur: 'Véhicule introuvable ou inactif.' });
+      }
+      const nouveau = vRes.rows[0];
+      if (nouveau.statut !== 'DISPONIBLE') {
+        return res.status(409).json({ erreur: `« ${nouveau.nom} » n'est pas disponible (${nouveau.statut}).` });
+      }
+
+      // Infos équipe/chantier de la mission pour l'historique
+      const infoRes = await pool.query(
+        `SELECT equipe_id, chantier_id FROM ordres_de_mission WHERE id = $1`, [mission.id]);
+      const info = infoRes.rows[0];
+
+      // 1. Clore l'ancienne affectation + détacher l'ancien véhicule
+      if (mission.vehicule_id) {
+        await pool.query(
+          `UPDATE vehicules_affectations SET statut = 'terminee', date_fin = NOW()
+           WHERE mission_id = $1 AND statut = 'en_cours'`, [mission.id]);
+        const autres = await pool.query(
+          `SELECT 1 FROM ordres_de_mission WHERE vehicule_id = $1 AND id != $2 AND statut != 'termine' LIMIT 1`,
+          [mission.vehicule_id, mission.id]);
+        if (autres.rows.length === 0) {
+          await pool.query(
+            `UPDATE vehicules SET statut = 'DISPONIBLE', date_modification = NOW() WHERE id = $1`,
+            [mission.vehicule_id]);
+        }
+      }
+
+      // 2. Assigner le nouveau
+      await pool.query(
+        `UPDATE vehicules SET statut = 'EN_MISSION', date_modification = NOW() WHERE id = $1`,
+        [vehicule_id]);
+      await pool.query(
+        `UPDATE ordres_de_mission SET vehicule_id = $1, date_modification = NOW() WHERE id = $2`,
+        [vehicule_id, mission.id]);
+      await pool.query(
+        `INSERT INTO vehicules_affectations (vehicule_id, equipe_id, mission_id, chantier_id, cree_par)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [vehicule_id, info.equipe_id, mission.id, info.chantier_id, req.user?.userId || null]);
+
+      logger.info('Véhicule changé sur chantier', {
+        chantierId, missionId: mission.id,
+        ancien: mission.ancien_vehicule_nom || 'aucun', nouveau: nouveau.nom,
+      });
+      eventBus.emit('vehicule_change', {
+        chantierId, chantierNom: chantier.nom_chantier, missionId: mission.id,
+        vehiculeId: nouveau.id, vehiculeNom: nouveau.nom,
+        message: `🚗 ${nouveau.nom} assigné à "${chantier.nom_chantier}"`,
+      });
+
+      res.json({
+        ok: true,
+        message: `🚗 Véhicule changé : « ${nouveau.nom} » assigné à "${chantier.nom_chantier}"${mission.ancien_vehicule_nom ? ` (avant : ${mission.ancien_vehicule_nom})` : ''}.`,
+        ancienVehicule: mission.ancien_vehicule_nom || null,
+        nouveauVehicule: nouveau.nom,
+      });
+    } catch (err: any) {
+      logger.error('Erreur changement véhicule chantier', { erreur: err.message });
+      res.status(500).json({ erreur: err.message });
+    }
+  });
+
   return router;
 }

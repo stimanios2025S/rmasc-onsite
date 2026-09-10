@@ -27,17 +27,40 @@ export function creerMissionRouter(pool: Pool, logger: LoggerService, smsService
                 CASE WHEN c.coordonnees IS NOT NULL THEN ST_X(c.coordonnees::geometry) END AS longitude,
                 c.rayon_geofencing, om.duree_estimee_jours AS duree_estimee,
                 TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
-                TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut
+                TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
+                om.vehicule_id,
+                v.nom AS vehicule_nom, v.immatriculation AS vehicule_immat
          FROM ordres_de_mission om
          JOIN chantiers c ON c.id = om.chantier_id
          JOIN equipes e ON e.id = om.equipe_id
+         LEFT JOIN vehicules v ON v.id = om.vehicule_id
          WHERE om.equipe_id = $1 AND om.statut IN ('en_attente','en_route','en_cours','en_pause','bloque')
          ORDER BY om.date_creation DESC LIMIT 1`,
         [equipe_id]
       );
 
       if (rows.length === 0) return res.json(null);
-      res.json(rows[0]);
+      const mission = rows[0];
+
+      // Repos de CETTE équipe sur CE chantier (actifs + historique récent) → l'ouvrier voit ses repos
+      try {
+        const reposRes = await pool.query(
+          `SELECT rc.id, rc.jours_prevus,
+                  TO_CHAR(rc.date_debut,'YYYY-MM-DD HH24:MI') AS date_debut,
+                  TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS date_fin_prevue,
+                  rc.statut, rc.motif,
+                  CASE WHEN rc.statut = 'actif' AND rc.date_fin_prevue > NOW()
+                    THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
+                    ELSE 0 END AS jours_restants
+           FROM repos_chantier rc
+           WHERE rc.equipe_id = $1 AND rc.chantier_id = $2
+           ORDER BY (rc.statut = 'actif') DESC, rc.date_creation DESC
+           LIMIT 5`,
+          [mission.equipe_id, mission.chantier_id]
+        );
+        (mission as any).repos = reposRes.rows;
+      } catch (_) { (mission as any).repos = []; /* table absente avant migration v23 */ }
+      res.json(mission);
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });
     }

@@ -50,7 +50,28 @@ export function creerEquipeRouter(pool: Pool): Router {
       );
 
       if (rows.length === 0) return res.status(404).json({ erreur: 'Équipe introuvable.' });
-      res.json(rows[0]);
+      const statut = rows[0];
+
+      // Repos de l'équipe sur ses chantiers (actifs + derniers terminés) → portail ouvrier
+      try {
+        const reposRes = await pool.query(
+          `SELECT rc.id, rc.chantier_id, c.nom_chantier, rc.jours_prevus,
+                  TO_CHAR(rc.date_debut,'YYYY-MM-DD HH24:MI') AS date_debut,
+                  TO_CHAR(rc.date_fin_prevue,'YYYY-MM-DD HH24:MI') AS date_fin_prevue,
+                  rc.statut, rc.motif,
+                  CASE WHEN rc.statut = 'actif' AND rc.date_fin_prevue > NOW()
+                    THEN CEIL(EXTRACT(EPOCH FROM rc.date_fin_prevue - NOW()) / 86400)::INT
+                    ELSE 0 END AS jours_restants
+           FROM repos_chantier rc
+           JOIN chantiers c ON c.id = rc.chantier_id
+           WHERE rc.equipe_id = $1
+           ORDER BY (rc.statut = 'actif') DESC, rc.date_creation DESC
+           LIMIT 5`,
+          [equipe_id]
+        );
+        (statut as any).repos = reposRes.rows;
+      } catch (_) { (statut as any).repos = []; /* table absente avant migration v23 */ }
+      res.json(statut);
     } catch (err: any) {
       res.status(500).json({ erreur: err.message });
     }

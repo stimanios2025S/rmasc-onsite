@@ -12,6 +12,10 @@ import {
 import TechnicianMap from '@/components/TechnicianMap';
 
 /* ─── TYPES ────────────────────────────────────────────────────────── */
+interface ReposInfo {
+  id: string; jours_prevus: number; date_debut: string; date_fin_prevue: string;
+  statut: string; motif?: string | null; jours_restants: number; chantier_id?: string; nom_chantier?: string;
+}
 interface MissionInfo {
   id: string; chantier_id: string; chantier: string; adresse: string; client_nom: string; client_telephone: string;
   ref_erp: string; phase: string; statut: string; equipe_id: string; equipe_nom: string;
@@ -19,9 +23,11 @@ interface MissionInfo {
   date_declenchement: string; date_debut: string | null;
   complexite?: string; dxf_url?: string | null; pdf_url?: string | null;
   fiche_technique?: Record<string, unknown> | null;
+  vehicule_id?: string | null; vehicule_nom?: string | null; vehicule_immat?: string | null;
+  repos?: ReposInfo[];
 }
 interface PointageRec { id: string; type: string; horodatage: string; distance: number; conforme: boolean; source?: string; }
-interface EquipeStatus { statut_equipe: string; disponible_a_partir_de: string; nom: string; type: string; }
+interface EquipeStatus { statut_equipe: string; disponible_a_partir_de: string; nom: string; type: string; repos?: ReposInfo[]; }
 interface EtapeChecklist { id: string; label: string; done: boolean; subtasks?: { label: string; done: boolean }[]; }
 interface ChecklistData { id: string; mission_id: string; phase: string; etapes: EtapeChecklist[]; complete: boolean; }
 
@@ -62,6 +68,65 @@ function VerifAutocontroleCard({ chantierId }: { chantierId: string }) {
             </div>
             <span className="text-xs font-bold text-emerald-600 whitespace-nowrap">📄 Ouvrir PDF →</span>
           </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── CARTE REPOS OUVRIER : l'ouvrier voit ses repos (actifs + passés) ─── */
+function ReposOuvrierCard({ repos, compact }: { repos: ReposInfo[]; compact?: boolean }) {
+  if (!Array.isArray(repos) || repos.length === 0) return null;
+  const actifs = repos.filter(r => r.statut === 'actif');
+  const passes = repos.filter(r => r.statut !== 'actif');
+  const fmtFin = (d: string) => {
+    try {
+      return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return d; }
+  };
+  return (
+    <div className="mx-4 mb-4 bg-white/90 backdrop-blur-md rounded-3xl border border-violet-200 shadow-sm p-5">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+          <span className="text-lg">😴</span>
+        </div>
+        <div>
+          <h3 className="font-bold text-stone-800 text-sm">Mes repos</h3>
+          <p className="text-xs text-stone-400">
+            {actifs.length > 0
+              ? `${actifs.length} repos en cours`
+              : 'Historique de vos repos'}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {actifs.map(r => (
+          <div key={r.id} className="flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/60 px-3.5 py-2.5">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-stone-700 truncate">
+                {r.nom_chantier || 'Chantier'}
+                <span className="ml-2 text-violet-600">😴 {r.jours_restants}j restants</span>
+              </p>
+              <p className="text-[10px] text-stone-400">
+                {r.jours_prevus}j prévus • fin prévue {fmtFin(r.date_fin_prevue)}
+                {r.motif ? ` • ${r.motif}` : ''}
+              </p>
+            </div>
+          </div>
+        ))}
+        {!compact && passes.slice(0, 3).map(r => (
+          <div key={r.id} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 opacity-70">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-stone-500 truncate">
+                {r.nom_chantier || 'Chantier'}
+                <span className="ml-2 text-stone-400 font-semibold">terminé</span>
+              </p>
+              <p className="text-[10px] text-stone-400">
+                {r.jours_prevus}j • fin {fmtFin(r.date_fin_prevue)}
+                {r.motif ? ` • ${r.motif}` : ''}
+              </p>
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -969,6 +1034,20 @@ export default function MissionActivePage() {
                 <p className="text-xs text-amber-600 font-semibold">Règle applicable</p>
                 <p className="text-xs text-stone-400 mt-1">3 jours de repos obligatoires après chaque mission terminée.</p>
               </div>
+              {/* ═══ L'OUVRIER VOIT SES REPOS (chantier + jours + motif) ═══ */}
+              {Array.isArray(equipeStatus?.repos) && equipeStatus.repos.length > 0 && (
+                <div className="mt-4 w-full max-w-xs space-y-2">
+                  {equipeStatus.repos.filter(r => r.statut === 'actif').map(r => (
+                    <div key={r.id} className="bg-violet-50 border border-violet-200 rounded-2xl px-4 py-3 text-center">
+                      <p className="text-xs font-bold text-violet-700">😴 {r.nom_chantier || 'Chantier'}</p>
+                      <p className="text-[11px] text-stone-500 mt-0.5">
+                        {r.jours_prevus}j prévus • {r.jours_restants}j restants
+                        {r.motif ? ` • ${r.motif}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1014,16 +1093,36 @@ export default function MissionActivePage() {
         </div>
       )}
 
-      {/* ═══ REPOS CHANTIER : mission mise en pause par l'admin ═══ */}
+      {/* ═══ REPOS CHANTIER : mission mise en pause par l'admin (jours + motif visibles) ═══ */}
       {isPaused && (
         <div className="mx-4 mb-4 bg-gradient-to-r from-violet-500 to-purple-600 rounded-3xl p-4 flex items-start gap-3 shadow-lg shadow-violet-200">
           <span className="text-2xl flex-shrink-0 mt-0.5">😴</span>
-          <div>
+          <div className="flex-1">
             <p className="font-bold text-white text-sm">Repos — reprise par l'admin uniquement</p>
             <p className="text-xs text-violet-100 mt-0.5">Votre équipe est au repos sur ce chantier. Reposez-vous — le pointage reprendra automatiquement à la fin du repos.</p>
+            {Array.isArray(mission?.repos) && mission.repos.filter(r => r.statut === 'actif').map(r => (
+              <p key={r.id} className="text-xs text-white font-semibold mt-1.5 bg-white/15 rounded-xl px-3 py-1.5">
+                😴 {r.jours_restants}j restants • fin {(() => { try { return new Date(r.date_fin_prevue).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }); } catch { return r.date_fin_prevue; } })()}
+                {r.motif ? ` • ${r.motif}` : ''}
+              </p>
+            ))}
           </div>
         </div>
       )}
+
+      {/* ═══ VÉHICULE ASSIGNÉ À LA MISSION ═══ */}
+      {mission?.vehicule_nom && (
+        <div className="mx-4 mb-4 bg-sky-50/80 border border-sky-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+          <span className="text-xl">🚗</span>
+          <div>
+            <p className="text-xs font-bold text-sky-700">{mission.vehicule_nom}</p>
+            {mission.vehicule_immat && <p className="text-[10px] text-sky-500 font-mono">{mission.vehicule_immat}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MES REPOS (visibles même hors pause — actifs + passés) ═══ */}
+      <ReposOuvrierCard repos={[...(mission?.repos || []), ...(equipeStatus?.repos || [])].filter((r, i, a) => a.findIndex(x => x.id === r.id) === i)} compact />
 
       {/* ═══ ALERTE COMPLEXITÉ DIFFICILE ═══ */}
       {(missionDetail?.complexite === 'DIFFICILE' || mission?.complexite === 'DIFFICILE') && (

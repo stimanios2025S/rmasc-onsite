@@ -220,9 +220,12 @@ app.get('/api/chantiers', async (_req, res) => {
        active_mission AS (
          SELECT DISTINCT ON (om.chantier_id)
            om.chantier_id, om.equipe_id AS equipe_actuelle_id,
-           e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut
+           e.nom AS equipe_actuelle, om.phase AS phase_actuelle, om.statut AS mission_statut,
+           om.id AS mission_id,
+           v.id AS vehicule_id, v.nom AS vehicule_nom, v.immatriculation AS vehicule_immat
          FROM ordres_de_mission om
          LEFT JOIN equipes e ON e.id = om.equipe_id
+         LEFT JOIN vehicules v ON v.id = om.vehicule_id
          WHERE om.statut IN ('en_route','en_cours','en_attente','en_pause','bloque','termine')
          ORDER BY om.chantier_id, om.date_creation DESC
        ),
@@ -247,6 +250,10 @@ app.get('/api/chantiers', async (_req, res) => {
               am.equipe_actuelle_id,
               am.phase_actuelle,
               am.mission_statut,
+              am.mission_id,
+              am.vehicule_id,
+              am.vehicule_nom,
+              am.vehicule_immat,
               COALESCE(ra.nb_repos_actifs, 0) AS nb_repos_actifs,
               TO_CHAR(ra.repos_fin_max,'YYYY-MM-DD HH24:MI') AS repos_fin_max,
               CASE WHEN ra.repos_fin_max IS NOT NULL AND ra.repos_fin_max > NOW()
@@ -646,6 +653,31 @@ app.get('/api/chantiers/suggestion-equipe', verifierToken, async (_req, res) => 
   }
 });
 
+// GET /api/chantiers/suggestion-vehicule — véhicule suggéré + flotte (avant création)
+// Même pattern que suggestion-equipe : l'admin voit QUEL véhicule sera assigné
+// avant de finir le wizard → manipulable (garder la suggestion ou changer).
+app.get('/api/chantiers/suggestion-vehicule', verifierToken, async (_req, res) => {
+  try {
+    const { rows: vehicules } = await pool.query(
+      `SELECT v.id, v.nom, v.immatriculation, v.imei, v.geoflotte_id,
+              v.statut,
+              p.latitude, p.longitude, p.vitesse_kmh, p.en_mouvement,
+              e.nom AS equipe_nom
+       FROM vehicules v
+       LEFT JOIN vehicules_positions p ON p.vehicule_id = v.id
+       LEFT JOIN vehicules_affectations a ON a.vehicule_id = v.id AND a.statut = 'en_cours'
+       LEFT JOIN equipes e ON e.id = a.equipe_id
+       WHERE v.actif = TRUE
+       ORDER BY CASE WHEN v.statut = 'DISPONIBLE' THEN 0 ELSE 1 END,
+                v.nom ASC`
+    );
+    const suggestion = vehicules.find(v => v.statut === 'DISPONIBLE') || null;
+    res.json({ suggestion, vehicules });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', verifierToken, async (req, res) => {
   try {
@@ -927,6 +959,8 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
     const missionsRes = await pool.query(
       `SELECT om.id, om.phase, om.statut, om.duree_estimee_jours,
               om.equipe_id,
+              om.vehicule_id,
+              v.nom AS vehicule_nom, v.immatriculation AS vehicule_immat, v.statut AS vehicule_statut,
               TO_CHAR(om.date_declenchement,'YYYY-MM-DD HH24:MI') AS date_declenchement,
               TO_CHAR(om.date_debut_effectif,'YYYY-MM-DD HH24:MI') AS date_debut,
               TO_CHAR(om.date_fin_effectif,'YYYY-MM-DD HH24:MI') AS date_fin,
@@ -945,6 +979,7 @@ app.get('/api/chantiers/:id/detail', async (req, res) => {
                 ELSE 0 END AS repos_jours_restants
        FROM ordres_de_mission om
        LEFT JOIN equipes e ON e.id = om.equipe_id
+       LEFT JOIN vehicules v ON v.id = om.vehicule_id
        LEFT JOIN LATERAL (
          SELECT etapes, complete FROM checklists_phases cp
          WHERE cp.mission_id = om.id ORDER BY cp.date_mise_a_jour DESC LIMIT 1

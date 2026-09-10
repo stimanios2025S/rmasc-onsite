@@ -17,6 +17,8 @@ export interface ReposChantier {
 }
 export interface ChantierData {
   id: string; ref: string; nom: string; statut: string; client_nom: string;
+  mission_id?: string | null;
+  vehicule_id?: string | null; vehicule_nom?: string | null; vehicule_immat?: string | null;
   lat?: number | null; lng?: number | null; missions: number; en_cours: number; date_creation: string;
   complexite?: string; dxf?: string | null; pdf?: string | null;
   en_attente?: number; bloquee?: number; terminee?: number;
@@ -142,6 +144,24 @@ export interface SuggestionEquipe {
 
 export async function fetchSuggestionEquipe(): Promise<SuggestionEquipe> {
   return apiFetch('/chantiers/suggestion-equipe');
+}
+
+export interface SuggestionVehicule {
+  suggestion: VehiculeData | null;
+  vehicules: VehiculeData[];
+}
+
+// ─── SUGGESTION VÉHICULE (manipulable comme les équipes, avant création) ──
+export async function fetchSuggestionVehicule(): Promise<SuggestionVehicule> {
+  return apiFetch('/chantiers/suggestion-vehicule');
+}
+
+// ─── CHANGER LE VÉHICULE ASSIGNÉ À TOUT MOMENT (edit + détail) ──
+export async function changerVehiculeChantier(chantierId: string, vehiculeId: string | null): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch(`/admin/chantiers/${chantierId}/vehicule`, {
+    method: 'PATCH',
+    body: JSON.stringify({ vehicule_id: vehiculeId }),
+  });
 }
 
 export async function creerChantier(data: NouveauChantier): Promise<CreerChantierResult> {
