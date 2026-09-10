@@ -135,6 +135,15 @@ export interface CreerChantierResult {
   message: string;
 }
 
+export interface SuggestionEquipe {
+  suggestion: EquipeData | null;
+  equipes: EquipeData[];
+}
+
+export async function fetchSuggestionEquipe(): Promise<SuggestionEquipe> {
+  return apiFetch('/chantiers/suggestion-equipe');
+}
+
 export async function creerChantier(data: NouveauChantier): Promise<CreerChantierResult> {
   return apiFetch('/chantiers', { method: 'POST', body: JSON.stringify(data) });
 }

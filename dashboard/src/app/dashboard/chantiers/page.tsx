@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type ReposChantier } from '@/lib/api';
+import { fetchChantiers, creerChantier, modifierChantier, supprimerChantier, fetchEquipes, fetchSuggestionEquipe, reassignerEquipe, fetchReposChantier, demarrerReposChantier, arreterReposChantier, type ChantierData, type EquipeData, type ReposChantier } from '@/lib/api';
 import { useSyncEvents } from '@/lib/use-sync-events';
 import {
   Search, Wrench, Zap, Shield, Loader2, Plus, ArrowUpRight, X,
@@ -279,6 +279,10 @@ export default function ChantiersPage() {
   });
   const [dxfFile, setDxfFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  // ─── ÉQUIPE SUGGÉRÉE (choix avant création → 1 seul SMS vers la bonne équipe) ───
+  const [equipesMeca, setEquipesMeca] = useState<EquipeData[]>([]);
+  const [equipeSuggeree, setEquipeSuggeree] = useState<EquipeData | null>(null);
+  const [equipeChoisieId, setEquipeChoisieId] = useState('');
   const [detailChantier, setDetailChantier] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editChantier, setEditChantier] = useState<ChantierData | null>(null);
@@ -320,6 +324,15 @@ export default function ChantiersPage() {
 
   async function loadEquipes() {
     try { setEquipes(await fetchEquipes()); } catch (_) { }
+  }
+
+  async function loadSuggestionEquipe() {
+    try {
+      const res = await fetchSuggestionEquipe();
+      setEquipesMeca(res.equipes || []);
+      setEquipeSuggeree(res.suggestion || null);
+      setEquipeChoisieId(res.suggestion?.id || '');
+    } catch (_) { }
   }
 
   async function loadTeamPositions() {
@@ -407,6 +420,7 @@ export default function ChantiersPage() {
         date_debut_mecanique: form.date_debut_mecanique || undefined,
         date_debut_electrique: form.date_debut_electrique || undefined,
         date_debut_verification: form.date_debut_verification || undefined,
+        forceEquipeId: equipeChoisieId || undefined,
       });
       // Backend auto-assigns first DISPONIBLE team
       if (res.equipeNom) {
@@ -417,7 +431,9 @@ export default function ChantiersPage() {
       setShowWizard(false);
       setStep(1);
       resetForm();
+      setEquipeChoisieId('');
       await loadChantiers();
+      await loadEquipes();
     } catch (e: any) {
       setMessage({ type: 'error', text: e.message || 'Erreur de création.' });
     }
@@ -621,7 +637,7 @@ export default function ChantiersPage() {
 
   return (
     <AdminShell title="Chantiers" subtitle={`${nbActifs} actif${nbActifs > 1 ? 's' : ''}${nbTermines > 0 ? ` • ${nbTermines} terminé${nbTermines > 1 ? 's' : ''}` : ''}`}
-      actions={<button onClick={() => setShowWizard(true)}
+      actions={<button onClick={() => { loadSuggestionEquipe(); setShowWizard(true); }}
         className="flex items-center justify-center gap-2 bg-stone-900 text-white px-5 py-3 rounded-full text-sm font-semibold hover:bg-stone-700 shadow-sm transition-all min-h-[44px]">
         <Plus size={16} /> Ajouter un Chantier
       </button>}>
@@ -1224,6 +1240,35 @@ export default function ChantiersPage() {
                       <p className="text-[10px] text-stone-400 leading-relaxed bg-stone-50 rounded-xl px-3 py-2">
                         💡 Laissez vide si pas de planning. Les dates sont informatives : elles n'empêchent jamais une équipe de commencer à travailler.
                       </p>
+
+                      {/* ─── ÉQUIPE MÉCANIQUE : suggestion auto + choix avant création ─── */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Users size={18} className="text-indigo-500" />
+                          <h4 className="font-bold text-stone-700">Équipe Mécanique</h4>
+                        </div>
+                        <p className="text-xs text-stone-400 mb-3">L'équipe choisie ici reçoit le WhatsApp automatiquement — gardez la suggestion ou changez-la avant de créer.</p>
+                        <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-3 sm:p-4">
+                          {equipeSuggeree && (
+                            <div className="flex items-center gap-2 mb-3 bg-white border border-indigo-200 rounded-xl px-3 py-2">
+                              <span className="text-base">🤖</span>
+                              <p className="text-xs text-stone-600">
+                                Suggestion auto : <span className="font-bold text-indigo-700">{equipeSuggeree.nom}</span>
+                                {equipeSuggeree.membres_noms && <span className="text-stone-400"> — {equipeSuggeree.membres_noms}</span>}
+                              </p>
+                            </div>
+                          )}
+                          <TeamSearchBar
+                            equipes={equipesMeca}
+                            selectedId={equipeChoisieId}
+                            onSelect={(id) => setEquipeChoisieId(id)}
+                            placeholder="🔧 Choisir l'équipe mécanique…"
+                          />
+                          {equipesMeca.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-2">⚠️ Aucune équipe mécanique active — le chantier sera créé sans mission.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

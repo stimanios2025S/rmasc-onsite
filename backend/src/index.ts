@@ -607,6 +607,39 @@ app.post('/api/chantiers/geocode', verifierToken, async (_req, res) => {
   }
 });
 
+// GET /api/chantiers/suggestion-equipe — équipe mécanique suggérée + liste (avant création)
+// L'admin voit QUI sera assigné avant de finir le chantier → 1 seul SMS vers la bonne équipe.
+// La suggestion utilise EXACTEMENT la même règle que POST /api/chantiers (auto-assign).
+app.get('/api/chantiers/suggestion-equipe', verifierToken, async (_req, res) => {
+  try {
+    const { rows: mecas } = await pool.query(
+      `SELECT e.id, e.nom, e.type::text AS type, e.statut_equipe::text AS statut_equipe,
+              TO_CHAR(e.disponible_a_partir_de,'YYYY-MM-DD HH24:MI') AS dispo,
+              (SELECT COUNT(*) FROM ordres_de_mission om
+               WHERE om.equipe_id = e.id AND om.statut IN ('en_cours','en_attente'))::INT AS missions,
+              CASE WHEN e.disponible_a_partir_de > NOW()
+                THEN EXTRACT(DAY FROM e.disponible_a_partir_de - NOW())::INT
+                ELSE 0 END AS jours_repos_restants,
+              (SELECT STRING_AGG(TRIM(COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')), ', ')
+               FROM utilisateurs u WHERE u.equipe_id = e.id AND u.actif = TRUE) AS membres_noms
+       FROM equipes e
+       WHERE e.type = 'mecanique' AND e.actif = TRUE
+       ORDER BY CASE WHEN e.statut_equipe = 'DISPONIBLE'
+                      AND (e.disponible_a_partir_de IS NULL OR e.disponible_a_partir_de <= NOW())
+                     THEN 0 ELSE 1 END,
+                missions ASC, e.date_creation ASC`
+    );
+    // Même règle que la création : 1ère DISPONIBLE prête (repos terminé), sinon null
+    const suggestion = mecas.find(e =>
+      e.statut_equipe === 'DISPONIBLE' &&
+      (e.jours_repos_restants === 0 || e.jours_repos_restants == null)
+    ) || null;
+    res.json({ suggestion, equipes: mecas });
+  } catch (err: any) {
+    res.status(500).json({ erreur: err.message });
+  }
+});
+
 // POST /api/chantiers — création manuelle d'un chantier (El Ghani)
 app.post('/api/chantiers', verifierToken, async (req, res) => {
   try {
