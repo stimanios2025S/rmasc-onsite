@@ -1,21 +1,17 @@
 import { Pool } from 'pg';
 import { LoggerService } from '../notifications/logger.service';
 
-// ─── GeoFlotte : lecture des positions GPS des véhicules ─────────────────
-// Principe : login user/pass (compte admin/admin fourni par le patron) sur
-// https://i2b.geoflotte.com, session cookie, puis lecture périodique des
-// dernières positions → table vehicules_positions (1 ligne / véhicule).
-// 100% gratuit : aucun abonnement, juste le polling côté serveur.
-// Si le portail GeoFlotte change son HTML/API, le polling échoue en silence
-// (non bloquant) et la page admin continue en mode manuel (assignation).
-
-const BASE = process.env.GEOFLOTTE_URL || 'https://i2b.geoflotte.com';
-const USER = process.env.GEOFLOTTE_USER || '';
-const PASS = process.env.GEOFLOTTE_PASS || '';
-const INTERVALLE_MS = parseInt(process.env.GEOFLOTTE_INTERVALLE_MS || '60000', 10);
+// ─── GeoFlotte I2B : connecteur réel (Quasar SPA) ───────────────────────────
+// Portal : https://i2b.geoflotte.com/  →  API : https://i2b.geoflotte.com/api
+// Login  : POST /getsession  →  token JWT (usertoken), header Authorization: Bearer
+// Flotte : POST /allinfovehiculebyclient, /getVehicleDetailListByClient, ...
+// Temps réel : POST /tramesreels  (les "trames réelles" GPS)
+// 100% gratuit : polling serveur, aucun abonnement.
+// Tout véhicule vu sur GeoFlotte mais absent chez nous est IMPORTÉ AUTO
+// (nom réel + position directe) → la page Véhicules se remplit toute seule.
 
 export interface PositionVehicule {
-  identifiant: string; // geoflotte_id / imei / nom — ce qu'on arrive à lire
+  identifiant: string;
   nom?: string;
   latitude: number;
   longitude: number;
@@ -26,13 +22,33 @@ export interface PositionVehicule {
 }
 
 export class GeoflotteService {
-  private cookies = '';
+  private token = '';
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private pool: Pool, private logger: LoggerService) {}
 
+  // ─── Env en lecture LAZY (dotenv chargé après les imports) ──────────────
+  private get base(): string {
+    return (process.env.GEOFLOTTE_URL || 'https://i2b.geoflotte.com').replace(/\/+$/, '');
+  }
+  private get api(): string {
+    return this.base.endsWith('/api') ? this.base : this.base + '/api';
+  }
+  private get user(): string {
+    return (process.env.GEOFLOTTE_USER || '').trim();
+  }
+  private get pass(): string {
+    return (process.env.GEOFLOTTE_PASS || '').trim();
+  }
+  private get company(): string {
+    return (process.env.GEOFLOTTE_COMPANY || 'rmasc').trim();
+  }
+  private get intervalle(): number {
+    return parseInt(process.env.GEOFLOTTE_INTERVALLE_MS || '60000', 10) || 60000;
+  }
+
   get configure(): boolean {
-    return USER !== '' && PASS !== '';
+    return this.user !== '' && this.pass !== '';
   }
 
   demarrer(): void {
@@ -41,12 +57,12 @@ export class GeoflotteService {
       return;
     }
     if (this.timer) return;
-    this.logger.info(`GeoFlotte polling démarré (${BASE}, toutes les ${Math.round(INTERVALLE_MS / 1000)}s).`);
+    this.logger.info(`GeoFlotte polling démarré (${this.base}, toutes les ${Math.round(this.intervalle / 1000)}s).`);
     this.synchroniser().catch(() => {});
     this.timer = setInterval(() => {
       this.synchroniser().catch((e: any) =>
         this.logger.error('GeoFlotte sync échouée (non bloquant)', { erreur: e.message }));
-    }, INTERVALLE_MS);
+    }, this.intervalle);
   }
 
   arreter(): void {
@@ -54,91 +70,161 @@ export class GeoflotteService {
     this.timer = null;
   }
 
-  // ─── Login : essaie les formulaires courants, garde le cookie de session
-  private async connecter(): Promise<boolean> {
-    if (this.cookies) return true;
-    const tentatives = [
-      { url: `${BASE}/login`, champU: 'username', champP: 'password' },
-      { url: `${BASE}/api/login`, champU: 'login', champP: 'password' },
-      { url: `${BASE}/`, champU: 'user', champP: 'pass' },
-    ];
-    for (const t of tentatives) {
-      try {
-        const corps = new URLSearchParams({ [t.champU]: USER, [t.champP]: PASS }).toString();
-        const res = await fetch(t.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'RMASC-OnSite/1.0 (flotte-entreprise)',
-            Accept: 'text/html,application/json,*/*',
-          },
-          body: corps,
-          redirect: 'manual',
-        } as any);
-        const setCookie = (res.headers as any).get?.('set-cookie') || (res.headers as any).raw?.()?.['set-cookie']?.join('; ') || '';
-        if (setCookie) this.cookies = setCookie.split(',').map((c: string) => c.split(';')[0]).join('; ');
-        if (res.status < 400) {
-          // Vérifier que la session est réelle : la page d'accueil ne doit plus rediriger vers login
-          const check = await fetch(BASE + '/', { headers: { Cookie: this.cookies, 'User-Agent': 'RMASC-OnSite/1.0' }, redirect: 'manual' } as any);
-          if (check.status < 400) return true;
-        }
-      } catch { /* tentative suivante */ }
-    }
-    return this.cookies !== '';
+  // ─── HTTP helper (timeout 20s) ───────────────────────────────────────────
+  private async postJSON(path: string, body: any, avecToken = true): Promise<any> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'User-Agent': 'RMASC-OnSite/1.0' };
+      if (avecToken && this.token) headers.Authorization = `Bearer ${this.token}`;
+      const res = await fetch(this.api + path, {
+        method: 'POST', headers, body: JSON.stringify(body ?? {}), signal: ctrl.signal,
+      } as any);
+      const txt = await res.text().catch(() => '');
+      if (!res.ok) return null;
+      try { return txt ? JSON.parse(txt) : null; } catch { return null; }
+    } catch { return null; } finally { clearTimeout(t); }
   }
 
-  // ─── Lecture des positions : essaie les endpoints JSON courants du portail
-  private async lirePositions(): Promise<PositionVehicule[]> {
-    const urls = [
-      `${BASE}/api/positions`, `${BASE}/api/devices/positions`, `${BASE}/api/last`,
-      `${BASE}/positions.json`, `${BASE}/api/units`, `${BASE}/get_positions`,
+  private extraireToken(j: any): string | null {
+    if (!j || typeof j !== 'object') {
+      if (typeof j === 'string' && j.length > 20) return j;
+      return null;
+    }
+    const cands = [j.token, j.usertoken, j.accessToken, j.access_token,
+      j.data?.token, j.data?.usertoken, j.result?.token, j.session?.token, j.data?.result?.token];
+    for (const c of cands) {
+      if (typeof c === 'string' && c.length > 20) return c;
+    }
+    return null;
+  }
+
+  // ─── LOGIN réel : POST /getsession (champ société inclus) ────────────────
+  private async connecter(): Promise<boolean> {
+    // Session existante encore valide ?
+    if (this.token) {
+      const chk = await this.postJSON('/checkSession', {});
+      if (chk && (chk as any).error !== true) return true;
+    }
+    const U = this.user, P = this.pass, C = this.company;
+    const payloads: any[] = [
+      { username: U, password: P, rememberMe: true },
+      { username: U, password: P },
+      { login: U, password: P },
+      { identifiant: U, password: P },
+      { account: C, username: U, password: P },
+      { account: C, login: U, password: P },
+      { client: C, username: U, password: P },
+      { societe: C, username: U, password: P },
+      { dossier: C, username: U, password: P },
+      { username: `${C}/${U}`, password: P },
+      { username: `${C}_${U}`, password: P },
+      { username: `${C}.${U}`, password: P },
+      { loginContact: U, password: P },
     ];
-    for (const u of urls) {
-      try {
-        const res = await fetch(u, {
-          headers: { Cookie: this.cookies, 'User-Agent': 'RMASC-OnSite/1.0', Accept: 'application/json' },
-        } as any);
-        if (!res.ok) continue;
-        const data: any = await res.json().catch(() => null);
-        const liste: any[] = Array.isArray(data) ? data : data?.positions || data?.units || data?.devices || data?.data || [];
-        const positions: PositionVehicule[] = [];
-        for (const d of Array.isArray(liste) ? liste : []) {
-          const lat = Number(d.lat ?? d.latitude ?? d.y);
-          const lng = Number(d.lng ?? d.lon ?? d.longitude ?? d.x);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          positions.push({
-            identifiant: String(d.imei ?? d.device_id ?? d.unit_id ?? d.id ?? d.name ?? d.nom ?? ''),
-            nom: d.name ?? d.nom,
-            latitude: lat, longitude: lng,
-            vitesse_kmh: Number(d.speed ?? d.vitesse ?? 0) || 0,
-            en_mouvement: Boolean(d.moving ?? d.en_mouvement ?? (Number(d.speed ?? 0) > 3)),
-            adresse: d.address ?? d.adresse,
-            date_position: d.time ?? d.date ?? d.timestamp,
-          });
+    for (const body of payloads) {
+      const j = await this.postJSON('/getsession', body, false);
+      const tok = this.extraireToken(j);
+      if (tok) {
+        this.token = tok;
+        this.logger.info('GeoFlotte login OK (getsession).');
+        return true;
+      }
+    }
+    this.token = '';
+    return false;
+  }
+
+  // ─── Extraction tolérante d'un tableau depuis n'importe quelle enveloppe ─
+  private tableauDe(j: any): any[] {
+    if (!j) return [];
+    if (Array.isArray(j)) return j;
+    for (const k of ['result', 'data', 'list', 'rows', 'vehicules', 'vehicles', 'units', 'devices', 'trames', 'frames']) {
+      const v = (j as any)[k];
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === 'object') {
+        for (const k2 of ['result', 'data', 'list', 'rows']) {
+          if (Array.isArray((v as any)[k2])) return (v as any)[k2];
         }
-        if (positions.length > 0) return positions;
-      } catch { /* endpoint suivant */ }
+      }
     }
     return [];
   }
 
-  // ─── Sync : login → positions → match par geoflotte_id/imei/nom → upsert
+  private normaliser(d: any): PositionVehicule | null {
+    if (!d || typeof d !== 'object') return null;
+    const p = d.position || d.pos || d.coord || d;
+    const lat = Number(d.lat ?? d.latitude ?? d.Latitude ?? p.lat ?? p.latitude ?? d.y ?? d.Y);
+    const lng = Number(d.lng ?? d.lon ?? d.longitude ?? d.Longitude ?? p.lng ?? p.lon ?? p.longitude ?? d.x ?? d.X);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat === 0 && lng === 0) return null;
+    const identifiant = String(
+      d.imei ?? d.IMEI ?? d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
+      d.immatriculation ?? d.plaque ?? d.id ?? d.name ?? d.nom ?? d.label ?? d.vehicule ?? '').trim();
+    const nom = String(d.name ?? d.nom ?? d.label ?? d.vehicule ?? d.immatriculation ?? d.plaque ?? identifiant).trim().slice(0, 100);
+    const vitesse = Number(d.vitesse ?? d.speed ?? d.vitesse_kmh ?? d.speed_kmh ?? 0) || 0;
+    return {
+      identifiant: identifiant || nom,
+      nom: nom || undefined,
+      latitude: lat, longitude: lng,
+      vitesse_kmh: vitesse,
+      en_mouvement: Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? (vitesse > 3)),
+      adresse: d.address ?? d.adresse ?? d.adress ?? undefined,
+      date_position: d.time ?? d.date ?? d.timestamp ?? d.dateTrame ?? d.datetrame ?? undefined,
+    };
+  }
+
+  // ─── Lecture flotte + temps réel ─────────────────────────────────────────
+  private async lirePositions(): Promise<PositionVehicule[]> {
+    const C = this.company, U = this.user;
+    const corpses: any[] = [{}, { client: C }, { account: C }, { username: U }];
+    const endpoints = [
+      '/allinfovehiculebyclient', '/getVehicleDetailListByClient',
+      '/getVehicleListByClientWithMileage', '/getVehiculesCountByClient',
+      '/tramesreels', '/lasttajettrames',
+    ];
+    const bruts: any[] = [];
+    for (const ep of endpoints) {
+      for (const body of corpses) {
+        const j = await this.postJSON(ep, body);
+        const arr = this.tableauDe(j);
+        if (arr.length > 0) {
+          bruts.push(...arr);
+          break; // ce endpoint parle → corps suivant inutile
+        }
+      }
+    }
+    const positions: PositionVehicule[] = [];
+    for (const d of bruts) {
+      const n = this.normaliser(d);
+      if (n && n.identifiant) positions.push(n);
+    }
+    // Dédupliquer par identifiant (garder la 1re occurrence = la plus fraîche)
+    const vus = new Set<string>();
+    return positions.filter(p => {
+      const k = (p.identifiant + '|' + (p.nom || '')).toLowerCase();
+      if (vus.has(k)) return false;
+      vus.add(k);
+      return true;
+    });
+  }
+
+  // ─── Sync : login → flotte+trames → match ou IMPORT AUTO → upsert ────────
   async synchroniser(): Promise<number> {
     if (!this.configure) return 0;
     const ok = await this.connecter();
     if (!ok) {
-      this.logger.error('GeoFlotte login impossible — vérifiez GEOFLOTTE_USER/PASS (mode manuel actif).');
+      this.logger.error('GeoFlotte login impossible — vérifiez GEOFLOTTE_USER/PASS/COMPANY (mode manuel actif).');
       return 0;
     }
     const positions = await this.lirePositions();
     if (positions.length === 0) {
-      this.logger.info('GeoFlotte connecté mais 0 position lue (portail inattendu — mode manuel actif).');
+      this.logger.info('GeoFlotte connecté mais 0 véhicule lu (endpoints muets — mode manuel actif).');
       return 0;
     }
     const { rows: vehicules } = await this.pool.query(
       `SELECT id, nom, immatriculation, imei, geoflotte_id FROM vehicules WHERE actif = TRUE`);
-    let maj = 0;
-    let crees = 0;
+    let maj = 0, crees = 0;
     const matchedIdx = new Set<number>();
     for (const v of vehicules) {
       const cles = [v.geoflotte_id, v.imei, v.nom, v.immatriculation].filter(Boolean).map((s: string) => s.toLowerCase());
@@ -158,8 +244,7 @@ export class GeoflotteService {
         [v.id, p.latitude, p.longitude, p.vitesse_kmh, p.en_mouvement, p.adresse || null, p.date_position || null]);
       maj++;
     }
-    // ─── IMPORT AUTO : tout véhicule vu sur GeoFlotte mais absent chez nous est créé ───
-    // C'est ça qui remplit la page Véhicules toute seule (nom réel + position directe).
+    // ─── IMPORT AUTO : tout véhicule GeoFlotte absent chez nous est créé ───
     for (let i = 0; i < positions.length; i++) {
       if (matchedIdx.has(i)) continue;
       const p = positions[i];
