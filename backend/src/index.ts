@@ -386,7 +386,7 @@ app.get('/api/dashboard/all', async (_req, res) => {
       safe(pool.query(`
          SELECT 'blocage' AS type, b.priorite::text, b.raison_blocage AS message, c.nom_chantier,
                  e.nom AS equipe_nom, TO_CHAR(b.date_creation,'YYYY-MM-DD HH24:MI') AS moment,
-                 b.photo_proof_url AS photo_url, b.id AS blocage_id
+                 b.photo_proof_url AS photo_url, b.id::text AS blocage_id
           FROM blocages_et_requisitions b
           JOIN ordres_de_mission om ON om.id=b.ordre_mission_id
           JOIN chantiers c ON c.id=om.chantier_id

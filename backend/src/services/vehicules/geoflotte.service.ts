@@ -76,6 +76,7 @@ export class GeoflotteService {
   }
 
   // ─── HTTP helper (timeout 20s) ───────────────────────────────────────────
+  // Retourne { status, json } — le appelant décide (Invalid token = refresh auto).
   private async postJSON(path: string, body: any, avecToken = true): Promise<any> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 20000);
@@ -89,6 +90,20 @@ export class GeoflotteService {
       if (!res.ok) return null;
       try { return txt ? JSON.parse(txt) : null; } catch { return null; }
     } catch { return null; } finally { clearTimeout(t); }
+  }
+
+  // Le portail répond {"error":true,"message":"Invalid token"} quand le
+  // usertoken a expiré → on efface le token et on retente un login auto.
+  private estTokenInvalide(j: any): boolean {
+    if (!j || typeof j !== 'object') return false;
+    const msg = String((j as any).message || '').toLowerCase();
+    return (j as any).error === true &&
+      (msg.includes('invalid token') || msg.includes('token') && msg.includes('expir'));
+  }
+
+  private marquerTokenInvalide(): void {
+    this.token = '';
+    this.logger.error('GeoFlotte : token expiré/invalide (Invalid token). Collez un nouveau usertoken (F12 → localStorage) dans GEOFLOTTE_TOKEN, ou vérifiez GEOFLOTTE_USER/PASS.');
   }
 
   private extraireToken(j: any): string | null {
@@ -265,6 +280,8 @@ export class GeoflotteService {
     for (const ep of endpoints) {
       for (const body of corpses) {
         const j = await this.postJSON(ep, body);
+        // Token mort → on l'efface une fois, le login auto prendra le relais
+        if (this.estTokenInvalide(j)) { this.marquerTokenInvalide(); return []; }
         const arr = this.tableauDe(j);
         if (arr.length > 0) {
           bruts.push(...arr);
