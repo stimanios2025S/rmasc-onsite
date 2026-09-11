@@ -265,11 +265,24 @@ export default function MissionActivePage() {
       ]);
       if (missionRes.ok) {
         const m = await missionRes.json();
-        const missionChangee = m.id !== missionRef.current?.id;
+        // m peut être null (aucune mission active — typique méca après transfert).
+        // Accéder à m.id sans garde levait un TypeError qui sautait setEquipeStatus
+        // → les repos ne s'affichaient jamais pour les équipes sans mission.
+        const nouvelId = m?.id ?? null;
+        const missionChangee = nouvelId !== (missionRef.current?.id ?? null);
         setMission(m);
+        // Plus de mission active (ex. méca après transfert/terminaison) :
+        // on vide les données de l'ancienne mission pour ne jamais afficher
+        // un contenu fantôme à la place de l'écran repos.
+        if (!m?.id) {
+          if (missionRef.current) {
+            setChecklist(null);
+            setMissionDetail(null);
+            setPointages([]);
+          }
         // Charger checklist/pointages/détails seulement si :
         // - au montage (chargeDetail=true) OU mission changée
-        if (m.id && (chargeDetail || missionChangee)) {
+        } else if (chargeDetail || missionChangee) {
           const [pRes, cRes, dRes] = await Promise.all([
             fetch(`/api/mission/${m.id}/pointages`),
             fetch(`/api/mission/${m.id}/checklist`),
