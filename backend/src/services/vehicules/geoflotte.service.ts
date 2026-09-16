@@ -1,11 +1,17 @@
 import { Pool } from 'pg';
 import { LoggerService } from '../notifications/logger.service';
 
-// ─── GeoFlotte I2B : connecteur réel (Quasar SPA) ───────────────────────────
-// Portal : https://i2b.geoflotte.com/  →  API : https://i2b.geoflotte.com/api
-// Login  : POST /getsession  →  token JWT (usertoken), header Authorization: Bearer
-// Flotte : POST /allinfovehiculebyclient, /getVehicleDetailListByClient, ...
-// Temps réel : POST /tramesreels  (les "trames réelles" GPS)
+// ─── GeoFlotte REST API — connecteur professionnel ──────────────────────────
+// Documentation : serviceweb.pdf — Service Web GeoFlotte
+// Base URL      : https://services.geoflotte.com
+// Auth          : API key dans l'URL (pas de session, pas de token JWT)
+// Endpoints :
+//   GET /getrealtime/{API_KEY}                        → flotte complète
+//   GET /getrealtime/{API_KEY}?matricules=AA,BB       → véhicules spécifiques
+//   GET /getreport/{API_KEY}?matricules=...&debut=...&fin=...  → trajets
+//   GET /getreportfuel/{API_KEY}?matricules=...&debut=...&fin=... → trajets + carburant
+//   GET /api/gettrames/{API_KEY}/{balise}?debut=...&fin=...      → historique positions
+//
 // 100% gratuit : polling serveur, aucun abonnement.
 // Tout véhicule vu sur GeoFlotte mais absent chez nous est IMPORTÉ AUTO
 // (nom réel + position directe) → la page Véhicules se remplit toute seule.
@@ -13,6 +19,7 @@ import { LoggerService } from '../notifications/logger.service';
 export interface PositionVehicule {
   identifiant: string;
   nom?: string;
+  immatriculation?: string;
   latitude: number;
   longitude: number;
   vitesse_kmh: number;
@@ -21,55 +28,53 @@ export interface PositionVehicule {
   date_position?: string;
 }
 
+export interface RapportTrajet {
+  matricule: string;
+  date_debut: string;
+  date_fin: string;
+  distance_km: number;
+  duree_min: number;
+  vitesse_moyenne: number;
+  carburant_depart?: number;
+  carburant_fin?: number;
+}
+
 export class GeoflotteService {
-  private token = '';
-  private cookies = '';
   private timer: ReturnType<typeof setInterval> | null = null;
+  private dernierResultat: PositionVehicule[] = [];
 
   constructor(private pool: Pool, private logger: LoggerService) {}
 
   // ─── Env en lecture LAZY (dotenv chargé après les imports) ──────────────
-  private get base(): string {
-    return (process.env.GEOFLOTTE_URL || 'https://i2b.geoflotte.com').replace(/\/+$/, '');
+  private get apiKey(): string {
+    return (process.env.GEOFLOTTE_API_KEY || '').trim();
   }
-  private get api(): string {
-    return this.base.endsWith('/api') ? this.base : this.base + '/api';
-  }
-  private get user(): string {
-    return (process.env.GEOFLOTTE_USER || '').trim();
-  }
-  private get pass(): string {
-    return (process.env.GEOFLOTTE_PASS || '').trim();
-  }
-  private get company(): string {
-    return (process.env.GEOFLOTTE_COMPANY || 'rmasc').trim();
-  }
-  // Token collé manuellement (localStorage → usertoken) = mode garanti.
-  // Si le login auto est rejeté par le portail, ce token contourne tout.
-  private get tokenManuel(): string {
-    return (process.env.GEOFLOTTE_TOKEN || '').trim();
-  }
-  // Refresh token (localStorage → refreshToken) : le portail tue le usertoken
-  // côté serveur ("Invalid token") → on en remint un frais via /getNewToken.
-  // C'est ça qui rend la connexion durable, sans recopier le token à la main.
-  private get refreshManuel(): string {
-    return (process.env.GEOFLOTTE_REFRESH_TOKEN || '').trim();
+  private get baseUrl(): string {
+    return (process.env.GEOFLOTTE_BASE_URL || 'https://services.geoflotte.com').replace(/\/+$/, '');
   }
   private get intervalle(): number {
     return parseInt(process.env.GEOFLOTTE_INTERVALLE_MS || '60000', 10) || 60000;
   }
 
+  /** Vérifie si le service est configuré (clé API présente). */
   get configure(): boolean {
-    return this.user !== '' && this.pass !== '';
+    return this.apiKey.length > 0;
   }
+
+  /** Dernier résultat connu (pour affichage immédiat sans re-fetch). */
+  get positions(): PositionVehicule[] {
+    return this.dernierResultat;
+  }
+
+  // ─── Cycle de vie ──────────────────────────────────────────────────────
 
   demarrer(): void {
     if (!this.configure) {
-      this.logger.info('GeoFlotte non configuré (GEOFLOTTE_USER/PASS vides) — mode manuel actif.');
+      this.logger.info('GeoFlotte non configuré (GEOFLOTTE_API_KEY vide) — mode manuel actif.');
       return;
     }
     if (this.timer) return;
-    this.logger.info(`GeoFlotte polling démarré (${this.base}, toutes les ${Math.round(this.intervalle / 1000)}s).`);
+    this.logger.info(`GeoFlotte REST polling démarré (${this.baseUrl}, toutes les ${Math.round(this.intervalle / 1000)}s).`);
     this.synchroniser().catch(() => {});
     this.timer = setInterval(() => {
       this.synchroniser().catch((e: any) =>
@@ -82,420 +87,235 @@ export class GeoflotteService {
     this.timer = null;
   }
 
-  // ─── HTTP helper navigateur (timeout 20s, cookies persistés) ────────────
-  // Imite le front Quasar : Origin/Referer/UA navigateur + jar de cookies.
-  // Les tokens GeoFlotte sont liés à la session navigateur → on rejoue la
-  // session complète (GET / → POST login → cookies + Bearer).
-  private async postJSON(path: string, body: any, avecToken = true): Promise<any> {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 20000);
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'Origin': this.base,
-        'Referer': this.base + '/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      };
-      if (avecToken && this.token) headers.Authorization = `Bearer ${this.token}`;
-      if (this.cookies) headers.Cookie = this.cookies;
-      const res = await fetch(this.api + path, {
-        method: 'POST', headers, body: JSON.stringify(body ?? {}), signal: ctrl.signal,
-      } as any);
-      const setCookie = (res.headers as any)?.get?.('set-cookie') || (res.headers as any)?.get?.('Set-Cookie');
-      if (setCookie) {
-        const morceaux = Array.isArray(setCookie) ? setCookie : String(setCookie).split(/,(?=[^;]+=[^;]+)/);
-        const jar: Record<string, string> = {};
-        for (const c of this.cookies.split(';')) {
-          const [k, ...r] = c.trim().split('=');
-          if (k) jar[k] = r.join('=');
-        }
-        for (const m of morceaux) {
-          const [k, ...r] = String(m).trim().split(';')[0].split('=');
-          if (k && k.trim() && !/expires|path|domain|secure|httponly|same-site/i.test(k.trim())) jar[k.trim()] = r.join('=');
-        }
-        this.cookies = Object.entries(jar).filter(([k, v]) => k && v !== undefined).map(([k, v]) => `${k}=${v}`).join('; ');
-      }
-      const txt = await res.text().catch(() => '');
-      // 401/403 = session morte → le appelant retente un login complet
-      if (res.status === 401 || res.status === 403) {
-        try {
-          const j = txt ? JSON.parse(txt) : null;
-          if (this.estTokenInvalide(j)) return j;
-          return { error: true, message: 'session-expiree', status: res.status };
-        } catch { return { error: true, message: 'session-expiree', status: res.status }; }
-      }
-      if (!res.ok) return null;
-      try { return txt ? JSON.parse(txt) : null; } catch { return null; }
-    } catch { return null; } finally { clearTimeout(t); }
-  }
+  // ─── HTTP GET helper (timeout 15s, réponse JSON) ───────────────────────
 
-  // Ouvre la session navigateur : GET / (cookies initiaux) puis GET /api perso.
-  private async ouvrirSessionNavigateur(): Promise<void> {
+  private async GET(path: string): Promise<any> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15_000);
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 20000);
-      const res = await fetch(this.base + '/', {
+      const url = `${this.baseUrl}${path}`;
+      const res = await fetch(url, {
+        method: 'GET',
         headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-          ...(this.cookies ? { Cookie: this.cookies } : {}),
+          'Accept': 'application/json',
+          'User-Agent': 'RMASC-OnSite/1.0',
         },
         signal: ctrl.signal,
       } as any);
-      clearTimeout(t);
-      const setCookie = (res.headers as any)?.get?.('set-cookie');
-      if (setCookie) {
-        const jar: Record<string, string> = {};
-        for (const c of this.cookies.split(';')) {
-          const [k, ...r] = c.trim().split('=');
-          if (k) jar[k] = r.join('=');
-        }
-        for (const m of String(setCookie).split(/,(?=[^;]+=[^;]+)/)) {
-          const [k, ...r] = String(m).trim().split(';')[0].split('=');
-          if (k && k.trim() && !/expires|path|domain|secure|httponly|same-site/i.test(k.trim())) jar[k.trim()] = r.join('=');
-        }
-        this.cookies = Object.entries(jar).filter(([k]) => k).map(([k, v]) => `${k}=${v}`).join('; ');
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        this.logger.error(`GeoFlotte HTTP ${res.status}`, { url: url.replace(this.apiKey, '***'), reponse: txt.slice(0, 200) });
+        return null;
       }
-    } catch { /* cookies optionnels, le Bearer suffit parfois */ }
-  }
-
-  // Le portail répond {"error":true,"message":"Invalid token"} quand le
-  // usertoken a expiré → on efface le token et on retente un login auto.
-  private estTokenInvalide(j: any): boolean {
-    if (!j || typeof j !== 'object') return false;
-    const msg = String((j as any).message || '').toLowerCase();
-    return (j as any).error === true &&
-      (msg.includes('invalid token') || msg.includes('token') && msg.includes('expir'));
-  }
-
-  private marquerTokenInvalide(): void {
-    this.token = '';
-    this.logger.error('GeoFlotte : token expiré/invalide (Invalid token). Collez un nouveau usertoken (F12 → localStorage) dans GEOFLOTTE_TOKEN, ou vérifiez GEOFLOTTE_USER/PASS.');
-  }
-
-  private extraireToken(j: any): string | null {
-    if (!j || typeof j !== 'object') {
-      if (typeof j === 'string' && j.length > 20) return j;
+      const txt = await res.text().catch(() => '');
+      try { return txt ? JSON.parse(txt) : null; } catch { return txt; }
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        this.logger.error('GeoFlotte timeout (15s)', { path });
+      }
       return null;
+    } finally {
+      clearTimeout(t);
     }
-    const cands = [j.token, j.usertoken, j.accessToken, j.access_token,
-      j.data?.token, j.data?.usertoken, j.result?.token, j.session?.token, j.data?.result?.token];
-    for (const c of cands) {
-      if (typeof c === 'string' && c.length > 20) return c;
-    }
-    return null;
   }
 
-  // ─── DIAGNOSTIC : expose pourquoi le portail rejette le login ────────────
-  // Appelé par GET /api/admin/vehicules/diag — montre la réponse EXACTE du
-  // portail pour chaque forme de login, sans jamais afficher le mot de passe.
+  // ─── Diagnostic : vérifie la clé API et retourne un résumé ─────────────
   async diagnostiquer(): Promise<any> {
-    const U = this.user, C = this.company;
-    const base = this.api;
-    const essais: Array<{ nom: string; corps: any }> = [
-      { nom: 'username/password', corps: { username: U, password: '***' } },
-      { nom: 'username/password+remember', corps: { username: U, password: '***', rememberMe: true } },
-      { nom: 'login/password', corps: { login: U, password: '***' } },
-      { nom: 'account+username', corps: { account: C, username: U, password: '***' } },
-      { nom: 'account+login', corps: { account: C, login: U, password: '***' } },
-      { nom: 'client+username', corps: { client: C, username: U, password: '***' } },
-      { nom: 'company+username', corps: { company: C, username: U, password: '***' } },
-      { nom: 'societe+username', corps: { societe: C, username: U, password: '***' } },
-      { nom: 'slash', corps: { username: `${C}/${U}`, password: '***' } },
-      { nom: 'dot', corps: { username: `${C}.${U}`, password: '***' } },
-      { nom: 'loginContact', corps: { loginContact: U, password: '***' } },
-      { nom: 'email', corps: { email: U, password: '***' } },
-    ];
-    const P = this.pass;
-    const resultats: any[] = [];
-    for (const e of essais) {
-      const vraiCorps = JSON.parse(JSON.stringify(e.corps).replace('"***"', JSON.stringify(P)));
-      const brut = await this.postJSON('/getsession', vraiCorps, false);
-      const copie = brut && typeof brut === 'object' ? { ...brut } : brut;
-      if (copie && typeof copie === 'object') {
-        for (const k of ['token', 'usertoken', 'accessToken', 'access_token']) {
-          if (typeof (copie as any)[k] === 'string') (copie as any)[k] = '◼︎◼︎◼︎(reçu, masqué)';
-        }
-        if (copie.data && typeof copie.data === 'object') {
-          for (const k of ['token', 'usertoken']) {
-            if (typeof (copie.data as any)[k] === 'string') (copie.data as any)[k] = '◼︎◼︎◼︎(reçu, masqué)';
-          }
-        }
-      }
-      resultats.push({ essai: e.nom, reponse: copie });
-      if (this.extraireToken(brut)) {
-        resultats.push({ essai: '✅ LOGIN OK avec', reponse: e.nom });
-        break;
-      }
+    const url = `${this.baseUrl}/getrealtime/${this.apiKey.slice(0, 6)}***`;
+    if (!this.configure) {
+      return { configure: false, erreur: 'GEOFLOTTE_API_KEY non définie dans .env', url };
     }
-    // Token manuel présent ? le tester
-    let tokenManuelOk: boolean | null = null;
-    if (this.tokenManuel) {
-      this.token = this.tokenManuel;
-      const chk = await this.postJSON('/checkSession', {});
-      tokenManuelOk = !!(chk && (chk as any).error !== true);
-      const flotte = tokenManuelOk ? await this.lirePositions() : [];
-      return { base, user: U, company: C, tokenManuel: 'présent', tokenManuelOk, vehiculesLus: flotte.length, echantillon: flotte.slice(0, 2), essais: resultats };
-    }
-    return { base, user: U, company: C, tokenManuel: 'absent', essais: resultats };
-  }
-
-  // ─── LOGIN réel : POST /getsession (champ société inclus) ────────────────
-  private async connecter(): Promise<boolean> {
-    // 1) Token manuel (garanti) — prioritaire.
-    // Le checkSession avec corps vide peut répondre error:true même avec un
-    // token valide → on valide le token sur la FLOTTE RÉELLE, pas sur checkSession.
-    if (this.tokenManuel) {
-      this.token = this.tokenManuel;
-      try {
-        const flotte = await this.lirePositions();
-        if (flotte.length > 0) {
-          this.logger.info(`GeoFlotte token manuel OK — ${flotte.length} véhicule(s).`);
-          return true;
-        }
-      } catch { /* fallback checkSession ci-dessous */ }
-      const chk = await this.postJSON('/checkSession', {});
-      if (chk && (chk as any).error !== true) return true;
-      // Dernier filet : le token est peut-être valide mais la flotte répond
-      // sous une enveloppe inattendue → on garde le token et on laisse
-      // synchroniser() trancher (0 véhicule lu ≠ rejet).
-      this.logger.error('GEOFLOTTE_TOKEN incertain (flotte vide + checkSession KO) — bascule login auto.');
-    }
-    // 1b) Token expiré côté serveur → refresh auto via /getNewToken
-    // (refreshToken du localStorage, origine utils/auth.js comme le front).
-    if (this.refreshManuel) {
-      try {
-        const savedToken = this.token;
-        this.token = '';
-        const j = await this.postJSON('/getNewToken',
-          { refreshToken: this.refreshManuel, origin: 'utils/auth.js' }, false);
-        const frais = this.extraireToken(j);
-        if (frais) {
-          this.token = frais;
-          const flotte = await this.lirePositions();
-          if (flotte.length > 0) {
-            this.logger.info(`GeoFlotte refresh OK — ${flotte.length} véhicule(s), token renouvelé.`);
-            return true;
-          }
-        }
-        this.token = savedToken;
-      } catch { /* fallback login auto ci-dessous */ }
-    }
-    // 2) Session existante encore valide ?
-    if (this.token) {
-      const chk = await this.postJSON('/checkSession', {});
-      if (chk && (chk as any).error !== true) return true;
-    }
-    // 3) Login auto façon navigateur : GET / (cookies) → POST /getsession.
-    // Le store Vuex fait LOGIN({username, password, rememberMe}) puis
-    // getSession({username, password...}) → token + claims (IDClient 4082).
-    await this.ouvrirSessionNavigateur();
-    const U = this.user, P = this.pass, C = this.company;
-    // Formulaire réel : 3 champs → Entreprise + Login + Mot de passe.
-    // Les essais username-seul sont donc rejetés ("identifiant incorrect").
-    const payloads: any[] = [
-      { entreprise: C, login: U, password: P, rememberMe: true },
-      { entreprise: C, login: U, password: P },
-      { entreprise: C, username: U, password: P },
-      { enterprise: C, login: U, password: P },
-      { societe: C, login: U, password: P },
-      { entreprise: C, loginContact: U, password: P },
-      { nomEntreprise: C, login: U, password: P },
-      { raisonSociale: C, login: U, password: P },
-      { codeSociete: C, login: U, password: P },
-      { codeEntreprise: C, login: U, password: P },
-      { username: U, password: P, rememberMe: true },
-      { username: U, password: P },
-      { login: U, password: P },
-      { identifiant: U, password: P },
-      { email: U, password: P },
-      { loginContact: U, password: P },
-      { account: C, username: U, password: P },
-      { account: C, login: U, password: P },
-      { client: C, username: U, password: P },
-      { societe: C, username: U, password: P },
-      { dossier: C, username: U, password: P },
-      { company: C, username: U, password: P },
-      { username: `${C}/${U}`, password: P },
-      { username: `${C}_${U}`, password: P },
-      { username: `${C}.${U}`, password: P },
-      { username: `${U}@${C}`, password: P },
-    ];
-    // 3a) /getsession direct
-    for (const body of payloads) {
-      const j = await this.postJSON('/getsession', body, false);
-      const tok = this.extraireToken(j);
-      if (tok) {
-        this.token = tok;
-        this.logger.info('GeoFlotte login OK (getsession).');
-        return true;
-      }
-    }
-    // 3b) /getSessionByLogin (variante vue dans app.js) puis /getsession
-    for (const body of payloads) {
-      const j = await this.postJSON('/getSessionByLogin', body, false);
-      const tok = this.extraireToken(j);
-      if (tok) {
-        this.token = tok;
-        this.logger.info('GeoFlotte login OK (getSessionByLogin).');
-        return true;
-      }
-    }
-    // 3c) Rejoue la session navigateur une fois (cookies frais) + 1er payload
-    await this.ouvrirSessionNavigateur();
-    const j = await this.postJSON('/getsession', { username: U, password: P, rememberMe: true }, false);
-    const tok = this.extraireToken(j);
-    if (tok) {
-      this.token = tok;
-      this.logger.info('GeoFlotte login OK (getsession retry cookies).');
-      return true;
-    }
-    this.token = '';
-    return false;
-  }
-
-  // ─── Extraction tolérante d'un tableau depuis n'importe quelle enveloppe ─
-  // La réponse /tramesreels arrive sous enveloppe variable (result/data/liste/
-  // TrameReelListe...) → recherche récursive du premier tableau de positions.
-  private tableauDe(j: any, profondeur = 0): any[] {
-    if (!j || profondeur > 3) return [];
-    if (Array.isArray(j)) return j;
-    if (typeof j !== 'object') return [];
-    const clesDirectes = ['result', 'data', 'list', 'liste', 'rows', 'items', 'results',
-      'recordset', 'recordsets', 'Recordset', 'RecordSet',
-      'vehicules', 'vehicles', 'units', 'devices', 'trames', 'frames',
-      'TrameReelListe', 'trameReelListe', 'tramesreels', 'TramesReels', 'tramesReels'];
-    for (const k of clesDirectes) {
-      const v = (j as any)[k];
-      if (Array.isArray(v) && v.length > 0) return v;
-    }
-    // Sinon : premier tableau non vide trouvé en profondeur (objets avec lat/lng en priorité)
-    let fallback: any[] = [];
-    for (const k of Object.keys(j)) {
-      const v = (j as any)[k];
-      if (Array.isArray(v) && v.length > 0) {
-        const premier = v[0];
-        if (premier && typeof premier === 'object' &&
-          ('lat' in premier || 'latitude' in premier || 'Latitude' in premier || 'lng' in premier ||
-           'lon' in premier || 'longitude' in premier || 'Longitude' in premier || 'y' in premier || 'x' in premier)) {
-          return v;
-        }
-        if (fallback.length === 0) fallback = v;
-      } else if (v && typeof v === 'object') {
-        const sous = this.tableauDe(v, profondeur + 1);
-        if (sous.length > 0) return sous;
-      }
-    }
-    return fallback;
-  }
-
-  private normaliser(d: any): PositionVehicule | null {
-    if (!d || typeof d !== 'object') return null;
-    const p = d.position || d.pos || d.coord || d;
-    // Format réel /tramesreels : latitudeReel / longitudeReel / vitesseReel /
-    // tempsReel / lieuReel / codeVehicule / numeroMatricule / NISBaliseReel.
-    const lat = Number(d.latitudeReel ?? d.lat ?? d.latitude ?? d.Latitude ?? p.lat ?? p.latitude ?? d.y ?? d.Y);
-    const lng = Number(d.longitudeReel ?? d.lng ?? d.lon ?? d.longitude ?? d.Longitude ?? p.lng ?? p.lon ?? p.longitude ?? d.x ?? d.X);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    if (lat === 0 && lng === 0) return null;
-    const identifiant = String(
-      d.NISBaliseReel ?? d.imei ?? d.IMEI ?? d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
-      d.NIVehicule ?? d.numeroMatricule ?? d.immatriculation ?? d.plaque ?? d.id ??
-      d.codeVehicule ?? d.name ?? d.nom ?? d.label ?? d.vehicule ?? '').trim();
-    const nom = String(d.codeVehicule ?? d.name ?? d.nom ?? d.label ?? d.vehicule ??
-      d.numeroMatricule ?? d.immatriculation ?? d.plaque ?? d.NIVehicule ?? identifiant).trim().slice(0, 100);
-    const vitesse = Number(d.vitesseReel ?? d.vitesse ?? d.speed ?? d.vitesse_kmh ?? d.speed_kmh ?? 0) || 0;
-    const moteur = d.Moteur ?? d.EtatMoteur ?? null;
-    const enMouvement = (typeof moteur === 'number')
-      ? (moteur === 1 || vitesse > 3)
-      : Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? (vitesse > 3));
+    const positions = await this.lirePositions();
     return {
-      identifiant: identifiant || nom,
-      nom: nom || undefined,
-      latitude: lat, longitude: lng,
-      vitesse_kmh: vitesse,
-      en_mouvement: enMouvement,
-      adresse: d.lieuReel ?? d.address ?? d.adresse ?? d.adress ?? undefined,
-      date_position: d.tempsReel ?? d.time ?? d.date ?? d.timestamp ?? d.dateTrame ?? d.datetrame ?? undefined,
+      configure: true,
+      base_url: this.baseUrl,
+      api_key: `${this.apiKey.slice(0, 6)}***`,
+      vehiculesLus: positions.length,
+      echantillon: positions.slice(0, 3),
+      endpoints: {
+        realtime: `${this.baseUrl}/getrealtime/{API_KEY}`,
+        report: `${this.baseUrl}/getreport/{API_KEY}?matricules=...&debut=...&fin=...`,
+        reportFuel: `${this.baseUrl}/getreportfuel/{API_KEY}?matricules=...&debut=...&fin=...`,
+        trames: `${this.baseUrl}/api/gettrames/{API_KEY}/{balise}?debut=...&fin=...`,
+      },
     };
   }
 
-  // ─── Lecture flotte + temps réel ─────────────────────────────────────────
-  // Payload réel vu dans Network (Temps Réel v2.0) :
-  //   POST /api/tramesreels  {app:"TrameReelListe", version:446}  → 200 2.3kB
+  // ─── Lecture temps réel : GET /getrealtime/{API_KEY} ────────────────────
+  // La réponse est un tableau JSON de véhicules avec position, vitesse, statut.
+  // Format attendu (d'après doc) : tableau d'objets avec matricule, lat/lng, etc.
+  // Le normalisateur gère les variantes de nommage possibles.
+
   private async lirePositions(): Promise<PositionVehicule[]> {
-    const C = this.company, U = this.user;
-    const trameBody: any = { app: 'TrameReelListe', version: 446 };
-    const corpsesGeneriques: any[] = [
-      {}, { client: C }, { account: C }, { username: U },
-      { IDClient: 4082 }, { idClient: 4082 }, { client: 4082 },
-    ];
-    const endpoints: Array<{ ep: string; bodies: any[] }> = [
-      { ep: '/tramesreels', bodies: [trameBody, { ...trameBody, client: C }, { ...trameBody, IDClient: 4082 }] },
-      { ep: '/lasttajettramesNew', bodies: [trameBody] },
-      { ep: '/lasttajettrames', bodies: [trameBody] },
-      { ep: '/allinfovehiculebyclient', bodies: corpsesGeneriques },
-      { ep: '/getVehicleDetailListByClient', bodies: corpsesGeneriques },
-      { ep: '/getVehicleListByClientWithMileage', bodies: corpsesGeneriques },
-    ];
-    const bruts: any[] = [];
-    for (const { ep, bodies } of endpoints) {
-      for (const body of bodies) {
-        const j = await this.postJSON(ep, body);
-        // Token mort → on l'efface une fois, le login auto prendra le relais
-        if (this.estTokenInvalide(j)) { this.marquerTokenInvalide(); return []; }
-        const arr = this.tableauDe(j);
-        if (arr.length > 0) {
-          bruts.push(...arr);
-          break; // ce endpoint parle → corps suivant inutile
+    const donnees = await this.GET(`/getrealtime/${this.apiKey}`);
+    if (!donnees) return [];
+
+    // La réponse peut être un tableau direct OU un objet enveloppe { data: [...] }
+    let bruts: any[] = [];
+    if (Array.isArray(donnees)) {
+      bruts = donnees;
+    } else if (typeof donnees === 'object') {
+      // Chercher le premier tableau non vide dans l'enveloppe
+      const cles = ['data', 'result', 'results', 'vehicules', 'vehicles', 'list', 'liste',
+        'rows', 'items', 'recordset', 'recordsets', 'TrameReelListe'];
+      for (const k of cles) {
+        const v = (donnees as any)[k];
+        if (Array.isArray(v) && v.length > 0) { bruts = v; break; }
+      }
+      // Si pas trouvé, chercher en profondeur 1 niveau
+      if (bruts.length === 0) {
+        for (const k of Object.keys(donnees)) {
+          const v = (donnees as any)[k];
+          if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'object') {
+            bruts = v;
+            break;
+          }
         }
       }
-      if (bruts.length > 0 && (ep === '/tramesreels' || ep.startsWith('/lasttajet'))) break;
     }
+
+    if (!Array.isArray(bruts) || bruts.length === 0) return [];
+
     const positions: PositionVehicule[] = [];
     for (const d of bruts) {
-      const n = this.normaliser(d);
-      if (n && n.identifiant) positions.push(n);
+      const p = this.normaliser(d);
+      if (p && p.identifiant) positions.push(p);
     }
+
     // Dédupliquer par identifiant (garder la 1re occurrence = la plus fraîche)
     const vus = new Set<string>();
     return positions.filter(p => {
-      const k = (p.identifiant + '|' + (p.nom || '')).toLowerCase();
+      const k = p.identifiant.toLowerCase();
       if (vus.has(k)) return false;
       vus.add(k);
       return true;
     });
   }
 
-  // ─── Sync : login → flotte+trames → match ou IMPORT AUTO → upsert ────────
+  // ─── Normalisation tolérante des champs ─────────────────────────────────
+  // L'API peut renvoyer des champs en camelCase, snake_case, PascalCase, ou
+  // français/anglais. Le normalisateur teste toutes les variantes courantes.
+
+  private normaliser(d: any): PositionVehicule | null {
+    if (!d || typeof d !== 'object') return null;
+
+    // Coordonnées (priorité : champs explicites → nested position → alternatives)
+    const p = d.position || d.pos || d.coord || d;
+    const lat = Number(
+      d.latitude ?? d.lat ?? d.Latitude ?? d.LATITUDE ??
+      d.latitudeReel ?? d.latitudeReelle ??
+      p.lat ?? p.latitude ?? p.Latitude ??
+      d.y ?? d.Y ?? d.posY
+    );
+    const lng = Number(
+      d.longitude ?? d.lng ?? d.lon ?? d.Longitude ?? d.LONGITUDE ??
+      d.longitudeReel ?? d.longitudeReelle ??
+      p.lng ?? p.lon ?? p.longitude ?? p.Longitude ??
+      d.x ?? d.X ?? d.posX
+    );
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat === 0 && lng === 0) return null;
+
+    // Identifiant (préférer matricule/plaque → IMEI → nom)
+    const identifiant = String(
+      d.matricule ?? d.Matricule ?? d.numeroMatricule ?? d.PLATE ?? d.plate ??
+      d.immatriculation ?? d.Immatriculation ?? d.IMMATRICULATION ??
+      d.plaque ?? d.Plaque ?? d.PLAQUE ??
+      d.imei ?? d.IMEI ?? d.NISBaliseReel ?? d.balise ??
+      d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
+      d.codeVehicule ?? d.id ?? d.ID ??
+      d.name ?? d.nom ?? d.label ?? ''
+    ).trim();
+
+    // Nom d'affichage
+    const nom = String(
+      d.nom ?? d.name ?? d.label ?? d.vehicule ?? d.vehicle ??
+      d.codeVehicule ?? d.numeroMatricule ??
+      d.immatriculation ?? d.plaque ?? identifiant
+    ).trim().slice(0, 100);
+
+    // Immatriculation (pour affichage badge)
+    const immatriculation = String(
+      d.immatriculation ?? d.Immatriculation ?? d.IMMATRICULATION ??
+      d.matricule ?? d.Matricule ?? d.numeroMatricule ??
+      d.plaque ?? d.Plaque ?? d.PLATE ?? ''
+    ).trim() || undefined;
+
+    // Vitesse
+    const vitesse = Number(
+      d.vitesse ?? d.vitesse_kmh ?? d.speed ?? d.speed_kmh ??
+      d.vitesseReel ?? d.VitesseReel ?? 0
+    ) || 0;
+
+    // État moteur → en mouvement
+    const moteur = d.etat_moteur ?? d.Moteur ?? d.EtatMoteur ?? d.engine_state ?? null;
+    const enMouvement = (typeof moteur === 'number')
+      ? (moteur === 1 || vitesse > 3)
+      : Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? d.enMovement ?? (vitesse > 3));
+
+    // Adresse
+    const adresse = String(
+      d.adresse ?? d.address ?? d.lieu ?? d.location ??
+      d.lieuReel ?? d.LieuReel ?? d.adress ?? ''
+    ).trim() || undefined;
+
+    // Date position
+    const date_position = String(
+      d.date_position ?? d.datePosition ?? d.timestamp ?? d.temps ??
+      d.tempsReel ?? d.TempsReel ?? d.time ?? d.date ??
+      d.dateTrame ?? d.datetrame ?? d.date_reception ?? ''
+    ).trim() || undefined;
+
+    if (!identifiant) return null;
+
+    return {
+      identifiant,
+      nom: nom || undefined,
+      immatriculation,
+      latitude: lat,
+      longitude: lng,
+      vitesse_kmh: vitesse,
+      en_mouvement: enMouvement,
+      adresse,
+      date_position,
+    };
+  }
+
+  // ─── Sync : flotte temps réel → match ou IMPORT AUTO → upsert ──────────
   async synchroniser(): Promise<number> {
-    if (!this.configure && !this.tokenManuel) return 0;
-    const ok = await this.connecter();
-    // Si le token manuel existe, on tente la lecture même si connecter() doute :
-    // connecter() peut se tromper quand la flotte répond sous une enveloppe
-    // inattendue. Seule la lecture réelle tranche.
-    if (!ok && !this.tokenManuel) {
-      this.logger.error('GeoFlotte login impossible — vérifiez GEOFLOTTE_USER/PASS/COMPANY (mode manuel actif).');
-      return 0;
-    }
-    if (!ok && this.tokenManuel) this.token = this.tokenManuel;
+    if (!this.configure) return 0;
+
     const positions = await this.lirePositions();
+    this.dernierResultat = positions;
+
     if (positions.length === 0) {
-      this.logger.info('GeoFlotte connecté mais 0 véhicule lu (endpoints muets — mode manuel actif).');
+      this.logger.info('GeoFlotte REST : 0 véhicule lu (clé API invalide ou flotte vide — mode manuel actif).');
       return 0;
     }
+
     const { rows: vehicules } = await this.pool.query(
       `SELECT id, nom, immatriculation, imei, geoflotte_id FROM vehicules WHERE actif = TRUE`);
+
     let maj = 0, crees = 0;
     const matchedIdx = new Set<number>();
+
+    // 1) Match : mettre à jour les véhicules existants
     for (const v of vehicules) {
-      const cles = [v.geoflotte_id, v.imei, v.nom, v.immatriculation].filter(Boolean).map((s: string) => s.toLowerCase());
+      const cles = [v.geoflotte_id, v.imei, v.nom, v.immatriculation]
+        .filter(Boolean)
+        .map((s: string) => s.toLowerCase().trim());
+
       const idx = positions.findIndex(pos =>
-        cles.some(c => pos.identifiant.toLowerCase().includes(c) || (pos.nom || '').toLowerCase().includes(c)));
+        cles.some(c =>
+          pos.identifiant.toLowerCase().includes(c) ||
+          (pos.nom || '').toLowerCase().includes(c) ||
+          (pos.immatriculation || '').toLowerCase().includes(c)
+        )
+      );
       if (idx === -1) continue;
       matchedIdx.add(idx);
       const p = positions[idx];
+
       await this.pool.query(
         `INSERT INTO vehicules_positions (vehicule_id, latitude, longitude, vitesse_kmh, en_mouvement, adresse, date_position, date_reception)
          VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()), NOW())
@@ -507,23 +327,28 @@ export class GeoflotteService {
         [v.id, p.latitude, p.longitude, p.vitesse_kmh, p.en_mouvement, p.adresse || null, p.date_position || null]);
       maj++;
     }
-    // ─── IMPORT AUTO : tout véhicule GeoFlotte absent chez nous est créé ───
+
+    // 2) IMPORT AUTO : tout véhicule GeoFlotte absent chez nous est créé
     for (let i = 0; i < positions.length; i++) {
       if (matchedIdx.has(i)) continue;
       const p = positions[i];
       const nom = String(p.nom || p.identifiant || `Véhicule ${i + 1}`).trim().slice(0, 100);
       if (!nom) continue;
+
       try {
         const ins = await this.pool.query(
-          `INSERT INTO vehicules (nom, imei, geoflotte_id) VALUES ($1, $2, $3)
+          `INSERT INTO vehicules (nom, immatriculation, imei, geoflotte_id)
+           VALUES ($1, $2, $3, $4)
            ON CONFLICT (nom) DO NOTHING RETURNING id`,
-          [nom, p.identifiant || null, p.identifiant || null]);
+          [nom, p.immatriculation || null, p.identifiant || null, p.identifiant || null]);
+
         let vehId: string | null = ins.rows[0]?.id || null;
         if (!vehId) {
           const ex = await this.pool.query(`SELECT id FROM vehicules WHERE nom = $1`, [nom]);
           vehId = ex.rows[0]?.id || null;
         }
         if (!vehId) continue;
+
         await this.pool.query(
           `INSERT INTO vehicules_positions (vehicule_id, latitude, longitude, vitesse_kmh, en_mouvement, adresse, date_position, date_reception)
            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()), NOW())
@@ -536,7 +361,30 @@ export class GeoflotteService {
         crees++;
       } catch { /* un véhicule en échec ne bloque pas les autres */ }
     }
-    this.logger.info(`GeoFlotte sync OK — ${positions.length} lue(s), ${maj} maj, ${crees} importé(s).`);
+
+    this.logger.info(`GeoFlotte REST sync OK — ${positions.length} lu(s), ${maj} maj, ${crees} importé(s).`);
     return maj + crees;
+  }
+
+  // ─── Rapports (utilisables par l'admin) ────────────────────────────────
+
+  /** Liste des trajets pour une période donnée. */
+  async listerTrajets(matricules: string[], debut: string, fin: string): Promise<any> {
+    if (!this.configure) return { erreur: 'GeoFlotte non configuré.' };
+    const m = matricules.join(',');
+    return this.GET(`/getreport/${this.apiKey}?matricules=${encodeURIComponent(m)}&debut=${encodeURIComponent(debut)}&fin=${encodeURIComponent(fin)}`);
+  }
+
+  /** Détails des trajets + consommation carburant. */
+  async listerTrajetsCarburant(matricules: string[], debut: string, fin: string): Promise<any> {
+    if (!this.configure) return { erreur: 'GeoFlotte non configuré.' };
+    const m = matricules.join(',');
+    return this.GET(`/getreportfuel/${this.apiKey}?matricules=${encodeURIComponent(m)}&debut=${encodeURIComponent(debut)}&fin=${encodeURIComponent(fin)}`);
+  }
+
+  /** Historique des positions (trames) pour un véhicule donné. */
+  async historiquePositions(balise: string, debut: string, fin: string): Promise<any> {
+    if (!this.configure) return { erreur: 'GeoFlotte non configuré.' };
+    return this.GET(`/api/gettrames/${this.apiKey}/${encodeURIComponent(balise)}?debut=${encodeURIComponent(debut)}&fin=${encodeURIComponent(fin)}`);
   }
 }

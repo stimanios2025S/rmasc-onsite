@@ -134,7 +134,7 @@ export function creerVehiculeRouter(pool: Pool, logger: LoggerService, geoflotte
   router.post('/sync', async (_req, res) => {
     try {
       if (!geoflotte || !geoflotte.configure) {
-        return res.status(400).json({ erreur: 'GeoFlotte non configuré (GEOFLOTTE_USER/PASS). Mode manuel actif.' });
+        return res.status(400).json({ erreur: 'GeoFlotte non configuré (GEOFLOTTE_API_KEY absent dans .env). Mode manuel actif.' });
       }
       const maj = await geoflotte.synchroniser();
       res.json({ ok: true, message: `${maj} véhicule(s) mis à jour depuis GeoFlotte.` });
