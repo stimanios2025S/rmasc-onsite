@@ -49,11 +49,21 @@ export default function VehiculesPage() {
     setLoading(false);
   }, []);
 
+  // Refresh silencieux : met à jour les données SANS spinner ni perte de focus
+  const refreshSilencieux = useCallback(async () => {
+    try {
+      const [v, h] = await Promise.all([fetchVehicules(), fetchVehiculesHistorique().catch(() => [])]);
+      setVehicules(v);
+      setHistorique(h);
+    } catch { /* silently ignore — on garde les données affichées */ }
+  }, []);
+
   useEffect(() => { loadAll(); }, [loadAll]);
+  // Polling allégé : 120s au lieu de 30s, sans spinner — sync GeoFlotte fait 60s
   useEffect(() => {
-    const iv = setInterval(() => { if (document.visibilityState === 'visible') loadAll(); }, 30000);
+    const iv = setInterval(() => { if (document.visibilityState === 'visible') refreshSilencieux(); }, 120000);
     return () => clearInterval(iv);
-  }, [loadAll]);
+  }, [refreshSilencieux]);
 
   const handleSync = async () => {
     setSyncing(true);

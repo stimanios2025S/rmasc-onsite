@@ -125,12 +125,32 @@ export class GeoflotteService {
     if (!this.configure) {
       return { configure: false, erreur: 'GEOFLOTTE_API_KEY non définie dans .env', url };
     }
-    const positions = await this.lirePositions();
+    // Récupérer les données BRUTES pour diagnostiquer les champs
+    const donnees = await this.GET(`/getrealtime/${this.apiKey}`);
+    let bruts: any[] = [];
+    if (Array.isArray(donnees)) {
+      bruts = donnees;
+    } else if (typeof donnees === 'object' && donnees !== null) {
+      const cles = ['data', 'result', 'results', 'vehicules', 'vehicles', 'list', 'liste', 'rows', 'items', 'recordset'];
+      for (const k of cles) {
+        const v = (donnees as any)[k];
+        if (Array.isArray(v) && v.length > 0) { bruts = v; break; }
+      }
+      if (bruts.length === 0) {
+        for (const k of Object.keys(donnees)) {
+          const v = (donnees as any)[k];
+          if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'object') { bruts = v; break; }
+        }
+      }
+    }
+    const rawSample = bruts.slice(0, 3).map((d: any) => ({ keys: Object.keys(d), data: d }));
+    const positions = bruts.map((d: any) => this.normaliser(d)).filter(Boolean);
     return {
       configure: true,
       base_url: this.baseUrl,
       api_key: `${this.apiKey.slice(0, 6)}***`,
       vehiculesLus: positions.length,
+      rawSample,
       echantillon: positions.slice(0, 3),
       endpoints: {
         realtime: `${this.baseUrl}/getrealtime/{API_KEY}`,
@@ -175,6 +195,12 @@ export class GeoflotteService {
     }
 
     if (!Array.isArray(bruts) || bruts.length === 0) return [];
+
+    // Debug : log le 1er élément brut pour identifier les champs exacts de l'API
+    if (bruts.length > 0 && bruts[0] && typeof bruts[0] === 'object') {
+      this.logger.info('GeoFlotte RAW[0] clés: ' + Object.keys(bruts[0]).join(', '));
+      this.logger.info('GeoFlotte RAW[0]: ' + JSON.stringify(bruts[0]).slice(0, 500));
+    }
 
     const positions: PositionVehicule[] = [];
     for (const d of bruts) {
