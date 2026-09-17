@@ -196,12 +196,6 @@ export class GeoflotteService {
 
     if (!Array.isArray(bruts) || bruts.length === 0) return [];
 
-    // Debug : log le 1er élément brut pour identifier les champs exacts de l'API
-    if (bruts.length > 0 && bruts[0] && typeof bruts[0] === 'object') {
-      this.logger.info('GeoFlotte RAW[0] clés: ' + Object.keys(bruts[0]).join(', '));
-      this.logger.info('GeoFlotte RAW[0]: ' + JSON.stringify(bruts[0]).slice(0, 500));
-    }
-
     const positions: PositionVehicule[] = [];
     for (const d of bruts) {
       const p = this.normaliser(d);
@@ -242,10 +236,11 @@ export class GeoflotteService {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     if (lat === 0 && lng === 0) return null;
 
-    // Identifiant (préférer matricule/plaque → IMEI → nom)
+    // Identifiant (GeoFlotte: "Immatriculation" ou "NIV" ou "id")
     const identifiant = String(
+      d.Immatriculation ?? d.immatriculation ?? d.IMMATRICULATION ??
+      d.NIV ?? d.niv ??
       d.matricule ?? d.Matricule ?? d.numeroMatricule ?? d.PLATE ?? d.plate ??
-      d.immatriculation ?? d.Immatriculation ?? d.IMMATRICULATION ??
       d.plaque ?? d.Plaque ?? d.PLAQUE ??
       d.imei ?? d.IMEI ?? d.NISBaliseReel ?? d.balise ??
       d.device_id ?? d.deviceId ?? d.unit_id ?? d.unitId ??
@@ -253,28 +248,28 @@ export class GeoflotteService {
       d.name ?? d.nom ?? d.label ?? ''
     ).trim();
 
-    // Nom d'affichage
+    // Nom d'affichage (GeoFlotte: "Vehicule" PascalCase)
     const nom = String(
-      d.nom ?? d.name ?? d.label ?? d.vehicule ?? d.vehicle ??
+      d.nom ?? d.Vehicule ?? d.vehicule ?? d.name ?? d.label ??
       d.codeVehicule ?? d.numeroMatricule ??
-      d.immatriculation ?? d.plaque ?? identifiant
+      d.immatriculation ?? d.Immatriculation ?? d.plaque ?? identifiant
     ).trim().slice(0, 100);
 
-    // Immatriculation (pour affichage badge)
+    // Immatriculation (pour affichage badge — GeoFlotte: "Immatriculation" PascalCase)
     const immatriculation = String(
-      d.immatriculation ?? d.Immatriculation ?? d.IMMATRICULATION ??
+      d.Immatriculation ?? d.immatriculation ?? d.IMMATRICULATION ??
       d.matricule ?? d.Matricule ?? d.numeroMatricule ??
       d.plaque ?? d.Plaque ?? d.PLATE ?? ''
     ).trim() || undefined;
 
-    // Vitesse
+    // Vitesse (GeoFlotte: "Vitesse" avec V majuscule)
     const vitesse = Number(
-      d.vitesse ?? d.vitesse_kmh ?? d.speed ?? d.speed_kmh ??
+      d.Vitesse ?? d.vitesse ?? d.vitesse_kmh ?? d.speed ?? d.speed_kmh ??
       d.vitesseReel ?? d.VitesseReel ?? 0
     ) || 0;
 
-    // État moteur → en mouvement
-    const moteur = d.etat_moteur ?? d.Moteur ?? d.EtatMoteur ?? d.engine_state ?? null;
+    // État moteur → en mouvement (GeoFlotte: "Moteur" PascalCase, 0=arrêté 1=marche)
+    const moteur = d.Moteur ?? d.moteur ?? d.etat_moteur ?? d.EtatMoteur ?? d.engine_state ?? null;
     const enMouvement = (typeof moteur === 'number')
       ? (moteur === 1 || vitesse > 3)
       : Boolean(d.moving ?? d.en_mouvement ?? d.motion ?? d.enMovement ?? (vitesse > 3));
